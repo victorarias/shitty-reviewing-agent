@@ -41,7 +41,8 @@ async function main(): Promise<void> {
 }
 
 function readConfig(): ReviewConfig {
-  const provider = core.getInput("provider", { required: true });
+  const providerRaw = core.getInput("provider", { required: true });
+  const provider = normalizeProvider(providerRaw);
   const apiKey = core.getInput("api-key", { required: true });
   const modelId = core.getInput("model", { required: true });
   const maxFilesRaw = core.getInput("max-files") || "50";
@@ -96,6 +97,14 @@ function parseReasoning(value: string): ReviewConfig["reasoning"] {
     default:
       throw new Error(`Invalid reasoning level: ${value}`);
   }
+}
+
+function normalizeProvider(value: string): string {
+  const lowered = value.trim().toLowerCase();
+  if (lowered === "gemini") {
+    return "google";
+  }
+  return value.trim();
 }
 
 async function resolveGithubAuth(): Promise<{ token: string; authType: string }> {
