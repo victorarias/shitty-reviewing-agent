@@ -1,5 +1,7 @@
 # Shitty Reviewing Agent
 
+**Disclaimer:** This project is experimental. It may produce incorrect reviews, miss issues, or behave unexpectedly. No guarantees are provided.
+
 A GitHub Action that reviews PRs using an LLM-powered agent with repo tooling.
 
 ## Usage
@@ -24,7 +26,7 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider (openrouter, gemini, anthropic, openai, etc.)
+- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter)
 - `api-key` (required): API key for the provider
 - `model` (required): Model name
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
@@ -39,6 +41,18 @@ jobs:
 
 - Requires `actions/checkout` so files are available locally.
 - Uses `GITHUB_TOKEN` for PR metadata and comments.
+
+## Reasoning & temperature
+
+```yaml
+- uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+  with:
+    provider: google
+    api-key: ${{ secrets.GEMINI_API_KEY }}
+    model: gemini-3-pro-preview
+    reasoning: medium
+    temperature: "0.2"
+```
 
 ## GitHub App auth (experimental)
 
@@ -55,7 +69,6 @@ If you want to authenticate as a GitHub App instead of using `GITHUB_TOKEN`, **c
     app-private-key: ${{ secrets.MY_APP_PRIVATE_KEY }}
 ```
 
-**Disclaimer:** This project is experimental. It may produce incorrect reviews, miss issues, or behave unexpectedly. No guarantees are provided.
 
 ## Local smoke run
 
