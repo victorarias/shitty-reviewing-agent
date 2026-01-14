@@ -1,0 +1,47 @@
+name: "shitty-reviewing-agent"
+description: "Agent-driven PR reviewer using LLMs"
+author: "shitty-reviewing-agent"
+inputs:
+  provider:
+    description: "LLM provider (openrouter, gemini, anthropic, openai, etc.)"
+    required: true
+  api-key:
+    description: "API key for the LLM provider"
+    required: true
+  model:
+    description: "Model to use (e.g., anthropic/claude-sonnet-4)"
+    required: true
+  max-files:
+    description: "Max files to review (skips if exceeded)"
+    required: false
+    default: "50"
+  ignore-patterns:
+    description: "Comma-separated glob patterns to skip"
+    required: false
+    default: "*.lock,*.generated.*"
+  debug:
+    description: "Enable debug logging"
+    required: false
+    default: "false"
+  reasoning:
+    description: "Thinking level (off, minimal, low, medium, high, xhigh)"
+    required: false
+    default: "off"
+  temperature:
+    description: "Sampling temperature (0-2)"
+    required: false
+  app-id:
+    description: "GitHub App ID (use instead of GITHUB_TOKEN)"
+    required: false
+  app-installation-id:
+    description: "GitHub App installation ID"
+    required: false
+  app-private-key:
+    description: "GitHub App private key PEM"
+    required: false
+runs:
+  using: "docker"
+  image: "Dockerfile"
+branding:
+  icon: "check"
+  color: "gray-dark"

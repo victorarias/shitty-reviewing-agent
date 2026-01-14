@@ -1,0 +1,29 @@
+{
+  "name": "shitty-reviewing-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "smoke": "node scripts/smoke.mjs",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0",
+    "@mariozechner/pi-ai": "^0.45.7",
+    "@mariozechner/pi-agent-core": "^0.45.7",
+    "@sinclair/typebox": "^0.34.0",
+    "@octokit/auth-app": "^7.0.0",
+    "fast-glob": "^3.3.3",
+    "minimatch": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.7.3"
+  }
+}

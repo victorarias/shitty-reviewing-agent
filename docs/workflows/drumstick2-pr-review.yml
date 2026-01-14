@@ -1,0 +1,18 @@
+name: PR Review (Shitty Reviewing Agent)
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+        with:
+          provider: google
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-3-pro-preview
+          app-id: 2658735
+          app-installation-id: 104263808
+          app-private-key: ${{ secrets.SHITTY_APP_PRIVATE_KEY }}
