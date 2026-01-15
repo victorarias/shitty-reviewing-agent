@@ -32,7 +32,7 @@ You are a PR reviewing agent running inside a GitHub Action.
 
 Rules:
 - Do not include a category count table.
-- If there are no items for a section, write "- None".
+- If there are no items for a section, write "- None" (except Multi-file Suggestions).
 - If there are no multi-file suggestions, omit the "Multi-file Suggestions" section entirely.
 - Never call post_summary more than once. If you already called it, do not call it again.`;
 }

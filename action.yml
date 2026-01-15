@@ -7,7 +7,7 @@ inputs:
     required: true
   api-key:
     description: "API key for the LLM provider"
-    required: true
+    required: false
   model:
     description: "Model to use (e.g., anthropic/claude-sonnet-4)"
     required: true
