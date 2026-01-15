@@ -2,6 +2,8 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
+import type { ExistingComment } from "../types.js";
+import crypto from "node:crypto";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -14,6 +16,7 @@ interface ReviewToolDeps {
   modelId: string;
   reviewSha: string;
   getBilling: () => { input: number; output: number; total: number; cost: number };
+  existingComments: ExistingComment[];
   onSummaryPosted?: () => void;
   onInlineComment?: () => void;
   onSuggestion?: () => void;
@@ -21,6 +24,15 @@ interface ReviewToolDeps {
 }
 
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
+  const postedKeys = new Set<string>();
+  const existingKeys = new Set<string>();
+  const existingByLocation = buildLocationIndex(deps.existingComments);
+  for (const comment of deps.existingComments) {
+    if (comment.type === "review" && comment.path && comment.line) {
+      existingKeys.add(hashKey(comment.path, comment.line, comment.body));
+    }
+  }
+
   const commentTool: AgentTool<typeof CommentSchema, { id: number }> = {
     name: "comment",
     label: "Post inline comment",
@@ -28,6 +40,31 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
+      const key = hashKey(params.path, params.line, params.body);
+      if (postedKeys.has(key) || existingKeys.has(key)) {
+        return {
+          content: [{ type: "text", text: "Duplicate comment skipped." }],
+          details: { id: -1 },
+        };
+      }
+      const existing = findLatestLocation(existingByLocation, params.path, params.line);
+      if (existing) {
+        const response = await safeCall(() =>
+          deps.octokit.rest.pulls.createReplyForReviewComment({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            comment_id: existing.id,
+            body: params.body,
+          })
+        );
+        postedKeys.add(key);
+        deps.onInlineComment?.();
+        return {
+          content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
+          details: { id: response.data.id },
+        };
+      }
       const response = await safeCall(() =>
         deps.octokit.rest.pulls.createReviewComment({
           owner: deps.owner,
@@ -40,6 +77,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           body: params.body,
         })
       );
+      postedKeys.add(key);
       deps.onInlineComment?.();
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
@@ -56,6 +94,31 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const body = wrapSuggestion(params.suggestion, params.comment);
+      const key = hashKey(params.path, params.line, body);
+      if (postedKeys.has(key) || existingKeys.has(key)) {
+        return {
+          content: [{ type: "text", text: "Duplicate suggestion skipped." }],
+          details: { id: -1 },
+        };
+      }
+      const existing = findLatestLocation(existingByLocation, params.path, params.line);
+      if (existing) {
+        const response = await safeCall(() =>
+          deps.octokit.rest.pulls.createReplyForReviewComment({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            comment_id: existing.id,
+            body,
+          })
+        );
+        postedKeys.add(key);
+        deps.onSuggestion?.();
+        return {
+          content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
+          details: { id: response.data.id },
+        };
+      }
       const response = await safeCall(() =>
         deps.octokit.rest.pulls.createReviewComment({
           owner: deps.owner,
@@ -68,9 +131,32 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           body,
         })
       );
+      postedKeys.add(key);
       deps.onSuggestion?.();
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
+        details: { id: response.data.id },
+      };
+    },
+  };
+
+  const replyTool: AgentTool<typeof ReplySchema, { id: number }> = {
+    name: "reply_comment",
+    label: "Reply to review comment",
+    description: "Reply to an existing review comment thread.",
+    parameters: ReplySchema,
+    execute: async (_id, params) => {
+      const response = await safeCall(() =>
+        deps.octokit.rest.pulls.createReplyForReviewComment({
+          owner: deps.owner,
+          repo: deps.repo,
+          pull_number: deps.pullNumber,
+          comment_id: params.comment_id,
+          body: params.body,
+        })
+      );
+      return {
+        content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
         details: { id: response.data.id },
       };
     },
@@ -106,7 +192,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [commentTool, suggestTool, summaryTool];
+  return [commentTool, suggestTool, replyTool, summaryTool];
 }
 
 const CommentSchema = Type.Object({
@@ -128,11 +214,47 @@ const SummarySchema = Type.Object({
   body: Type.String({ description: "Markdown summary" }),
 });
 
+const ReplySchema = Type.Object({
+  comment_id: Type.Integer({ minimum: 1 }),
+  body: Type.String({ description: "Reply body" }),
+});
+
 function wrapSuggestion(suggestion: string, comment?: string): string {
   const prefix = comment?.trim() ? `${comment.trim()}\n\n` : "";
   return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
 }
 
+function normalizeBody(body: string): string {
+  return body.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function hashKey(path: string, line: number, body: string): string {
+  const hash = crypto.createHash("sha256");
+  hash.update(`${path}:${line}:${normalizeBody(body)}`);
+  return hash.digest("hex");
+}
+
+function buildLocationIndex(comments: ExistingComment[]): Map<string, ExistingComment[]> {
+  const map = new Map<string, ExistingComment[]>();
+  for (const comment of comments) {
+    if (comment.type !== "review" || !comment.path || !comment.line) continue;
+    const key = `${comment.path}:${comment.line}`;
+    const list = map.get(key) ?? [];
+    list.push(comment);
+    map.set(key, list);
+  }
+  return map;
+}
+
+function findLatestLocation(
+  map: Map<string, ExistingComment[]>,
+  path: string,
+  line: number
+): ExistingComment | undefined {
+  const list = map.get(`${path}:${line}`);
+  if (!list || list.length === 0) return undefined;
+  return [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
 function ensureSummaryFooter(
   body: string,
   modelId: string,

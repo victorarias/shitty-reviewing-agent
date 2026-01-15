@@ -44,6 +44,7 @@ export async function runReview(input) {
         modelId: config.modelId,
         reviewSha: input.prInfo.headSha,
         getBilling: () => summaryState.billing,
+        existingComments: input.existingComments,
         onSummaryPosted: () => {
             summaryState.posted = true;
         },
