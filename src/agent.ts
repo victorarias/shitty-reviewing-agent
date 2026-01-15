@@ -61,6 +61,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     modelId: config.modelId,
     reviewSha: input.prInfo.headSha,
     getBilling: () => summaryState.billing,
+    existingComments: input.existingComments,
     onSummaryPosted: () => {
       summaryState.posted = true;
     },
