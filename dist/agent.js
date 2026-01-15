@@ -3,7 +3,7 @@ import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { buildSummaryMarkdown } from "./index.js";
-import { createGithubTools, createReadOnlyTools, createReviewTools, RateLimitError } from "./tools/index.js";
+import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
 export async function runReview(input) {
     const { config, context, octokit } = input;
     const log = (...args) => {
@@ -42,6 +42,7 @@ export async function runReview(input) {
         pullNumber: context.prNumber,
         headSha: input.prInfo.headSha,
         modelId: config.modelId,
+        reviewSha: input.prInfo.headSha,
         getBilling: () => summaryState.billing,
         onSummaryPosted: () => {
             summaryState.posted = true;
@@ -54,7 +55,12 @@ export async function runReview(input) {
             summaryState.suggestions += 1;
         },
     });
-    const tools = [...readTools, ...githubTools, ...reviewTools];
+    const webSearchTools = createWebSearchTool({
+        apiKey: config.apiKey,
+        modelId: config.modelId,
+        enabled: config.provider === "google",
+    });
+    const tools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
     const model = getModel(config.provider, config.modelId);
     const agent = new Agent({
         initialState: {
@@ -117,6 +123,9 @@ export async function runReview(input) {
         changedFiles: filteredFiles.map((f) => f.filename),
         maxFiles: config.maxFiles,
         ignorePatterns: config.ignorePatterns,
+        existingComments: input.existingComments,
+        lastReviewedSha: input.lastReviewedSha,
+        headSha: input.prInfo.headSha,
     });
     let abortedByLimit = false;
     try {
@@ -142,6 +151,7 @@ export async function runReview(input) {
                 reason,
                 model: config.modelId,
                 billing: summaryState.billing,
+                reviewSha: input.prInfo.headSha,
             });
             throw error;
         }
@@ -163,6 +173,7 @@ export async function runReview(input) {
             verdict,
             reason,
             billing: summaryState.billing,
+            reviewSha: input.prInfo.headSha,
         });
     }
 }
@@ -201,6 +212,7 @@ async function postFailureSummary(params) {
             multiFileSuggestions: ["None"],
             model: params.model,
             billing: params.billing,
+            reviewSha: params.reviewSha,
         }),
     });
 }
@@ -216,6 +228,7 @@ async function postFallbackSummary(params) {
             multiFileSuggestions: ["None"],
             model: params.model,
             billing: params.billing,
+            reviewSha: params.reviewSha,
         }),
     });
 }

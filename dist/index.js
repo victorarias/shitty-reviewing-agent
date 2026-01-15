@@ -15,11 +15,21 @@ async function main() {
             core.info(`[debug] GitHub auth: ${authType}`);
         }
         const { prInfo, changedFiles } = await fetchPrData(octokit, context);
+        const existingComments = await fetchExistingComments(octokit, context);
+        const lastReviewedSha = findLastReviewedSha(existingComments);
+        const scopedFiles = lastReviewedSha
+            ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha)
+            : changedFiles;
         if (config.debug) {
             core.info(`[debug] PR #${prInfo.number} ${prInfo.title}`);
             core.info(`[debug] Files in PR: ${changedFiles.length}`);
+            if (lastReviewedSha) {
+                core.info(`[debug] Last reviewed SHA: ${lastReviewedSha}`);
+                core.info(`[debug] Files since last review: ${scopedFiles.length}`);
+            }
+            core.info(`[debug] Existing comments: ${existingComments.length}`);
         }
-        const filtered = applyIgnorePatterns(changedFiles, config.ignorePatterns);
+        const filtered = applyIgnorePatterns(scopedFiles, config.ignorePatterns);
         if (filtered.length > config.maxFiles) {
             await postSkipSummary(octokit, context, config.modelId, filtered.length, config.maxFiles);
             return;
@@ -30,6 +40,8 @@ async function main() {
             octokit,
             prInfo,
             changedFiles: filtered,
+            existingComments,
+            lastReviewedSha,
         });
     }
     catch (error) {
@@ -37,7 +49,8 @@ async function main() {
     }
 }
 function readConfig() {
-    const provider = core.getInput("provider", { required: true });
+    const providerRaw = core.getInput("provider", { required: true });
+    const provider = normalizeProvider(providerRaw);
     const apiKey = core.getInput("api-key", { required: true });
     const modelId = core.getInput("model", { required: true });
     const maxFilesRaw = core.getInput("max-files") || "50";
@@ -88,6 +101,13 @@ function parseReasoning(value) {
         default:
             throw new Error(`Invalid reasoning level: ${value}`);
     }
+}
+function normalizeProvider(value) {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "gemini") {
+        return "google";
+    }
+    return value.trim();
 }
 async function resolveGithubAuth() {
     const appId = core.getInput("app-id");
@@ -158,6 +178,74 @@ async function fetchPrData(octokit, context) {
     }));
     return { prInfo, changedFiles };
 }
+async function fetchExistingComments(octokit, context) {
+    const [issueComments, reviewComments] = await Promise.all([
+        octokit.paginate(octokit.rest.issues.listComments, {
+            owner: context.owner,
+            repo: context.repo,
+            issue_number: context.prNumber,
+            per_page: 100,
+        }),
+        octokit.paginate(octokit.rest.pulls.listReviewComments, {
+            owner: context.owner,
+            repo: context.repo,
+            pull_number: context.prNumber,
+            per_page: 100,
+        }),
+    ]);
+    const normalizedIssue = issueComments.map((comment) => ({
+        id: comment.id,
+        author: comment.user?.login ?? "unknown",
+        body: comment.body ?? "",
+        url: comment.html_url ?? "",
+        type: "issue",
+        updatedAt: comment.updated_at ?? comment.created_at ?? "",
+    }));
+    const normalizedReview = reviewComments.map((comment) => ({
+        id: comment.id,
+        author: comment.user?.login ?? "unknown",
+        body: comment.body ?? "",
+        url: comment.html_url ?? "",
+        type: "review",
+        path: comment.path ?? undefined,
+        line: comment.line ?? undefined,
+        updatedAt: comment.updated_at ?? comment.created_at ?? "",
+    }));
+    return [...normalizedIssue, ...normalizedReview];
+}
+function findLastReviewedSha(comments) {
+    const marker = "<!-- sri:last-reviewed-sha:";
+    const candidates = comments
+        .filter((comment) => comment.type === "issue" && comment.body.includes(marker))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    for (const comment of candidates) {
+        const match = comment.body.match(/<!--\\s*sri:last-reviewed-sha:([a-f0-9]{7,40})\\s*-->/i);
+        if (match) {
+            return match[1];
+        }
+    }
+    return null;
+}
+async function fetchChangesSinceReview(octokit, context, baseSha, headSha) {
+    if (baseSha === headSha)
+        return [];
+    const comparison = await octokit.rest.repos.compareCommits({
+        owner: context.owner,
+        repo: context.repo,
+        base: baseSha,
+        head: headSha,
+    });
+    const files = comparison.data.files ?? [];
+    return files.map((file) => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions ?? 0,
+        deletions: file.deletions ?? 0,
+        changes: file.changes ?? 0,
+        patch: file.patch,
+        previous_filename: file.previous_filename,
+    }));
+}
 function applyIgnorePatterns(files, patterns) {
     if (patterns.length === 0)
         return files;
@@ -181,8 +269,9 @@ export function buildSummaryMarkdown(content) {
     const billing = content.billing
         ? `\n*Billing: input ${content.billing.input} • output ${content.billing.output} • total ${content.billing.total} • cost $${content.billing.cost.toFixed(6)}*`
         : "";
+    const marker = content.reviewSha ? `\n<!-- sri:last-reviewed-sha:${content.reviewSha} -->` : "";
     const multiFile = renderOptionalSection("Multi-file Suggestions", content.multiFileSuggestions);
-    return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}`;
+    return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}${marker}`;
 }
 function renderList(items) {
     if (!items || items.length === 0) {

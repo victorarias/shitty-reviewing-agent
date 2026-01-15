@@ -64,7 +64,7 @@ export function createReviewTools(deps) {
             }
             // Mark as posted immediately to prevent racing duplicate calls.
             deps.onSummaryPosted?.();
-            const body = ensureSummaryFooter(params.body, deps.modelId, deps.getBilling());
+            const body = ensureSummaryFooter(params.body, deps.modelId, deps.getBilling(), deps.reviewSha);
             const response = await safeCall(() => deps.octokit.rest.issues.createComment({
                 owner: deps.owner,
                 repo: deps.repo,
@@ -99,15 +99,16 @@ function wrapSuggestion(suggestion, comment) {
     const prefix = comment?.trim() ? `${comment.trim()}\n\n` : "";
     return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
 }
-function ensureSummaryFooter(body, modelId, billing) {
+function ensureSummaryFooter(body, modelId, billing, reviewSha) {
     const hasFooter = body.includes("Reviewed by shitty-reviewing-agent");
     const billingLine = `*Billing: input ${billing.input} • output ${billing.output} • total ${billing.total} • cost $${billing.cost.toFixed(6)}*`;
-    const footer = `---\n*Reviewed by shitty-reviewing-agent • model: ${modelId}*\n${billingLine}`;
+    const marker = `<!-- sri:last-reviewed-sha:${reviewSha} -->`;
+    const footer = `---\n*Reviewed by shitty-reviewing-agent • model: ${modelId}*\n${billingLine}\n${marker}`;
     if (hasFooter) {
         if (body.includes("Billing: input")) {
-            return body;
+            return body.includes("sri:last-reviewed-sha") ? body : `${body}\n${marker}`;
         }
-        return `${body}\n${billingLine}`;
+        return `${body}\n${billingLine}\n${marker}`;
     }
     return `${body.trim()}\n\n${footer}`;
 }

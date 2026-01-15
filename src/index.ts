@@ -4,7 +4,7 @@ import { createAppAuth } from "@octokit/auth-app";
 import fs from "node:fs";
 import path from "node:path";
 import { runReview } from "./agent.js";
-import type { ChangedFile, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
 import { minimatch } from "minimatch";
 
 async function main(): Promise<void> {
@@ -17,12 +17,22 @@ async function main(): Promise<void> {
       core.info(`[debug] GitHub auth: ${authType}`);
     }
     const { prInfo, changedFiles } = await fetchPrData(octokit, context);
+    const existingComments = await fetchExistingComments(octokit, context);
+    const lastReviewedSha = findLastReviewedSha(existingComments);
+    const scopedFiles = lastReviewedSha
+      ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha)
+      : changedFiles;
     if (config.debug) {
       core.info(`[debug] PR #${prInfo.number} ${prInfo.title}`);
       core.info(`[debug] Files in PR: ${changedFiles.length}`);
+      if (lastReviewedSha) {
+        core.info(`[debug] Last reviewed SHA: ${lastReviewedSha}`);
+        core.info(`[debug] Files since last review: ${scopedFiles.length}`);
+      }
+      core.info(`[debug] Existing comments: ${existingComments.length}`);
     }
 
-    const filtered = applyIgnorePatterns(changedFiles, config.ignorePatterns);
+    const filtered = applyIgnorePatterns(scopedFiles, config.ignorePatterns);
     if (filtered.length > config.maxFiles) {
       await postSkipSummary(octokit, context, config.modelId, filtered.length, config.maxFiles);
       return;
@@ -34,6 +44,8 @@ async function main(): Promise<void> {
       octokit,
       prInfo,
       changedFiles: filtered,
+      existingComments,
+      lastReviewedSha,
     });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -185,6 +197,87 @@ async function fetchPrData(octokit: ReturnType<typeof github.getOctokit>, contex
   return { prInfo, changedFiles };
 }
 
+async function fetchExistingComments(
+  octokit: ReturnType<typeof github.getOctokit>,
+  context: ReviewContext
+): Promise<ExistingComment[]> {
+  const [issueComments, reviewComments] = await Promise.all([
+    octokit.paginate(octokit.rest.issues.listComments, {
+      owner: context.owner,
+      repo: context.repo,
+      issue_number: context.prNumber,
+      per_page: 100,
+    }),
+    octokit.paginate(octokit.rest.pulls.listReviewComments, {
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+      per_page: 100,
+    }),
+  ]);
+
+  const normalizedIssue = issueComments.map((comment) => ({
+    id: comment.id,
+    author: comment.user?.login ?? "unknown",
+    body: comment.body ?? "",
+    url: comment.html_url ?? "",
+    type: "issue" as const,
+    updatedAt: comment.updated_at ?? comment.created_at ?? "",
+  }));
+
+  const normalizedReview = reviewComments.map((comment) => ({
+    id: comment.id,
+    author: comment.user?.login ?? "unknown",
+    body: comment.body ?? "",
+    url: comment.html_url ?? "",
+    type: "review" as const,
+    path: comment.path ?? undefined,
+    line: comment.line ?? undefined,
+    updatedAt: comment.updated_at ?? comment.created_at ?? "",
+  }));
+
+  return [...normalizedIssue, ...normalizedReview];
+}
+
+function findLastReviewedSha(comments: ExistingComment[]): string | null {
+  const marker = "<!-- sri:last-reviewed-sha:";
+  const candidates = comments
+    .filter((comment) => comment.type === "issue" && comment.body.includes(marker))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  for (const comment of candidates) {
+    const match = comment.body.match(/<!--\\s*sri:last-reviewed-sha:([a-f0-9]{7,40})\\s*-->/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+async function fetchChangesSinceReview(
+  octokit: ReturnType<typeof github.getOctokit>,
+  context: ReviewContext,
+  baseSha: string,
+  headSha: string
+): Promise<ChangedFile[]> {
+  if (baseSha === headSha) return [];
+  const comparison = await octokit.rest.repos.compareCommits({
+    owner: context.owner,
+    repo: context.repo,
+    base: baseSha,
+    head: headSha,
+  });
+  const files = comparison.data.files ?? [];
+  return files.map((file) => ({
+    filename: file.filename,
+    status: file.status as ChangedFile["status"],
+    additions: file.additions ?? 0,
+    deletions: file.deletions ?? 0,
+    changes: file.changes ?? 0,
+    patch: file.patch,
+    previous_filename: file.previous_filename,
+  }));
+}
+
 function applyIgnorePatterns(files: ChangedFile[], patterns: string[]): ChangedFile[] {
   if (patterns.length === 0) return files;
   return files.filter((file) => !patterns.some((pattern) => minimatch(file.filename, pattern)));
@@ -217,6 +310,7 @@ export interface SummaryContent {
   keyFindings: string[];
   multiFileSuggestions: string[];
   model: string;
+  reviewSha?: string;
   billing?: {
     input: number;
     output: number;
@@ -229,8 +323,9 @@ export function buildSummaryMarkdown(content: SummaryContent): string {
   const billing = content.billing
     ? `\n*Billing: input ${content.billing.input} • output ${content.billing.output} • total ${content.billing.total} • cost $${content.billing.cost.toFixed(6)}*`
     : "";
+  const marker = content.reviewSha ? `\n<!-- sri:last-reviewed-sha:${content.reviewSha} -->` : "";
   const multiFile = renderOptionalSection("Multi-file Suggestions", content.multiFileSuggestions);
-  return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}`;
+  return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}${marker}`;
 }
 
 function renderList(items: string[]): string {
