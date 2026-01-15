@@ -37,7 +37,8 @@ async function main() {
     }
 }
 function readConfig() {
-    const provider = core.getInput("provider", { required: true });
+    const providerRaw = core.getInput("provider", { required: true });
+    const provider = normalizeProvider(providerRaw);
     const apiKey = core.getInput("api-key", { required: true });
     const modelId = core.getInput("model", { required: true });
     const maxFilesRaw = core.getInput("max-files") || "50";
@@ -88,6 +89,13 @@ function parseReasoning(value) {
         default:
             throw new Error(`Invalid reasoning level: ${value}`);
     }
+}
+function normalizeProvider(value) {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "gemini") {
+        return "google";
+    }
+    return value.trim();
 }
 async function resolveGithubAuth() {
     const appId = core.getInput("app-id");

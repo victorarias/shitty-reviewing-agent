@@ -178,11 +178,25 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log(`agent error: ${agent.state.error}`);
   }
 
+  if (!summaryState.posted && agent.state.error) {
+    const reason = deriveErrorReason(agent.state.error);
+    await postFailureSummary({
+      octokit,
+      owner: context.owner,
+      repo: context.repo,
+      prNumber: context.prNumber,
+      reason,
+      model: config.modelId,
+      billing: summaryState.billing,
+    });
+    return;
+  }
+
   if (!summaryState.posted) {
-    const verdict = summaryState.abortedByLimit ? "Skipped" : (summaryState.inlineComments + summaryState.suggestions > 0 ? "Request Changes" : "Approve");
+    const verdict = "Skipped";
     const reason = summaryState.abortedByLimit || abortedByLimit
       ? "Agent exceeded iteration limit before posting summary."
-      : "Agent finished without posting summary; posting fallback.";
+      : "Agent failed to produce a review summary.";
     await postFallbackSummary({
       octokit,
       owner: context.owner,
@@ -194,6 +208,17 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       billing: summaryState.billing,
     });
   }
+}
+
+function deriveErrorReason(message: string): string {
+  if (isQuotaError(message)) {
+    return "LLM quota exceeded or rate-limited; unable to generate a review. Check provider billing/limits.";
+  }
+  return "Agent encountered an error and failed to produce a review summary.";
+}
+
+function isQuotaError(message: string): boolean {
+  return /quota|resource_exhausted|rate limit|429/i.test(message);
 }
 
 function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): ChangedFile[] {
