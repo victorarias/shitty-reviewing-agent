@@ -37,3 +37,14 @@ export interface ReviewContext {
   repo: string;
   prNumber: number;
 }
+
+export interface ExistingComment {
+  id: number;
+  author: string;
+  body: string;
+  url: string;
+  type: "issue" | "review";
+  path?: string;
+  line?: number;
+  updatedAt: string;
+}
