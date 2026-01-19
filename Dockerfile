@@ -7,4 +7,4 @@ COPY src ./src
 
 RUN bun install --production
 
-ENTRYPOINT ["bun", "src/index.ts"]
+ENTRYPOINT ["bun", "/app/src/index.ts"]
