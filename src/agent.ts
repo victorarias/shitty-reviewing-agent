@@ -25,6 +25,29 @@ export interface ReviewRunInput {
   previousReviewBody?: string | null;
 }
 
+function isGemini3(modelId: string): boolean {
+  return /gemini[- ]?3/i.test(modelId);
+}
+
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+/**
+ * Map granular thinking levels to Gemini 3's supported levels (low/high).
+ * Gemini 3 only supports "low" and "high" thinking levels.
+ */
+function mapThinkingLevelForGemini3(level: ThinkingLevel): ThinkingLevel {
+  switch (level) {
+    case "off":
+    case "minimal":
+    case "low":
+      return "low";
+    case "medium":
+    case "high":
+    case "xhigh":
+      return "high";
+  }
+}
+
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
   const log = (...args: unknown[]) => {
@@ -32,6 +55,24 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       console.log("[debug]", ...args);
     }
   };
+
+  // Gemini 3 is optimized for temperature=1.0; lower values cause looping/degraded behavior
+  const effectiveTemperature = (() => {
+    if (config.temperature !== undefined) {
+      if (isGemini3(config.modelId) && config.temperature < 1.0) {
+        console.warn(
+          `[warn] Gemini 3 is optimized for temperature=1.0. You specified ${config.temperature}, which may cause unexpected behavior.`
+        );
+      }
+      return config.temperature;
+    }
+    return isGemini3(config.modelId) ? 1.0 : undefined;
+  })();
+
+  // Map thinking levels for Gemini 3 (only supports low/high)
+  const effectiveThinkingLevel = isGemini3(config.modelId)
+    ? mapThinkingLevelForGemini3(config.reasoning)
+    : config.reasoning;
   const summaryState = {
     posted: false,
     inlineComments: 0,
@@ -95,13 +136,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       model,
       tools,
       messages: [],
-      thinkingLevel: config.reasoning,
+      thinkingLevel: effectiveThinkingLevel,
     },
     getApiKey: () => config.apiKey,
     streamFn: (modelArg, context, options) =>
       streamSimple(modelArg, context, {
         ...options,
-        temperature: config.temperature ?? options.temperature,
+        temperature: effectiveTemperature ?? options.temperature,
       }),
   });
 

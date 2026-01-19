@@ -28,7 +28,7 @@ inputs:
     required: false
     default: "off"
   temperature:
-    description: "Sampling temperature (0-2)"
+    description: "Sampling temperature (0-2). Gemini 3 defaults to 1.0 and may behave unexpectedly at lower values."
     required: false
   app-id:
     description: "GitHub App ID (optional; default uses implicit GITHUB_TOKEN)"
