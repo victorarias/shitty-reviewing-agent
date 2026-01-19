@@ -149,7 +149,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     changedFiles: filteredFiles.map((f) => f.filename),
     maxFiles: config.maxFiles,
     ignorePatterns: config.ignorePatterns,
-    existingComments: input.existingComments,
+    existingComments: input.existingComments.length,
     lastReviewedSha: input.lastReviewedSha,
     headSha: input.prInfo.headSha,
   });

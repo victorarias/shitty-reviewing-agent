@@ -46,5 +46,6 @@ export interface ExistingComment {
   type: "issue" | "review";
   path?: string;
   line?: number;
+  inReplyToId?: number;
   updatedAt: string;
 }

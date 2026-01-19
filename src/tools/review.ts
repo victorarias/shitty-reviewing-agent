@@ -26,9 +26,9 @@ interface ReviewToolDeps {
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const postedKeys = new Set<string>();
   const existingKeys = new Set<string>();
-  const existingByLocation = buildLocationIndex(deps.existingComments);
+  const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
   for (const comment of deps.existingComments) {
-    if (comment.type === "review" && comment.path && comment.line) {
+    if (comment.type === "review" && comment.path && comment.line && !comment.inReplyToId) {
       existingKeys.add(hashKey(comment.path, comment.line, comment.body));
     }
   }
@@ -47,7 +47,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      const existing = findLatestLocation(existingByLocation, params.path, params.line);
+      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
       if (existing) {
         const response = await safeCall(() =>
           deps.octokit.rest.pulls.createReplyForReviewComment({
@@ -101,7 +101,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      const existing = findLatestLocation(existingByLocation, params.path, params.line);
+      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
       if (existing) {
         const response = await safeCall(() =>
           deps.octokit.rest.pulls.createReplyForReviewComment({
@@ -234,26 +234,41 @@ function hashKey(path: string, line: number, body: string): string {
   return hash.digest("hex");
 }
 
-function buildLocationIndex(comments: ExistingComment[]): Map<string, ExistingComment[]> {
+function buildLocationIndex(comments: ExistingComment[]): {
+  existingByLocation: Map<string, ExistingComment[]>;
+  threadActivityById: Map<number, string>;
+} {
   const map = new Map<string, ExistingComment[]>();
+  const activity = new Map<number, string>();
   for (const comment of comments) {
     if (comment.type !== "review" || !comment.path || !comment.line) continue;
+    const rootId = comment.inReplyToId ?? comment.id;
+    const lastActivity = activity.get(rootId);
+    if (!lastActivity || lastActivity.localeCompare(comment.updatedAt) < 0) {
+      activity.set(rootId, comment.updatedAt);
+    }
+    if (comment.inReplyToId) continue;
     const key = `${comment.path}:${comment.line}`;
     const list = map.get(key) ?? [];
     list.push(comment);
     map.set(key, list);
   }
-  return map;
+  return { existingByLocation: map, threadActivityById: activity };
 }
 
 function findLatestLocation(
   map: Map<string, ExistingComment[]>,
+  activity: Map<number, string>,
   path: string,
   line: number
 ): ExistingComment | undefined {
   const list = map.get(`${path}:${line}`);
   if (!list || list.length === 0) return undefined;
-  return [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  return [...list].sort((a, b) => {
+    const aActivity = activity.get(a.id) ?? a.updatedAt;
+    const bActivity = activity.get(b.id) ?? b.updatedAt;
+    return bActivity.localeCompare(aActivity);
+  })[0];
 }
 function ensureSummaryFooter(
   body: string,

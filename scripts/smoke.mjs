@@ -1,7 +1,7 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -13,7 +13,9 @@ const repo = args.repo ?? process.env.GITHUB_REPOSITORY;
 const prNumber = Number.parseInt(args.pr ?? process.env.PR_NUMBER ?? "", 10);
 const appPrivateKeyFile = args.appPrivateKeyFile ?? process.env.APP_PRIVATE_KEY_FILE;
 
-if (!provider || !apiKey || !model) {
+const providerKey = provider?.toLowerCase();
+const requiresApiKey = providerKey && !["vertex", "vertexai", "vertex-ai", "google-vertex"].includes(providerKey);
+if (!provider || !model || (requiresApiKey && !apiKey)) {
   console.error("Missing provider/api-key/model. Use --provider/--api-key/--model or env PROVIDER/API_KEY/MODEL.");
   process.exit(1);
 }
@@ -34,9 +36,9 @@ if (!Number.isFinite(prNumber)) {
 const workspace = args.workspace ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
 const eventPath = args.event ?? process.env.GITHUB_EVENT_PATH ?? writeEvent(repo, prNumber);
 
-const distPath = path.resolve(process.cwd(), "dist", "index.js");
-if (!fs.existsSync(distPath)) {
-  console.error("dist/index.js not found. Run npm run build first.");
+const entryPath = path.resolve(process.cwd(), "src", "index.ts");
+if (!fs.existsSync(entryPath)) {
+  console.error("src/index.ts not found.");
   process.exit(1);
 }
 
@@ -45,7 +47,7 @@ process.env.GITHUB_REPOSITORY = repo;
 process.env.GITHUB_EVENT_PATH = eventPath;
 process.env.GITHUB_WORKSPACE = workspace;
 process.env["INPUT_PROVIDER"] = provider;
-process.env["INPUT_API-KEY"] = apiKey;
+if (apiKey) process.env["INPUT_API-KEY"] = apiKey;
 process.env["INPUT_MODEL"] = model;
 if (args.maxFiles) process.env["INPUT_MAX-FILES"] = String(args.maxFiles);
 if (args.ignorePatterns) process.env["INPUT_IGNORE-PATTERNS"] = args.ignorePatterns;
@@ -60,7 +62,15 @@ if (args.appId) process.env["INPUT_APP-ID"] = String(args.appId);
 if (args.appInstallationId) process.env["INPUT_APP-INSTALLATION-ID"] = String(args.appInstallationId);
 if (args.appPrivateKey) process.env["INPUT_APP-PRIVATE-KEY"] = args.appPrivateKey;
 
-await import(pathToFileURL(distPath).href);
+const result = spawnSync("bun", [entryPath], {
+  stdio: "inherit",
+  env: process.env,
+});
+if (result.error) {
+  console.error(`Failed to run bun: ${result.error.message}`);
+  process.exit(1);
+}
+process.exit(result.status ?? 0);
 
 function writeEvent(repository, number) {
   const [owner, repoName] = repository.split("/");

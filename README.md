@@ -41,6 +41,7 @@ jobs:
 
 - Requires `actions/checkout` so files are available locally.
 - Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
+- Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
 
 Minimal workflow (implicit token):
 
@@ -92,9 +93,10 @@ By default, the action uses the implicit `GITHUB_TOKEN`. If you want to authenti
 
 ## Local smoke run
 
+Requires `bun` installed locally.
+
 ```bash
-npm run build
-npm run smoke -- --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
+node scripts/smoke.mjs --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
 ```
 
 ## Release

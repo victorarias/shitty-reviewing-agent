@@ -132,7 +132,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
   const getReviewContext: AgentTool<typeof ReviewContextSchema, ReviewContextPayload> = {
     name: "get_review_context",
     label: "Get review context",
-    description: "Get prior review summaries and commits since the last review summary.",
+    description: "Get prior review summaries, review threads, and commits since the last review summary.",
     parameters: ReviewContextSchema,
     execute: async () => {
       if (!deps.cache.reviewContext) {
@@ -160,6 +160,45 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
           .map(({ timestamp, ...summary }) => summary);
 
         const lastReviewAt = summaries.length > 0 ? summaries[0].createdAt : null;
+        const lastReviewTime = parseTimestamp(lastReviewAt) ?? null;
+
+        const reviewThreads = await safeOptional(async () => {
+          const threads = await deps.octokit.paginate(deps.octokit.rest.pulls.listReviewThreads, {
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            per_page: 100,
+          });
+          return threads.map((thread: any) => {
+            const comments = Array.isArray(thread.comments) ? thread.comments : [];
+            const normalized = comments.map((comment: any) => ({
+              id: comment.id,
+              author: comment.user?.login ?? "unknown",
+              body: comment.body ?? "",
+              createdAt: comment.created_at ?? "",
+              updatedAt: comment.updated_at ?? comment.created_at ?? "",
+              url: comment.html_url ?? "",
+            }));
+            const lastUpdatedAt =
+              [...normalized]
+                .map((item) => item.updatedAt)
+                .sort((a, b) => b.localeCompare(a))[0] ?? "";
+            const lastComment = [...normalized].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+            const lastActivityTime = parseTimestamp(lastUpdatedAt);
+            return {
+              id: thread.id,
+              path: thread.path ?? comments[0]?.path ?? "",
+              line: thread.line ?? comments[0]?.line ?? null,
+              isOutdated: thread.is_outdated ?? false,
+              resolved: thread.resolved ?? false,
+              lastUpdatedAt,
+              lastActor: lastComment?.author ?? "unknown",
+              hasNewActivitySinceLastReview:
+                lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
+              comments: normalized,
+            };
+          });
+        });
 
         let commitsSinceLastReview: ReviewContextPayload["commitsSinceLastReview"] = [];
         if (lastReviewAt) {
@@ -171,7 +210,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
               per_page: 100,
             })
           );
-          const lastReviewTime = parseTimestamp(lastReviewAt) ?? 0;
+          const lastReviewTimeResolved = parseTimestamp(lastReviewAt) ?? 0;
           commitsSinceLastReview = commits
             .map((commit) => ({
               sha: commit.sha,
@@ -183,13 +222,14 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
             .filter((commit) => {
               const commitTime = parseTimestamp(commit.date);
               if (commitTime === null) return false;
-              return commitTime > lastReviewTime;
+              return commitTime > lastReviewTimeResolved;
             });
         }
 
         deps.cache.reviewContext = {
           lastReviewAt,
           previousSummaries: summaries,
+          reviewThreads: reviewThreads ?? [],
           commitsSinceLastReview,
         };
       }
@@ -220,6 +260,24 @@ interface ReviewContextPayload {
     url: string;
     body: string;
   }>;
+  reviewThreads: Array<{
+    id: number;
+    path: string;
+    line: number | null;
+    isOutdated: boolean;
+    resolved: boolean;
+    lastUpdatedAt: string;
+    lastActor: string;
+    hasNewActivitySinceLastReview: boolean;
+    comments: Array<{
+      id: number;
+      author: string;
+      body: string;
+      createdAt: string;
+      updatedAt: string;
+      url: string;
+    }>;
+  }>;
   commitsSinceLastReview: Array<{
     sha: string;
     message: string;
@@ -243,5 +301,13 @@ async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
       throw new RateLimitError("GitHub API rate limit exceeded.");
     }
     throw error;
+  }
+}
+
+async function safeOptional<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    return null;
   }
 }

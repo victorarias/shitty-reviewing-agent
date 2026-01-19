@@ -239,6 +239,7 @@ async function fetchExistingComments(
     type: "review" as const,
     path: comment.path ?? undefined,
     line: comment.line ?? undefined,
+    inReplyToId: comment.in_reply_to_id ?? undefined,
     updatedAt: comment.updated_at ?? comment.created_at ?? "",
   }));
 
