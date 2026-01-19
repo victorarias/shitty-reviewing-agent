@@ -19,6 +19,9 @@ export interface ReviewRunInput {
   reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
   scopeWarning?: string | null;
+  previousVerdict?: string | null;
+  previousReviewUrl?: string | null;
+  previousReviewAt?: string | null;
 }
 
 export async function runReview(input: ReviewRunInput): Promise<void> {
@@ -118,14 +121,24 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+      if (config.debug && event.result) {
+        log(`tool output: ${event.toolName}`, safeStringify(event.result));
+      }
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
       const text = event.message.content
         .filter((c) => c.type === "text")
         .map((c) => c.text)
         .join("");
+      const thinking = event.message.content
+        .filter((c) => c.type === "thinking")
+        .map((c) => c.thinking)
+        .join("");
       if (text.trim()) {
-        log(`assistant: ${text.slice(0, 400)}`);
+        log(`assistant: ${text}`);
+      }
+      if (thinking.trim()) {
+        log(`assistant thinking: ${thinking}`);
       }
       const usage = event.message.usage;
       if (usage) {
@@ -156,6 +169,9 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     lastReviewedSha: input.lastReviewedSha,
     headSha: input.prInfo.headSha,
     scopeWarning: input.scopeWarning ?? null,
+    previousVerdict: input.previousVerdict ?? null,
+    previousReviewUrl: input.previousReviewUrl ?? null,
+    previousReviewAt: input.previousReviewAt ?? null,
   });
 
   let abortedByLimit = false;
@@ -238,6 +254,14 @@ function deriveErrorReason(message: string): string {
 
 function isQuotaError(message: string): boolean {
   return /quota|resource_exhausted|rate limit|429/i.test(message);
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return `[unserializable]: ${String(error)}`;
+  }
 }
 
 function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): ChangedFile[] {

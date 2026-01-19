@@ -21,6 +21,7 @@ async function main(): Promise<void> {
     const { prInfo, changedFiles } = await fetchPrData(octokit, context);
     const { existingComments, reviewThreads } = await fetchExistingComments(octokit, context);
     const lastReviewedSha = findLastReviewedSha(existingComments);
+    const lastSummary = findLastSummary(existingComments);
     let scopeWarning: string | null = null;
     const scopedResult = lastReviewedSha
       ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha, changedFiles)
@@ -53,6 +54,9 @@ async function main(): Promise<void> {
       reviewThreads,
       lastReviewedSha,
       scopeWarning,
+      previousVerdict: lastSummary?.verdict ?? null,
+      previousReviewUrl: lastSummary?.url ?? null,
+      previousReviewAt: lastSummary?.updatedAt ?? null,
     });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -300,6 +304,23 @@ function findLastReviewedSha(comments: ExistingComment[]): string | null {
     const match = comment.body.match(/<!--\\s*sri:last-reviewed-sha:([a-f0-9]{7,40})\\s*-->/i);
     if (match) {
       return match[1];
+    }
+  }
+  return null;
+}
+
+function findLastSummary(comments: ExistingComment[]): { verdict: string; url: string; updatedAt: string } | null {
+  const candidates = comments
+    .filter((comment) => comment.type === "issue" && comment.body.includes("## Review Summary"))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  for (const comment of candidates) {
+    const match = comment.body.match(/\\*\\*Verdict:\\*\\*\\s*(Request Changes|Approve|Skipped)/i);
+    if (match) {
+      return {
+        verdict: match[1],
+        url: comment.url,
+        updatedAt: comment.updatedAt,
+      };
     }
   }
   return null;
