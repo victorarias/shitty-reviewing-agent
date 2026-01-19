@@ -22,6 +22,7 @@ export interface ReviewRunInput {
   previousVerdict?: string | null;
   previousReviewUrl?: string | null;
   previousReviewAt?: string | null;
+  previousReviewBody?: string | null;
 }
 
 export async function runReview(input: ReviewRunInput): Promise<void> {
@@ -172,6 +173,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     previousVerdict: input.previousVerdict ?? null,
     previousReviewUrl: input.previousReviewUrl ?? null,
     previousReviewAt: input.previousReviewAt ?? null,
+    previousReviewBody: input.previousReviewBody ?? null,
   });
 
   let abortedByLimit = false;

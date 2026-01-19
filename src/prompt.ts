@@ -32,6 +32,8 @@ You are a PR reviewing agent running inside a GitHub Action.
 
 **Verdict:** Request Changes | Approve | Skipped
 
+**Preface:** <one sentence; see rules below>
+
 ### Issues Found
 - <issue 1>
 - <issue 2>
@@ -47,6 +49,7 @@ Rules:
 - Do not include a category count table.
 - If there are no items for a section, write "- None" (except Multi-file Suggestions).
 - If there are no multi-file suggestions, omit the "Multi-file Suggestions" section entirely.
+- Preface rules: If this is the first review, use a sentence like "Here's my complete review of this PR." If it's a follow-up, use "Considering my initial review and the changes you made, here's what I found now:" (or similar).
 - Never call post_summary more than once. If you already called it, do not call it again.`;
 }
 
@@ -63,6 +66,7 @@ export function buildUserPrompt(params: {
   previousVerdict?: string | null;
   previousReviewUrl?: string | null;
   previousReviewAt?: string | null;
+  previousReviewBody?: string | null;
 }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
   const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
@@ -74,6 +78,7 @@ export function buildUserPrompt(params: {
   const previousVerdict = params.previousVerdict ? params.previousVerdict : "(none)";
   const previousReviewAt = params.previousReviewAt ? params.previousReviewAt : "(unknown)";
   const previousReviewUrl = params.previousReviewUrl ? params.previousReviewUrl : "(unknown)";
+  const previousReviewBody = params.previousReviewBody ? params.previousReviewBody : "";
 
   return `Review this pull request.
 
@@ -87,10 +92,13 @@ Context:
 - Existing PR comments (issue + review): ${commentCount}
 - Last reviewed SHA: ${lastReview}
 - Current head SHA: ${headSha}
- - Previous verdict: ${previousVerdict}
- - Previous review at: ${previousReviewAt}
- - Previous review url: ${previousReviewUrl}
+- Previous verdict: ${previousVerdict}
+- Previous review at: ${previousReviewAt}
+- Previous review url: ${previousReviewUrl}
 ${scopeWarning ? `- Review scope note: ${scopeWarning}` : ""}
+
+Previous review summary (most recent):
+${previousReviewBody ? previousReviewBody : "(none)"}
 
 Constraints:
 - Max files allowed: ${params.maxFiles}

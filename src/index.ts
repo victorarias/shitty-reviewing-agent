@@ -57,6 +57,7 @@ async function main(): Promise<void> {
       previousVerdict: lastSummary?.verdict ?? null,
       previousReviewUrl: lastSummary?.url ?? null,
       previousReviewAt: lastSummary?.updatedAt ?? null,
+      previousReviewBody: lastSummary?.body ?? null,
     });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -309,7 +310,7 @@ function findLastReviewedSha(comments: ExistingComment[]): string | null {
   return null;
 }
 
-function findLastSummary(comments: ExistingComment[]): { verdict: string; url: string; updatedAt: string } | null {
+function findLastSummary(comments: ExistingComment[]): { verdict: string; url: string; updatedAt: string; body: string } | null {
   const candidates = comments
     .filter((comment) => comment.type === "issue" && comment.body.includes("## Review Summary"))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -320,6 +321,7 @@ function findLastSummary(comments: ExistingComment[]): { verdict: string; url: s
         verdict: match[1],
         url: comment.url,
         updatedAt: comment.updatedAt,
+        body: comment.body,
       };
     }
   }
