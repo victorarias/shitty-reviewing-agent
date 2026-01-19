@@ -51,8 +51,15 @@ export async function listReviewThreads(
     const status = error?.status ?? error?.response?.status;
     if (status === 404) {
       // Some repos/tokens do not have access to review threads; treat as unavailable.
+      console.warn(
+        `[warn] Unable to list review threads (404) for ${params.owner}/${params.repo}#${params.pull_number}; continuing without threads.`
+      );
       return [];
     }
-    throw error;
+    const message = error?.message ? String(error.message) : String(error);
+    throw new Error(
+      `Failed to list review threads for ${params.owner}/${params.repo}#${params.pull_number} (status ${status ?? "unknown"}): ${message}`,
+      { cause: error }
+    );
   }
 }
