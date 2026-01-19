@@ -26,6 +26,20 @@ interface ReviewToolDeps {
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById } = buildThreadIndex(deps.reviewThreads);
+  const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
+    name: "list_threads_for_location",
+    label: "List review threads for location",
+    description: "List existing review threads for a file/line (optionally filtered by side).",
+    parameters: ListThreadsSchema,
+    execute: async (_id, params) => {
+      const side = params.side as "LEFT" | "RIGHT" | undefined;
+      const threads = findThreadsAtLocation(threadsByLocation, params.path, params.line, side);
+      return {
+        content: [{ type: "text", text: JSON.stringify(threads, null, 2) }],
+        details: { threads },
+      };
+    },
+  };
 
   const commentTool: AgentTool<typeof CommentSchema, { id: number }> = {
     name: "comment",
@@ -284,7 +298,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [commentTool, suggestTool, replyTool, summaryTool];
+  return [listThreadsTool, commentTool, suggestTool, replyTool, summaryTool];
 }
 
 const CommentSchema = Type.Object({
@@ -304,6 +318,12 @@ const SuggestSchema = Type.Object({
   allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
   comment: Type.Optional(Type.String({ description: "Optional comment before suggestion" })),
   suggestion: Type.String({ description: "Replacement code for suggestion block" }),
+});
+
+const ListThreadsSchema = Type.Object({
+  path: Type.String({ description: "File path" }),
+  line: Type.Integer({ minimum: 1 }),
+  side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
 });
 
 const SummarySchema = Type.Object({
@@ -378,8 +398,12 @@ function buildThreadIndex(threads: ReviewThreadInfo[]): {
 function findThreadsAtLocation(
   map: Map<string, ReviewThreadInfo[]>,
   path: string,
-  line: number
+  line: number,
+  side?: "LEFT" | "RIGHT"
 ): ReviewThreadInfo[] {
+  if (side) {
+    return map.get(`${path}:${line}:${side}`) ?? [];
+  }
   const right = map.get(`${path}:${line}:RIGHT`) ?? [];
   const left = map.get(`${path}:${line}:LEFT`) ?? [];
   return [...right, ...left];
@@ -393,7 +417,10 @@ function buildThreadAmbiguityResponse(
 ): { content: { type: "text"; text: string }[]; details: { id: number } } {
   const header = side
     ? `Multiple threads exist at ${path}:${line} for side ${side}.`
-    : `Threads exist at ${path}:${line}. Specify thread_id or side, or set allow_new_thread true to create a new thread.`;
+    : `Threads exist at ${path}:${line}. You must choose how to proceed.`;
+  const guidance = side
+    ? "Pick a thread_id from the list below to reply, OR set allow_new_thread=true to create a new thread."
+    : "Reply with thread_id, OR specify side (LEFT/RIGHT) to target a single thread, OR set allow_new_thread=true to create a new thread.";
   const formatted = threads
     .map(
       (thread) =>
@@ -401,7 +428,7 @@ function buildThreadAmbiguityResponse(
     )
     .join("\n");
   return {
-    content: [{ type: "text", text: `${header}\n${formatted}` }],
+    content: [{ type: "text", text: `${header}\n${guidance}\n${formatted}` }],
     details: { id: -1 },
   };
 }
