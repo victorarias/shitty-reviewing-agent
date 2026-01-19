@@ -3,9 +3,9 @@ import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
-import { buildSummaryMarkdown } from "./index.js";
-import { createGithubTools, createReadOnlyTools, createReviewTools, RateLimitError } from "./tools/index.js";
-import type { ChangedFile, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import { buildSummaryMarkdown } from "./summary.js";
+import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -15,6 +15,10 @@ export interface ReviewRunInput {
   octokit: Octokit;
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  existingComments: ExistingComment[];
+  reviewThreads: ReviewThreadInfo[];
+  lastReviewedSha?: string | null;
+  scopeWarning?: string | null;
 }
 
 export async function runReview(input: ReviewRunInput): Promise<void> {
@@ -57,7 +61,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     pullNumber: context.prNumber,
     headSha: input.prInfo.headSha,
     modelId: config.modelId,
+    reviewSha: input.prInfo.headSha,
     getBilling: () => summaryState.billing,
+    existingComments: input.existingComments,
+    reviewThreads: input.reviewThreads,
     onSummaryPosted: () => {
       summaryState.posted = true;
     },
@@ -69,8 +76,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       summaryState.suggestions += 1;
     },
   });
+  const webSearchTools = createWebSearchTool({
+    apiKey: config.apiKey,
+    modelId: config.modelId,
+    enabled: config.provider === "google",
+  });
 
-  const tools = [...readTools, ...githubTools, ...reviewTools];
+  const tools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
 
   const model = getModel(config.provider as any, config.modelId as any);
   const agent = new Agent({
@@ -140,6 +152,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     changedFiles: filteredFiles.map((f) => f.filename),
     maxFiles: config.maxFiles,
     ignorePatterns: config.ignorePatterns,
+    existingComments: input.existingComments.length,
+    lastReviewedSha: input.lastReviewedSha,
+    headSha: input.prInfo.headSha,
+    scopeWarning: input.scopeWarning ?? null,
   });
 
   let abortedByLimit = false;
@@ -169,6 +185,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         reason,
         model: config.modelId,
         billing: summaryState.billing,
+        reviewSha: input.prInfo.headSha,
       });
       throw error;
     }
@@ -188,6 +205,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       reason,
       model: config.modelId,
       billing: summaryState.billing,
+      reviewSha: input.prInfo.headSha,
     });
     return;
   }
@@ -206,6 +224,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       verdict,
       reason,
       billing: summaryState.billing,
+      reviewSha: input.prInfo.headSha,
     });
   }
 }
@@ -261,6 +280,7 @@ async function postFailureSummary(params: {
     total: number;
     cost: number;
   };
+  reviewSha: string;
 }): Promise<void> {
   await params.octokit.rest.issues.createComment({
     owner: params.owner,
@@ -273,6 +293,7 @@ async function postFailureSummary(params: {
       multiFileSuggestions: ["None"],
       model: params.model,
       billing: params.billing,
+      reviewSha: params.reviewSha,
     }),
   });
 }
@@ -291,6 +312,7 @@ async function postFallbackSummary(params: {
     total: number;
     cost: number;
   };
+  reviewSha: string;
 }): Promise<void> {
   await params.octokit.rest.issues.createComment({
     owner: params.owner,
@@ -303,6 +325,7 @@ async function postFallbackSummary(params: {
       multiFileSuggestions: ["None"],
       model: params.model,
       billing: params.billing,
+      reviewSha: params.reviewSha,
     }),
   });
 }

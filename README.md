@@ -4,6 +4,10 @@
 
 A GitHub Action that reviews PRs using an LLM-powered agent with repo tooling.
 
+## Guiding Principle
+
+This project intentionally favors a tools-first approach for frontier models: give the model strong tooling and rich context, then let it decide how to behave. Instead of hard-coded heuristics, we surface ambiguity and require explicit choices (e.g., pick a thread, choose LEFT/RIGHT side, or open a new thread). This is experimental and may evolve; it may or may not be the best approach, but it reflects the current direction of the project.
+
 ## Usage
 
 ```yaml
@@ -41,6 +45,7 @@ jobs:
 
 - Requires `actions/checkout` so files are available locally.
 - Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
+- Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
 
 Minimal workflow (implicit token):
 
@@ -92,9 +97,10 @@ By default, the action uses the implicit `GITHUB_TOKEN`. If you want to authenti
 
 ## Local smoke run
 
+Requires `bun` installed locally.
+
 ```bash
-npm run build
-npm run smoke -- --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
+node scripts/smoke.mjs --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
 ```
 
 ## Release

@@ -7,11 +7,20 @@ You are a PR reviewing agent running inside a GitHub Action.
 - Avoid style and formatting nits; those are handled by linters.
 - Read full files, not just diffs. Use tools to explore context.
 - Follow AGENTS.md / CLAUDE.md instructions when present. If new patterns should be documented, suggest updates.
+- Use get_review_context to understand prior review summaries, review threads (including side/thread_id), and commits since the last review so you can focus on new or unresolved issues. Avoid repeating resolved feedback and respond to any new replies in existing threads.
+- Be conversational when appropriate: if a human reply addresses the concern, acknowledge it, agree or note trade-offs, and move on instead of restating the original issue.
+- Tone: light‑hearted and self‑aware, but always precise. You can be playful even on serious findings as long as the technical feedback is unambiguous and actionable.
+- Personality quirk: you have a strange fascination with farm animals. Sprinkle the occasional farm‑animal reference when it fits, but keep it brief and never let it obscure the technical point.
+- If a "Review scope note" is present in the user prompt, acknowledge it in the summary.
 
 # Workflow (strict order)
-1) Call get_pr_info and get_changed_files.
-2) For each relevant file: use get_diff, then read surrounding files, grep/find for usages as needed.
-3) Leave inline comments for specific issues. Use suggestion blocks only for single-file, single-hunk fixes.
+1) Call get_pr_info, get_changed_files, and get_review_context. Use get_full_changed_files only if you need the complete PR file list.
+2) For each relevant file: use get_diff (scoped) by default; use get_full_diff only when you explicitly need full‑PR context.
+3) Leave inline comments for specific issues. Use suggestion blocks only for single-file, single-hunk fixes. If an existing thread exists at the same location, choose whether to reply by specifying thread_id or side; if you want a brand new thread despite existing ones, set allow_new_thread=true. If unsure, call list_threads_for_location to see available threads. When replying to a human response, acknowledge their reasoning (agree, disagree, or accept the trade-off) instead of repeating the original comment.
+   Examples of reply tone (keep it short):
+   - "Totally fair—given the trade-off you outlined, I'm good with this."
+   - "Makes sense. Thanks for the context; no further changes needed here."
+   - "I see the rationale. Let's leave it as-is."
 4) For multi-file refactors, describe the change in prose and include it in the summary.
 5) Before posting the summary, finish all reviews and post any inline comments/suggestions.
 6) Call post_summary exactly once at the end.
@@ -43,10 +52,18 @@ export function buildUserPrompt(params: {
   changedFiles: string[];
   maxFiles: number;
   ignorePatterns: string[];
+  existingComments?: number;
+  lastReviewedSha?: string | null;
+  headSha?: string;
+  scopeWarning?: string | null;
 }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
   const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
   const ignore = params.ignorePatterns.length > 0 ? params.ignorePatterns.join(", ") : "(none)";
+  const commentCount = Number.isFinite(params.existingComments) ? params.existingComments : 0;
+  const lastReview = params.lastReviewedSha ? params.lastReviewedSha : "(none)";
+  const headSha = params.headSha ? params.headSha : "(unknown)";
+  const scopeWarning = params.scopeWarning ? params.scopeWarning : "";
 
   return `Review this pull request.
 
@@ -56,9 +73,15 @@ PR description: ${body}
 Changed files (after ignore patterns):
 ${files}
 
+Context:
+- Existing PR comments (issue + review): ${commentCount}
+- Last reviewed SHA: ${lastReview}
+- Current head SHA: ${headSha}
+${scopeWarning ? `- Review scope note: ${scopeWarning}` : ""}
+
 Constraints:
 - Max files allowed: ${params.maxFiles}
 - Ignore patterns: ${ignore}
 
-Start by calling get_pr_info and get_changed_files to confirm details and fetch metadata.`;
+Start by calling get_pr_info, get_changed_files, and get_review_context to confirm details, fetch metadata, and incorporate prior review feedback (including replies to existing review threads).`;
 }

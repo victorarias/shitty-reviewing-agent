@@ -4,7 +4,9 @@ import { createAppAuth } from "@octokit/auth-app";
 import fs from "node:fs";
 import path from "node:path";
 import { runReview } from "./agent.js";
-import type { ChangedFile, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import { listReviewThreads } from "./github-api.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
+import { buildSummaryMarkdown } from "./summary.js";
 import { minimatch } from "minimatch";
 
 async function main(): Promise<void> {
@@ -17,12 +19,25 @@ async function main(): Promise<void> {
       core.info(`[debug] GitHub auth: ${authType}`);
     }
     const { prInfo, changedFiles } = await fetchPrData(octokit, context);
+    const { existingComments, reviewThreads } = await fetchExistingComments(octokit, context);
+    const lastReviewedSha = findLastReviewedSha(existingComments);
+    let scopeWarning: string | null = null;
+    const scopedResult = lastReviewedSha
+      ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha, changedFiles)
+      : { files: changedFiles, warning: null };
+    const scopedFiles = scopedResult.files;
+    scopeWarning = scopedResult.warning ?? null;
     if (config.debug) {
       core.info(`[debug] PR #${prInfo.number} ${prInfo.title}`);
       core.info(`[debug] Files in PR: ${changedFiles.length}`);
+      if (lastReviewedSha) {
+        core.info(`[debug] Last reviewed SHA: ${lastReviewedSha}`);
+        core.info(`[debug] Files since last review: ${scopedFiles.length}`);
+      }
+      core.info(`[debug] Existing comments: ${existingComments.length}`);
     }
 
-    const filtered = applyIgnorePatterns(changedFiles, config.ignorePatterns);
+    const filtered = applyIgnorePatterns(scopedFiles, config.ignorePatterns);
     if (filtered.length > config.maxFiles) {
       await postSkipSummary(octokit, context, config.modelId, filtered.length, config.maxFiles);
       return;
@@ -34,6 +49,10 @@ async function main(): Promise<void> {
       octokit,
       prInfo,
       changedFiles: filtered,
+      existingComments,
+      reviewThreads,
+      lastReviewedSha,
+      scopeWarning,
     });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -191,6 +210,144 @@ async function fetchPrData(octokit: ReturnType<typeof github.getOctokit>, contex
   return { prInfo, changedFiles };
 }
 
+async function fetchExistingComments(
+  octokit: ReturnType<typeof github.getOctokit>,
+  context: ReviewContext
+): Promise<{ existingComments: ExistingComment[]; reviewThreads: ReviewThreadInfo[] }> {
+  const [issueComments, reviewComments, reviewThreads] = await Promise.all([
+    octokit.paginate(octokit.rest.issues.listComments, {
+      owner: context.owner,
+      repo: context.repo,
+      issue_number: context.prNumber,
+      per_page: 100,
+    }),
+    octokit.paginate(octokit.rest.pulls.listReviewComments, {
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+      per_page: 100,
+    }),
+    listReviewThreads(octokit, {
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+    }),
+  ]);
+
+  const normalizedIssue = issueComments.map((comment) => ({
+    id: comment.id,
+    author: comment.user?.login ?? "unknown",
+    body: comment.body ?? "",
+    url: comment.html_url ?? "",
+    type: "issue" as const,
+    updatedAt: comment.updated_at ?? comment.created_at ?? "",
+  }));
+
+  const normalizedReview = reviewComments.map((comment) => ({
+    id: comment.id,
+    author: comment.user?.login ?? "unknown",
+    body: comment.body ?? "",
+    url: comment.html_url ?? "",
+    type: "review" as const,
+    path: comment.path ?? undefined,
+    line: comment.line ?? undefined,
+    side: comment.side ?? undefined,
+    inReplyToId: comment.in_reply_to_id ?? undefined,
+    updatedAt: comment.updated_at ?? comment.created_at ?? "",
+  }));
+
+  const normalizedThreads: ReviewThreadInfo[] = reviewThreads.map((thread: any) => {
+    const comments = Array.isArray(thread.comments) ? thread.comments : [];
+    const normalized = comments.map((comment: any) => ({
+      id: comment.id,
+      author: comment.user?.login ?? "unknown",
+      body: comment.body ?? "",
+      createdAt: comment.created_at ?? "",
+      updatedAt: comment.updated_at ?? comment.created_at ?? "",
+      url: comment.html_url ?? "",
+      side: comment.side ?? comment.start_side ?? undefined,
+    }));
+    const lastUpdatedAt =
+      [...normalized]
+        .map((item) => item.updatedAt)
+        .sort((a, b) => b.localeCompare(a))[0] ?? "";
+    const lastComment = [...normalized].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const rootComment = normalized[0];
+    const side = (thread.side ?? thread.start_side ?? rootComment?.side) as "LEFT" | "RIGHT" | undefined;
+    return {
+      id: thread.id,
+      path: thread.path ?? comments[0]?.path ?? "",
+      line: thread.line ?? comments[0]?.line ?? null,
+      side,
+      isOutdated: thread.is_outdated ?? false,
+      resolved: thread.resolved ?? false,
+      lastUpdatedAt,
+      lastActor: lastComment?.author ?? "unknown",
+      rootCommentId: rootComment?.id ?? null,
+      url: rootComment?.url ?? lastComment?.url ?? "",
+    };
+  });
+
+  return { existingComments: [...normalizedIssue, ...normalizedReview], reviewThreads: normalizedThreads };
+}
+
+function findLastReviewedSha(comments: ExistingComment[]): string | null {
+  const marker = "<!-- sri:last-reviewed-sha:";
+  const candidates = comments
+    .filter((comment) => comment.type === "issue" && comment.body.includes(marker))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  for (const comment of candidates) {
+    const match = comment.body.match(/<!--\\s*sri:last-reviewed-sha:([a-f0-9]{7,40})\\s*-->/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+async function fetchChangesSinceReview(
+  octokit: ReturnType<typeof github.getOctokit>,
+  context: ReviewContext,
+  baseSha: string,
+  headSha: string,
+  fallbackFiles: ChangedFile[]
+): Promise<{ files: ChangedFile[]; warning: string | null }> {
+  if (baseSha === headSha) {
+    return { files: [], warning: null };
+  }
+  try {
+    const comparison = await octokit.rest.repos.compareCommits({
+      owner: context.owner,
+      repo: context.repo,
+      base: baseSha,
+      head: headSha,
+    });
+    const files = comparison.data.files ?? [];
+    return {
+      files: files.map((file) => ({
+        filename: file.filename,
+        status: file.status as ChangedFile["status"],
+        additions: file.additions ?? 0,
+        deletions: file.deletions ?? 0,
+        changes: file.changes ?? 0,
+        patch: file.patch,
+        previous_filename: file.previous_filename,
+      })),
+      warning: null,
+    };
+  } catch (error: any) {
+    const status = error?.status ?? error?.response?.status;
+    if (status === 404) {
+      return {
+        files: fallbackFiles,
+        warning:
+          "Previous review SHA no longer exists (likely force-push/rebase). Falling back to full PR review.",
+      };
+    }
+    throw error;
+  }
+}
+
 function applyIgnorePatterns(files: ChangedFile[], patterns: string[]): ChangedFile[] {
   if (patterns.length === 0) return files;
   return files.filter((file) => !patterns.some((pattern) => minimatch(file.filename, pattern)));
@@ -217,40 +374,6 @@ async function postSkipSummary(
   });
 }
 
-export interface SummaryContent {
-  verdict: string;
-  issues: string[];
-  keyFindings: string[];
-  multiFileSuggestions: string[];
-  model: string;
-  billing?: {
-    input: number;
-    output: number;
-    total: number;
-    cost: number;
-  };
-}
-
-export function buildSummaryMarkdown(content: SummaryContent): string {
-  const billing = content.billing
-    ? `\n*Billing: input ${content.billing.input} • output ${content.billing.output} • total ${content.billing.total} • cost $${content.billing.cost.toFixed(6)}*`
-    : "";
-  const multiFile = renderOptionalSection("Multi-file Suggestions", content.multiFileSuggestions);
-  return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}`;
-}
-
-function renderList(items: string[]): string {
-  if (!items || items.length === 0) {
-    return "- None";
-  }
-  return items.map((item) => `- ${item}`).join("\n");
-}
-
-function renderOptionalSection(title: string, items: string[]): string {
-  if (!items || items.length === 0 || items.every((item) => item.trim().toLowerCase() === "none")) {
-    return "";
-  }
-  return `\n### ${title}\n\n${renderList(items)}\n`;
-}
+export { buildSummaryMarkdown } from "./summary.js";
 
 main();
