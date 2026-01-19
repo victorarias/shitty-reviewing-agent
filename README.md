@@ -4,6 +4,10 @@
 
 A GitHub Action that reviews PRs using an LLM-powered agent with repo tooling.
 
+## Guiding Principle
+
+This project intentionally favors a tools-first approach for frontier models: give the model strong tooling and rich context, then let it decide how to behave. Instead of hard-coded heuristics, we surface ambiguity and require explicit choices (e.g., pick a thread, choose LEFT/RIGHT side, or open a new thread). This is experimental and may evolve; it may or may not be the best approach, but it reflects the current direction of the project.
+
 ## Usage
 
 ```yaml
