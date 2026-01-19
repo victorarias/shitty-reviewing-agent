@@ -7,7 +7,7 @@ inputs:
     required: true
   api-key:
     description: "API key for the LLM provider"
-    required: true
+    required: false
   model:
     description: "Model to use (e.g., anthropic/claude-sonnet-4)"
     required: true
@@ -31,7 +31,7 @@ inputs:
     description: "Sampling temperature (0-2)"
     required: false
   app-id:
-    description: "GitHub App ID (use instead of GITHUB_TOKEN)"
+    description: "GitHub App ID (optional; default uses implicit GITHUB_TOKEN)"
     required: false
   app-installation-id:
     description: "GitHub App installation ID"

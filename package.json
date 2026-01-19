@@ -3,27 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "smoke": "node scripts/smoke.mjs",
-    "start": "node dist/index.js"
+    "start": "bun src/index.ts",
+    "test": "bun test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.0",
-    "@mariozechner/pi-ai": "^0.45.7",
-    "@mariozechner/pi-agent-core": "^0.45.7",
-    "@sinclair/typebox": "^0.34.0",
+    "@actions/github": "^7.0.0",
     "@google/genai": "^1.15.0",
+    "@mariozechner/pi-agent-core": "^0.45.7",
+    "@mariozechner/pi-ai": "^0.45.7",
     "@octokit/auth-app": "^7.0.0",
+    "@sinclair/typebox": "^0.34.0",
     "fast-glob": "^3.3.3",
     "minimatch": "^10.0.1"
   },
   "devDependencies": {
+    "@octokit/types": "^16.0.0",
     "@types/node": "^24.3.0",
     "typescript": "^5.7.3"
   }

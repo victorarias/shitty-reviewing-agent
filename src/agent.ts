@@ -3,9 +3,9 @@ import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
-import { buildSummaryMarkdown } from "./index.js";
+import { buildSummaryMarkdown } from "./summary.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -16,6 +16,7 @@ export interface ReviewRunInput {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
   existingComments: ExistingComment[];
+  reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
 }
 
@@ -61,6 +62,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     modelId: config.modelId,
     reviewSha: input.prInfo.headSha,
     getBilling: () => summaryState.billing,
+    existingComments: input.existingComments,
+    reviewThreads: input.reviewThreads,
     onSummaryPosted: () => {
       summaryState.posted = true;
     },
@@ -148,7 +151,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     changedFiles: filteredFiles.map((f) => f.filename),
     maxFiles: config.maxFiles,
     ignorePatterns: config.ignorePatterns,
-    existingComments: input.existingComments,
+    existingComments: input.existingComments.length,
     lastReviewedSha: input.lastReviewedSha,
     headSha: input.prInfo.headSha,
   });
@@ -190,11 +193,26 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log(`agent error: ${agent.state.error}`);
   }
 
+  if (!summaryState.posted && agent.state.error) {
+    const reason = deriveErrorReason(agent.state.error);
+    await postFailureSummary({
+      octokit,
+      owner: context.owner,
+      repo: context.repo,
+      prNumber: context.prNumber,
+      reason,
+      model: config.modelId,
+      billing: summaryState.billing,
+      reviewSha: input.prInfo.headSha,
+    });
+    return;
+  }
+
   if (!summaryState.posted) {
-    const verdict = summaryState.abortedByLimit ? "Skipped" : (summaryState.inlineComments + summaryState.suggestions > 0 ? "Request Changes" : "Approve");
+    const verdict = "Skipped";
     const reason = summaryState.abortedByLimit || abortedByLimit
       ? "Agent exceeded iteration limit before posting summary."
-      : "Agent finished without posting summary; posting fallback.";
+      : "Agent failed to produce a review summary.";
     await postFallbackSummary({
       octokit,
       owner: context.owner,
@@ -207,6 +225,17 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       reviewSha: input.prInfo.headSha,
     });
   }
+}
+
+function deriveErrorReason(message: string): string {
+  if (isQuotaError(message)) {
+    return "LLM quota exceeded or rate-limited; unable to generate a review. Check provider billing/limits.";
+  }
+  return "Agent encountered an error and failed to produce a review summary.";
+}
+
+function isQuotaError(message: string): boolean {
+  return /quota|resource_exhausted|rate limit|429/i.test(message);
 }
 
 function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): ChangedFile[] {

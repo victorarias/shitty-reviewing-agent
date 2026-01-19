@@ -46,5 +46,20 @@ export interface ExistingComment {
   type: "issue" | "review";
   path?: string;
   line?: number;
+  side?: "LEFT" | "RIGHT";
+  inReplyToId?: number;
   updatedAt: string;
+}
+
+export interface ReviewThreadInfo {
+  id: number;
+  path: string;
+  line: number | null;
+  side?: "LEFT" | "RIGHT";
+  isOutdated: boolean;
+  resolved: boolean;
+  lastUpdatedAt: string;
+  lastActor: string;
+  rootCommentId: number | null;
+  url: string;
 }
