@@ -3,7 +3,7 @@ import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
-import { buildSummaryMarkdown } from "./index.js";
+import { buildSummaryMarkdown } from "./summary.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
 
