@@ -4,6 +4,7 @@ import { createAppAuth } from "@octokit/auth-app";
 import fs from "node:fs";
 import path from "node:path";
 import { runReview } from "./agent.js";
+import { listReviewThreads } from "./github-api.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 import { buildSummaryMarkdown } from "./summary.js";
 import { minimatch } from "minimatch";
@@ -222,11 +223,10 @@ async function fetchExistingComments(
       pull_number: context.prNumber,
       per_page: 100,
     }),
-    octokit.paginate(octokit.rest.pulls.listReviewThreads, {
+    listReviewThreads(octokit, {
       owner: context.owner,
       repo: context.repo,
       pull_number: context.prNumber,
-      per_page: 100,
     }),
   ]);
 

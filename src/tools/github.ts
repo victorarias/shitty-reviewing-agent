@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import type { ChangedFile, PullRequestInfo } from "../types.js";
+import { listReviewThreads } from "../github-api.js";
 
 export class RateLimitError extends Error {
   constructor(message: string) {
@@ -163,11 +164,10 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         const lastReviewTime = parseTimestamp(lastReviewAt) ?? null;
 
         const reviewThreads = await safeOptional(async () => {
-          const threads = await deps.octokit.paginate(deps.octokit.rest.pulls.listReviewThreads, {
+          const threads = await listReviewThreads(deps.octokit, {
             owner: deps.owner,
             repo: deps.repo,
             pull_number: deps.pullNumber,
-            per_page: 100,
           });
           return threads.map((thread: any) => {
             const comments = Array.isArray(thread.comments) ? thread.comments : [];

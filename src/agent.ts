@@ -203,6 +203,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       reason,
       model: config.modelId,
       billing: summaryState.billing,
+      reviewSha: input.prInfo.headSha,
     });
     return;
   }
