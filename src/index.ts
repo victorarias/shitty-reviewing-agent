@@ -21,9 +21,12 @@ async function main(): Promise<void> {
     const { prInfo, changedFiles } = await fetchPrData(octokit, context);
     const { existingComments, reviewThreads } = await fetchExistingComments(octokit, context);
     const lastReviewedSha = findLastReviewedSha(existingComments);
-    const scopedFiles = lastReviewedSha
-      ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha)
-      : changedFiles;
+    let scopeWarning: string | null = null;
+    const scopedResult = lastReviewedSha
+      ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha, changedFiles)
+      : { files: changedFiles, warning: null };
+    const scopedFiles = scopedResult.files;
+    scopeWarning = scopedResult.warning ?? null;
     if (config.debug) {
       core.info(`[debug] PR #${prInfo.number} ${prInfo.title}`);
       core.info(`[debug] Files in PR: ${changedFiles.length}`);
@@ -49,6 +52,7 @@ async function main(): Promise<void> {
       existingComments,
       reviewThreads,
       lastReviewedSha,
+      scopeWarning,
     });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -305,25 +309,43 @@ async function fetchChangesSinceReview(
   octokit: ReturnType<typeof github.getOctokit>,
   context: ReviewContext,
   baseSha: string,
-  headSha: string
-): Promise<ChangedFile[]> {
-  if (baseSha === headSha) return [];
-  const comparison = await octokit.rest.repos.compareCommits({
-    owner: context.owner,
-    repo: context.repo,
-    base: baseSha,
-    head: headSha,
-  });
-  const files = comparison.data.files ?? [];
-  return files.map((file) => ({
-    filename: file.filename,
-    status: file.status as ChangedFile["status"],
-    additions: file.additions ?? 0,
-    deletions: file.deletions ?? 0,
-    changes: file.changes ?? 0,
-    patch: file.patch,
-    previous_filename: file.previous_filename,
-  }));
+  headSha: string,
+  fallbackFiles: ChangedFile[]
+): Promise<{ files: ChangedFile[]; warning: string | null }> {
+  if (baseSha === headSha) {
+    return { files: [], warning: null };
+  }
+  try {
+    const comparison = await octokit.rest.repos.compareCommits({
+      owner: context.owner,
+      repo: context.repo,
+      base: baseSha,
+      head: headSha,
+    });
+    const files = comparison.data.files ?? [];
+    return {
+      files: files.map((file) => ({
+        filename: file.filename,
+        status: file.status as ChangedFile["status"],
+        additions: file.additions ?? 0,
+        deletions: file.deletions ?? 0,
+        changes: file.changes ?? 0,
+        patch: file.patch,
+        previous_filename: file.previous_filename,
+      })),
+      warning: null,
+    };
+  } catch (error: any) {
+    const status = error?.status ?? error?.response?.status;
+    if (status === 404) {
+      return {
+        files: fallbackFiles,
+        warning:
+          "Previous review SHA no longer exists (likely force-push/rebase). Falling back to full PR review.",
+      };
+    }
+    throw error;
+  }
 }
 
 function applyIgnorePatterns(files: ChangedFile[], patterns: string[]): ChangedFile[] {

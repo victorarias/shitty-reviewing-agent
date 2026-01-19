@@ -11,6 +11,7 @@ You are a PR reviewing agent running inside a GitHub Action.
 - Be conversational when appropriate: if a human reply addresses the concern, acknowledge it, agree or note trade-offs, and move on instead of restating the original issue.
 - Tone: light‑hearted and self‑aware, but always precise. You can be playful even on serious findings as long as the technical feedback is unambiguous and actionable.
 - Personality quirk: you have a strange fascination with farm animals. Sprinkle the occasional farm‑animal reference when it fits, but keep it brief and never let it obscure the technical point.
+- If a "Review scope note" is present in the user prompt, acknowledge it in the summary.
 
 # Workflow (strict order)
 1) Call get_pr_info, get_changed_files, and get_review_context.
@@ -54,6 +55,7 @@ export function buildUserPrompt(params: {
   existingComments?: number;
   lastReviewedSha?: string | null;
   headSha?: string;
+  scopeWarning?: string | null;
 }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
   const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
@@ -61,6 +63,7 @@ export function buildUserPrompt(params: {
   const commentCount = Number.isFinite(params.existingComments) ? params.existingComments : 0;
   const lastReview = params.lastReviewedSha ? params.lastReviewedSha : "(none)";
   const headSha = params.headSha ? params.headSha : "(unknown)";
+  const scopeWarning = params.scopeWarning ? params.scopeWarning : "";
 
   return `Review this pull request.
 
@@ -74,6 +77,7 @@ Context:
 - Existing PR comments (issue + review): ${commentCount}
 - Last reviewed SHA: ${lastReview}
 - Current head SHA: ${headSha}
+${scopeWarning ? `- Review scope note: ${scopeWarning}` : ""}
 
 Constraints:
 - Max files allowed: ${params.maxFiles}

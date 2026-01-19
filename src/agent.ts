@@ -18,6 +18,7 @@ export interface ReviewRunInput {
   existingComments: ExistingComment[];
   reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
+  scopeWarning?: string | null;
 }
 
 export async function runReview(input: ReviewRunInput): Promise<void> {
@@ -154,6 +155,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     existingComments: input.existingComments.length,
     lastReviewedSha: input.lastReviewedSha,
     headSha: input.prInfo.headSha,
+    scopeWarning: input.scopeWarning ?? null,
   });
 
   let abortedByLimit = false;
