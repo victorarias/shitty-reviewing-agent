@@ -32,18 +32,34 @@ export async function listReviewThreads(
   params: { owner: string; repo: string; pull_number: number }
 ): Promise<ReviewThreadApi[]> {
   const request = octokit.request as RequestInterface;
-  const results: ReviewThreadApi[] = [];
-  let page = 1;
-  while (true) {
-    const response = await request("GET /repos/{owner}/{repo}/pulls/{pull_number}/threads", {
-      ...params,
-      per_page: 100,
-      page,
-    });
-    const data = response.data as ReviewThreadApi[];
-    results.push(...data);
-    if (data.length < 100) break;
-    page += 1;
+  try {
+    const results: ReviewThreadApi[] = [];
+    let page = 1;
+    while (true) {
+      const response = await request("GET /repos/{owner}/{repo}/pulls/{pull_number}/threads", {
+        ...params,
+        per_page: 100,
+        page,
+      });
+      const data = response.data as ReviewThreadApi[];
+      results.push(...data);
+      if (data.length < 100) break;
+      page += 1;
+    }
+    return results;
+  } catch (error: any) {
+    const status = error?.status ?? error?.response?.status;
+    if (status === 404) {
+      // Some repos/tokens do not have access to review threads; treat as unavailable.
+      console.warn(
+        `[warn] Unable to list review threads (404) for ${params.owner}/${params.repo}#${params.pull_number}; continuing without threads.`
+      );
+      return [];
+    }
+    const message = error?.message ? String(error.message) : String(error);
+    throw new Error(
+      `Failed to list review threads for ${params.owner}/${params.repo}#${params.pull_number} (status ${status ?? "unknown"}): ${message}`,
+      { cause: error }
+    );
   }
-  return results;
 }
