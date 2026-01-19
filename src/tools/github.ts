@@ -21,6 +21,7 @@ interface GithubToolDeps {
   cache: {
     prInfo?: PullRequestInfo;
     changedFiles?: ChangedFile[];
+    fullChangedFiles?: ChangedFile[];
     reviewContext?: ReviewContextPayload;
   };
 }
@@ -64,7 +65,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
   const getChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
     name: "get_changed_files",
     label: "Get changed files",
-    description: "List files changed in the PR (path + status).",
+    description: "List files changed in the PR (path + status). Uses the scoped file list by default.",
     parameters: ChangedFilesSchema,
     execute: async () => {
       if (!deps.cache.changedFiles) {
@@ -94,10 +95,43 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
+  const getFullChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
+    name: "get_full_changed_files",
+    label: "Get full changed files",
+    description: "List all files changed in the PR (ignores scoped filtering).",
+    parameters: ChangedFilesSchema,
+    execute: async () => {
+      if (!deps.cache.fullChangedFiles) {
+        const files = await safeCall(() =>
+          deps.octokit.paginate(deps.octokit.rest.pulls.listFiles, {
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            per_page: 100,
+          })
+        );
+        deps.cache.fullChangedFiles = files.map((file) => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
+          changes: file.changes ?? 0,
+          patch: file.patch,
+          previous_filename: file.previous_filename,
+        }));
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(deps.cache.fullChangedFiles, null, 2) }],
+        details: { files: deps.cache.fullChangedFiles },
+      };
+    },
+  };
+
   const getDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
     name: "get_diff",
     label: "Get diff",
-    description: "Get diff for a specific file in the PR.",
+    description: "Get diff for a specific file in the PR (scoped by default).",
     parameters: DiffSchema,
     execute: async (_id, params) => {
       if (!deps.cache.changedFiles) {
@@ -121,6 +155,42 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
       }
 
       const match = deps.cache.changedFiles.find((file) => file.filename === params.path);
+      const patch = match?.patch;
+      const text = patch ? patch : "(no diff available - possibly binary or too large)";
+      return {
+        content: [{ type: "text", text }],
+        details: { path: params.path, patch },
+      };
+    },
+  };
+
+  const getFullDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
+    name: "get_full_diff",
+    label: "Get full diff",
+    description: "Get diff for a specific file using the full PR file list.",
+    parameters: DiffSchema,
+    execute: async (_id, params) => {
+      if (!deps.cache.fullChangedFiles) {
+        const files = await safeCall(() =>
+          deps.octokit.paginate(deps.octokit.rest.pulls.listFiles, {
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            per_page: 100,
+          })
+        );
+        deps.cache.fullChangedFiles = files.map((file) => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
+          changes: file.changes ?? 0,
+          patch: file.patch,
+          previous_filename: file.previous_filename,
+        }));
+      }
+
+      const match = deps.cache.fullChangedFiles.find((file) => file.filename === params.path);
       const patch = match?.patch;
       const text = patch ? patch : "(no diff available - possibly binary or too large)";
       return {
@@ -247,7 +317,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [getPrInfo, getChangedFiles, getDiff, getReviewContext];
+  return [getPrInfo, getChangedFiles, getFullChangedFiles, getDiff, getFullDiff, getReviewContext];
 }
 
 const PrInfoSchema = Type.Object({});
