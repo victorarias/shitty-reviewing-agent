@@ -55,7 +55,7 @@ async function main(): Promise<void> {
 function readConfig(): ReviewConfig {
   const providerRaw = core.getInput("provider", { required: true });
   const provider = normalizeProvider(providerRaw);
-  const apiKey = core.getInput("api-key", { required: true });
+  const apiKey = core.getInput("api-key");
   const modelId = core.getInput("model", { required: true });
   const maxFilesRaw = core.getInput("max-files") || "50";
   const debugRaw = core.getInput("debug") || "false";
@@ -83,10 +83,13 @@ function readConfig(): ReviewConfig {
   if (!fs.existsSync(gitDir)) {
     throw new Error("Checkout missing. Ensure actions/checkout ran before this action.");
   }
+  if (!apiKey && provider !== "google-vertex") {
+    throw new Error("api-key is required for this provider. For Vertex AI, omit api-key and use ADC.");
+  }
 
   return {
     provider,
-    apiKey,
+    apiKey: apiKey || "",
     modelId,
     maxFiles,
     ignorePatterns,
@@ -115,6 +118,9 @@ function normalizeProvider(value: string): string {
   const lowered = value.trim().toLowerCase();
   if (lowered === "gemini") {
     return "google";
+  }
+  if (lowered === "vertex" || lowered === "vertexai" || lowered === "vertex-ai") {
+    return "google-vertex";
   }
   return value.trim();
 }

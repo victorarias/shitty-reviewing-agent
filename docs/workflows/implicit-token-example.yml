@@ -1,0 +1,20 @@
+name: PR Review (Implicit Token)
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+        with:
+          provider: google
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-3-pro-preview
+          reasoning: medium

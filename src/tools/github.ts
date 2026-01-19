@@ -20,6 +20,7 @@ interface GithubToolDeps {
   cache: {
     prInfo?: PullRequestInfo;
     changedFiles?: ChangedFile[];
+    reviewContext?: ReviewContextPayload;
   };
 }
 
@@ -128,14 +129,111 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [getPrInfo, getChangedFiles, getDiff];
+  const getReviewContext: AgentTool<typeof ReviewContextSchema, ReviewContextPayload> = {
+    name: "get_review_context",
+    label: "Get review context",
+    description: "Get prior review summaries and commits since the last review summary.",
+    parameters: ReviewContextSchema,
+    execute: async () => {
+      if (!deps.cache.reviewContext) {
+        const comments = await safeCall(() =>
+          deps.octokit.paginate(deps.octokit.rest.issues.listComments, {
+            owner: deps.owner,
+            repo: deps.repo,
+            issue_number: deps.pullNumber,
+            per_page: 100,
+          })
+        );
+
+        const summaries = comments
+          .filter((comment) => comment.body?.includes("Reviewed by shitty-reviewing-agent"))
+          .map((comment) => ({
+            id: comment.id,
+            author: comment.user?.login ?? "unknown",
+            createdAt: comment.created_at ?? "",
+            url: comment.html_url ?? "",
+            body: comment.body ?? "",
+            timestamp: parseTimestamp(comment.created_at ?? ""),
+          }))
+          .filter((summary) => summary.timestamp !== null)
+          .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+          .map(({ timestamp, ...summary }) => summary);
+
+        const lastReviewAt = summaries.length > 0 ? summaries[0].createdAt : null;
+
+        let commitsSinceLastReview: ReviewContextPayload["commitsSinceLastReview"] = [];
+        if (lastReviewAt) {
+          const commits = await safeCall(() =>
+            deps.octokit.paginate(deps.octokit.rest.pulls.listCommits, {
+              owner: deps.owner,
+              repo: deps.repo,
+              pull_number: deps.pullNumber,
+              per_page: 100,
+            })
+          );
+          const lastReviewTime = parseTimestamp(lastReviewAt) ?? 0;
+          commitsSinceLastReview = commits
+            .map((commit) => ({
+              sha: commit.sha,
+              message: commit.commit?.message ?? "",
+              author: commit.author?.login ?? commit.commit?.author?.name ?? "unknown",
+              date: commit.commit?.author?.date ?? commit.commit?.committer?.date ?? "",
+              url: commit.html_url ?? "",
+            }))
+            .filter((commit) => {
+              const commitTime = parseTimestamp(commit.date);
+              if (commitTime === null) return false;
+              return commitTime > lastReviewTime;
+            });
+        }
+
+        deps.cache.reviewContext = {
+          lastReviewAt,
+          previousSummaries: summaries,
+          commitsSinceLastReview,
+        };
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(deps.cache.reviewContext, null, 2) }],
+        details: deps.cache.reviewContext,
+      };
+    },
+  };
+
+  return [getPrInfo, getChangedFiles, getDiff, getReviewContext];
 }
 
 const PrInfoSchema = Type.Object({});
 const ChangedFilesSchema = Type.Object({});
+const ReviewContextSchema = Type.Object({});
 const DiffSchema = Type.Object({
   path: Type.String({ description: "File path relative to repo root" }),
 });
+
+interface ReviewContextPayload {
+  lastReviewAt: string | null;
+  previousSummaries: Array<{
+    id: number;
+    author: string;
+    createdAt: string;
+    url: string;
+    body: string;
+  }>;
+  commitsSinceLastReview: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+    url: string;
+  }>;
+}
+
+function parseTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
 
 async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
   try {

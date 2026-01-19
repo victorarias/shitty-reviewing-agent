@@ -26,8 +26,8 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). `gemini` is accepted as an alias for `google`.
-- `api-key` (required): API key for the provider
+- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). `gemini` is accepted as an alias for `google`. `vertex`/`vertex-ai` map to `google-vertex`.
+- `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
 - `model` (required): Model name
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
 - `ignore-patterns` (optional, default `*.lock,*.generated.*`): Comma-separated globs to skip
@@ -40,7 +40,27 @@ jobs:
 ## Notes
 
 - Requires `actions/checkout` so files are available locally.
-- Uses `GITHUB_TOKEN` for PR metadata and comments.
+- Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
+
+Minimal workflow (implicit token):
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+        with:
+          provider: google
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-3-pro-preview
+          reasoning: medium
+```
 
 ## Reasoning & temperature
 
@@ -54,9 +74,9 @@ jobs:
     temperature: "0.2"
 ```
 
-## GitHub App auth (experimental)
+## GitHub App auth (optional)
 
-If you want to authenticate as a GitHub App instead of using `GITHUB_TOKEN`, **create your own GitHub App** and use *your* App ID, Installation ID, and private key.
+By default, the action uses the implicit `GITHUB_TOKEN`. If you want to authenticate as a GitHub App instead, **create your own GitHub App** and use *your* App ID, Installation ID, and private key.
 
 ```yaml
 - uses: ghcr.io/yourname/shitty-reviewing-agent:latest
