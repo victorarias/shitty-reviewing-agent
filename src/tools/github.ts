@@ -178,6 +178,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
               createdAt: comment.created_at ?? "",
               updatedAt: comment.updated_at ?? comment.created_at ?? "",
               url: comment.html_url ?? "",
+              side: comment.side ?? comment.start_side ?? undefined,
             }));
             const lastUpdatedAt =
               [...normalized]
@@ -185,16 +186,21 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
                 .sort((a, b) => b.localeCompare(a))[0] ?? "";
             const lastComment = [...normalized].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
             const lastActivityTime = parseTimestamp(lastUpdatedAt);
+            const rootComment = normalized[0];
+            const side = (thread.side ?? thread.start_side ?? rootComment?.side) as "LEFT" | "RIGHT" | undefined;
             return {
               id: thread.id,
               path: thread.path ?? comments[0]?.path ?? "",
               line: thread.line ?? comments[0]?.line ?? null,
+              side,
               isOutdated: thread.is_outdated ?? false,
               resolved: thread.resolved ?? false,
               lastUpdatedAt,
               lastActor: lastComment?.author ?? "unknown",
               hasNewActivitySinceLastReview:
                 lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
+              rootCommentId: rootComment?.id ?? null,
+              url: rootComment?.url ?? lastComment?.url ?? "",
               comments: normalized,
             };
           });
@@ -264,11 +270,14 @@ interface ReviewContextPayload {
     id: number;
     path: string;
     line: number | null;
+    side?: "LEFT" | "RIGHT";
     isOutdated: boolean;
     resolved: boolean;
     lastUpdatedAt: string;
     lastActor: string;
     hasNewActivitySinceLastReview: boolean;
+    rootCommentId: number | null;
+    url: string;
     comments: Array<{
       id: number;
       author: string;
@@ -276,6 +285,7 @@ interface ReviewContextPayload {
       createdAt: string;
       updatedAt: string;
       url: string;
+      side?: "LEFT" | "RIGHT";
     }>;
   }>;
   commitsSinceLastReview: Array<{

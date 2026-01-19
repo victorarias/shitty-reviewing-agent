@@ -4,7 +4,7 @@ import { createAppAuth } from "@octokit/auth-app";
 import fs from "node:fs";
 import path from "node:path";
 import { runReview } from "./agent.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 import { buildSummaryMarkdown } from "./summary.js";
 import { minimatch } from "minimatch";
 
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
       core.info(`[debug] GitHub auth: ${authType}`);
     }
     const { prInfo, changedFiles } = await fetchPrData(octokit, context);
-    const existingComments = await fetchExistingComments(octokit, context);
+    const { existingComments, reviewThreads } = await fetchExistingComments(octokit, context);
     const lastReviewedSha = findLastReviewedSha(existingComments);
     const scopedFiles = lastReviewedSha
       ? await fetchChangesSinceReview(octokit, context, lastReviewedSha, prInfo.headSha)
@@ -46,6 +46,7 @@ async function main(): Promise<void> {
       prInfo,
       changedFiles: filtered,
       existingComments,
+      reviewThreads,
       lastReviewedSha,
     });
   } catch (error: any) {
@@ -207,8 +208,8 @@ async function fetchPrData(octokit: ReturnType<typeof github.getOctokit>, contex
 async function fetchExistingComments(
   octokit: ReturnType<typeof github.getOctokit>,
   context: ReviewContext
-): Promise<ExistingComment[]> {
-  const [issueComments, reviewComments] = await Promise.all([
+): Promise<{ existingComments: ExistingComment[]; reviewThreads: ReviewThreadInfo[] }> {
+  const [issueComments, reviewComments, reviewThreads] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listComments, {
       owner: context.owner,
       repo: context.repo,
@@ -216,6 +217,12 @@ async function fetchExistingComments(
       per_page: 100,
     }),
     octokit.paginate(octokit.rest.pulls.listReviewComments, {
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+      per_page: 100,
+    }),
+    octokit.paginate(octokit.rest.pulls.listReviewThreads, {
       owner: context.owner,
       repo: context.repo,
       pull_number: context.prNumber,
@@ -240,11 +247,44 @@ async function fetchExistingComments(
     type: "review" as const,
     path: comment.path ?? undefined,
     line: comment.line ?? undefined,
+    side: comment.side ?? undefined,
     inReplyToId: comment.in_reply_to_id ?? undefined,
     updatedAt: comment.updated_at ?? comment.created_at ?? "",
   }));
 
-  return [...normalizedIssue, ...normalizedReview];
+  const normalizedThreads: ReviewThreadInfo[] = reviewThreads.map((thread: any) => {
+    const comments = Array.isArray(thread.comments) ? thread.comments : [];
+    const normalized = comments.map((comment: any) => ({
+      id: comment.id,
+      author: comment.user?.login ?? "unknown",
+      body: comment.body ?? "",
+      createdAt: comment.created_at ?? "",
+      updatedAt: comment.updated_at ?? comment.created_at ?? "",
+      url: comment.html_url ?? "",
+      side: comment.side ?? comment.start_side ?? undefined,
+    }));
+    const lastUpdatedAt =
+      [...normalized]
+        .map((item) => item.updatedAt)
+        .sort((a, b) => b.localeCompare(a))[0] ?? "";
+    const lastComment = [...normalized].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const rootComment = normalized[0];
+    const side = (thread.side ?? thread.start_side ?? rootComment?.side) as "LEFT" | "RIGHT" | undefined;
+    return {
+      id: thread.id,
+      path: thread.path ?? comments[0]?.path ?? "",
+      line: thread.line ?? comments[0]?.line ?? null,
+      side,
+      isOutdated: thread.is_outdated ?? false,
+      resolved: thread.resolved ?? false,
+      lastUpdatedAt,
+      lastActor: lastComment?.author ?? "unknown",
+      rootCommentId: rootComment?.id ?? null,
+      url: rootComment?.url ?? lastComment?.url ?? "",
+    };
+  });
+
+  return { existingComments: [...normalizedIssue, ...normalizedReview], reviewThreads: normalizedThreads };
 }
 
 function findLastReviewedSha(comments: ExistingComment[]): string | null {

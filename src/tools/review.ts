@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
-import type { ExistingComment } from "../types.js";
+import type { ExistingComment, ReviewThreadInfo } from "../types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -16,6 +16,7 @@ interface ReviewToolDeps {
   reviewSha: string;
   getBilling: () => { input: number; output: number; total: number; cost: number };
   existingComments: ExistingComment[];
+  reviewThreads: ReviewThreadInfo[];
   onSummaryPosted?: () => void;
   onInlineComment?: () => void;
   onSuggestion?: () => void;
@@ -24,6 +25,7 @@ interface ReviewToolDeps {
 
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
+  const { threadsByLocation, threadsById } = buildThreadIndex(deps.reviewThreads);
 
   const commentTool: AgentTool<typeof CommentSchema, { id: number }> = {
     name: "comment",
@@ -32,8 +34,66 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
-      if (existing) {
+      if (params.thread_id) {
+        const thread = threadsById.get(params.thread_id);
+        if (!thread?.rootCommentId) {
+          return {
+            content: [{ type: "text", text: `Thread ${params.thread_id} not found or missing root comment.` }],
+            details: { id: -1 },
+          };
+        }
+        const response = await safeCall(() =>
+          deps.octokit.rest.pulls.createReplyForReviewComment({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            comment_id: thread.rootCommentId,
+            body: params.body,
+          })
+        );
+        deps.onInlineComment?.();
+        return {
+          content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
+          details: { id: response.data.id },
+        };
+      }
+
+      const threadsAtLocation = findThreadsAtLocation(threadsByLocation, params.path, params.line);
+      if (threadsAtLocation.length > 0 && !params.allow_new_thread) {
+        if (!side) {
+          return buildThreadAmbiguityResponse(params.path, params.line, threadsAtLocation);
+        }
+        const sideThreads = threadsAtLocation.filter((thread) => thread.side === side);
+        if (sideThreads.length > 1) {
+          return buildThreadAmbiguityResponse(params.path, params.line, sideThreads, side);
+        }
+        if (sideThreads.length === 1) {
+          const thread = sideThreads[0];
+          if (thread.rootCommentId) {
+            const response = await safeCall(() =>
+              deps.octokit.rest.pulls.createReplyForReviewComment({
+                owner: deps.owner,
+                repo: deps.repo,
+                pull_number: deps.pullNumber,
+                comment_id: thread.rootCommentId,
+                body: params.body,
+              })
+            );
+            deps.onInlineComment?.();
+            return {
+              content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
+              details: { id: response.data.id },
+            };
+          }
+          return {
+            content: [{ type: "text", text: `Thread ${thread.id} missing root comment; choose another thread or open a new one.` }],
+            details: { id: -1 },
+          };
+        }
+      }
+
+      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line, side);
+      if (existing && !params.allow_new_thread) {
         const response = await safeCall(() =>
           deps.octokit.rest.pulls.createReplyForReviewComment({
             owner: deps.owner,
@@ -77,8 +137,66 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const body = wrapSuggestion(params.suggestion, params.comment);
-      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
-      if (existing) {
+      if (params.thread_id) {
+        const thread = threadsById.get(params.thread_id);
+        if (!thread?.rootCommentId) {
+          return {
+            content: [{ type: "text", text: `Thread ${params.thread_id} not found or missing root comment.` }],
+            details: { id: -1 },
+          };
+        }
+        const response = await safeCall(() =>
+          deps.octokit.rest.pulls.createReplyForReviewComment({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.pullNumber,
+            comment_id: thread.rootCommentId,
+            body,
+          })
+        );
+        deps.onSuggestion?.();
+        return {
+          content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
+          details: { id: response.data.id },
+        };
+      }
+
+      const threadsAtLocation = findThreadsAtLocation(threadsByLocation, params.path, params.line);
+      if (threadsAtLocation.length > 0 && !params.allow_new_thread) {
+        if (!side) {
+          return buildThreadAmbiguityResponse(params.path, params.line, threadsAtLocation);
+        }
+        const sideThreads = threadsAtLocation.filter((thread) => thread.side === side);
+        if (sideThreads.length > 1) {
+          return buildThreadAmbiguityResponse(params.path, params.line, sideThreads, side);
+        }
+        if (sideThreads.length === 1) {
+          const thread = sideThreads[0];
+          if (thread.rootCommentId) {
+            const response = await safeCall(() =>
+              deps.octokit.rest.pulls.createReplyForReviewComment({
+                owner: deps.owner,
+                repo: deps.repo,
+                pull_number: deps.pullNumber,
+                comment_id: thread.rootCommentId,
+                body,
+              })
+            );
+            deps.onSuggestion?.();
+            return {
+              content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
+              details: { id: response.data.id },
+            };
+          }
+          return {
+            content: [{ type: "text", text: `Thread ${thread.id} missing root comment; choose another thread or open a new one.` }],
+            details: { id: -1 },
+          };
+        }
+      }
+
+      const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line, side);
+      if (existing && !params.allow_new_thread) {
         const response = await safeCall(() =>
           deps.octokit.rest.pulls.createReplyForReviewComment({
             owner: deps.owner,
@@ -173,6 +291,8 @@ const CommentSchema = Type.Object({
   path: Type.String({ description: "File path" }),
   line: Type.Integer({ minimum: 1 }),
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
+  thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
+  allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
   body: Type.String({ description: "Markdown body" }),
 });
 
@@ -180,6 +300,8 @@ const SuggestSchema = Type.Object({
   path: Type.String({ description: "File path" }),
   line: Type.Integer({ minimum: 1 }),
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
+  thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
+  allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
   comment: Type.Optional(Type.String({ description: "Optional comment before suggestion" })),
   suggestion: Type.String({ description: "Replacement code for suggestion block" }),
 });
@@ -212,7 +334,7 @@ function buildLocationIndex(comments: ExistingComment[]): {
       activity.set(rootId, comment.updatedAt);
     }
     if (comment.inReplyToId) continue;
-    const key = `${comment.path}:${comment.line}`;
+    const key = `${comment.path}:${comment.line}:${comment.side ?? "RIGHT"}`;
     const list = map.get(key) ?? [];
     list.push(comment);
     map.set(key, list);
@@ -224,15 +346,64 @@ function findLatestLocation(
   map: Map<string, ExistingComment[]>,
   activity: Map<number, string>,
   path: string,
-  line: number
+  line: number,
+  side?: "LEFT" | "RIGHT"
 ): ExistingComment | undefined {
-  const list = map.get(`${path}:${line}`);
+  const list = side ? map.get(`${path}:${line}:${side}`) : map.get(`${path}:${line}:RIGHT`) ?? map.get(`${path}:${line}:LEFT`);
   if (!list || list.length === 0) return undefined;
   return [...list].sort((a, b) => {
     const aActivity = activity.get(a.id) ?? a.updatedAt;
     const bActivity = activity.get(b.id) ?? b.updatedAt;
     return bActivity.localeCompare(aActivity);
   })[0];
+}
+
+function buildThreadIndex(threads: ReviewThreadInfo[]): {
+  threadsByLocation: Map<string, ReviewThreadInfo[]>;
+  threadsById: Map<number, ReviewThreadInfo>;
+} {
+  const byLocation = new Map<string, ReviewThreadInfo[]>();
+  const byId = new Map<number, ReviewThreadInfo>();
+  for (const thread of threads) {
+    if (!thread.path || thread.line === null) continue;
+    byId.set(thread.id, thread);
+    const key = `${thread.path}:${thread.line}:${thread.side ?? "RIGHT"}`;
+    const list = byLocation.get(key) ?? [];
+    list.push(thread);
+    byLocation.set(key, list);
+  }
+  return { threadsByLocation: byLocation, threadsById: byId };
+}
+
+function findThreadsAtLocation(
+  map: Map<string, ReviewThreadInfo[]>,
+  path: string,
+  line: number
+): ReviewThreadInfo[] {
+  const right = map.get(`${path}:${line}:RIGHT`) ?? [];
+  const left = map.get(`${path}:${line}:LEFT`) ?? [];
+  return [...right, ...left];
+}
+
+function buildThreadAmbiguityResponse(
+  path: string,
+  line: number,
+  threads: ReviewThreadInfo[],
+  side?: "LEFT" | "RIGHT"
+): { content: { type: "text"; text: string }[]; details: { id: number } } {
+  const header = side
+    ? `Multiple threads exist at ${path}:${line} for side ${side}.`
+    : `Threads exist at ${path}:${line}. Specify thread_id or side, or set allow_new_thread true to create a new thread.`;
+  const formatted = threads
+    .map(
+      (thread) =>
+        `- thread_id=${thread.id} root_comment_id=${thread.rootCommentId ?? "unknown"} side=${thread.side ?? "unknown"} resolved=${thread.resolved} outdated=${thread.isOutdated} last=${thread.lastUpdatedAt} actor=${thread.lastActor}`
+    )
+    .join("\n");
+  return {
+    content: [{ type: "text", text: `${header}\n${formatted}` }],
+    details: { id: -1 },
+  };
 }
 function ensureSummaryFooter(
   body: string,

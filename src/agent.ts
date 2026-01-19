@@ -5,7 +5,7 @@ import type { getOctokit } from "@actions/github";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { buildSummaryMarkdown } from "./summary.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext } from "./types.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -16,6 +16,7 @@ export interface ReviewRunInput {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
   existingComments: ExistingComment[];
+  reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
 }
 
@@ -62,6 +63,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     reviewSha: input.prInfo.headSha,
     getBilling: () => summaryState.billing,
     existingComments: input.existingComments,
+    reviewThreads: input.reviewThreads,
     onSummaryPosted: () => {
       summaryState.posted = true;
     },
