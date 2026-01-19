@@ -3,7 +3,6 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
 import type { ExistingComment } from "../types.js";
-import crypto from "node:crypto";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -24,14 +23,7 @@ interface ReviewToolDeps {
 }
 
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
-  const postedKeys = new Set<string>();
-  const existingKeys = new Set<string>();
   const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
-  for (const comment of deps.existingComments) {
-    if (comment.type === "review" && comment.path && comment.line && !comment.inReplyToId) {
-      existingKeys.add(hashKey(comment.path, comment.line, comment.body));
-    }
-  }
 
   const commentTool: AgentTool<typeof CommentSchema, { id: number }> = {
     name: "comment",
@@ -40,13 +32,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const key = hashKey(params.path, params.line, params.body);
-      if (postedKeys.has(key) || existingKeys.has(key)) {
-        return {
-          content: [{ type: "text", text: "Duplicate comment skipped." }],
-          details: { id: -1 },
-        };
-      }
       const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
       if (existing) {
         const response = await safeCall(() =>
@@ -58,7 +43,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
             body: params.body,
           })
         );
-        postedKeys.add(key);
         deps.onInlineComment?.();
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
@@ -77,7 +61,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           body: params.body,
         })
       );
-      postedKeys.add(key);
       deps.onInlineComment?.();
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
@@ -94,13 +77,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const body = wrapSuggestion(params.suggestion, params.comment);
-      const key = hashKey(params.path, params.line, body);
-      if (postedKeys.has(key) || existingKeys.has(key)) {
-        return {
-          content: [{ type: "text", text: "Duplicate suggestion skipped." }],
-          details: { id: -1 },
-        };
-      }
       const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line);
       if (existing) {
         const response = await safeCall(() =>
@@ -112,7 +88,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
             body,
           })
         );
-        postedKeys.add(key);
         deps.onSuggestion?.();
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
@@ -131,7 +106,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           body,
         })
       );
-      postedKeys.add(key);
       deps.onSuggestion?.();
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
@@ -222,16 +196,6 @@ const ReplySchema = Type.Object({
 function wrapSuggestion(suggestion: string, comment?: string): string {
   const prefix = comment?.trim() ? `${comment.trim()}\n\n` : "";
   return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
-}
-
-function normalizeBody(body: string): string {
-  return body.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function hashKey(path: string, line: number, body: string): string {
-  const hash = crypto.createHash("sha256");
-  hash.update(`${path}:${line}:${normalizeBody(body)}`);
-  return hash.digest("hex");
 }
 
 function buildLocationIndex(comments: ExistingComment[]): {

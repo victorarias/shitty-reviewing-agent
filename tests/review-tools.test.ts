@@ -106,44 +106,6 @@ test("comment tool falls back to new comment when no thread", async () => {
   expect(calls[0].type).toBe("comment");
 });
 
-test("comment tool skips duplicates", async () => {
-  const existingComments: ExistingComment[] = [
-    {
-      id: 1,
-      author: "alice",
-      body: "Duplicate",
-      url: "https://example.com/1",
-      type: "review",
-      path: "src/index.ts",
-      line: 10,
-      updatedAt: "2026-01-01T00:00:00Z",
-    },
-  ];
-
-  const { octokit, calls } = makeOctokitSpy();
-  const tools = createReviewTools({
-    octokit: octokit as any,
-    owner: "o",
-    repo: "r",
-    pullNumber: 1,
-    headSha: "sha",
-    modelId: "model",
-    reviewSha: "sha",
-    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
-    existingComments,
-  });
-
-  const commentTool = getTool(tools, "comment");
-  const result = await commentTool.execute("", {
-    path: "src/index.ts",
-    line: 10,
-    body: "Duplicate",
-  });
-
-  expect(calls.length).toBe(0);
-  expect(result.details.id).toBe(-1);
-});
-
 test("comment tool prefers thread with most recent activity", async () => {
   const existingComments: ExistingComment[] = [
     {
