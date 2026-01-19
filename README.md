@@ -67,6 +67,22 @@ jobs:
           reasoning: medium
 ```
 
+## Gemini 3 Pro Recommendations
+
+Prompts are optimized for Gemini 3 Pro. Recommendations:
+
+- **Temperature**: Leave at default (1.0). Lower values may cause looping or degraded behavior.
+- **Reasoning**: Use `medium` or higher for complex PRs. Gemini 3 maps `off/minimal/low` → `low` and `medium/high/xhigh` → `high` internally.
+
+```yaml
+- uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+  with:
+    provider: google
+    api-key: ${{ secrets.GEMINI_API_KEY }}
+    model: gemini-3-pro-preview
+    reasoning: medium  # recommended for thorough reviews
+```
+
 ## Reasoning & temperature
 
 ```yaml
@@ -76,7 +92,6 @@ jobs:
     api-key: ${{ secrets.GEMINI_API_KEY }}
     model: gemini-3-pro-preview
     reasoning: medium
-    temperature: "0.2"
 ```
 
 ## GitHub App auth (optional)
