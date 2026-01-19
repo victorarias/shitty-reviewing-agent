@@ -1,10 +1,10 @@
-FROM oven/bun:1.1
+FROM node:20-slim
 
 WORKDIR /app
 
 COPY package.json tsconfig.json ./
 COPY src ./src
 
-RUN bun install --production
+RUN npm install && npm run build && npm prune --omit=dev
 
-ENTRYPOINT ["bun", "src/index.ts"]
+ENTRYPOINT ["node", "/app/dist/index.js"]
