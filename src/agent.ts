@@ -1,7 +1,12 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
+import type { Usage } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { buildSummaryMarkdown } from "./summary.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "./tools/index.js";
@@ -147,7 +152,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       }),
   });
 
-  const maxIterations = calculateMaxIterations(model, config.maxFiles);
+  const maxIterations = 10 + config.maxFiles * 5;
   let toolExecutions = 0;
 
   agent.subscribe((event) => {
@@ -155,8 +160,6 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       toolExecutions += 1;
       if (summaryState.posted) {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
-        agent.abort();
-        return;
       }
       log(`tool start: ${event.toolName}`, event.args ?? "");
       if (toolExecutions >= maxIterations) {
@@ -166,10 +169,6 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
-      if (event.toolName === "post_summary") {
-        agent.abort();
-        return;
-      }
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
@@ -208,10 +207,31 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
 
   const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
   log(`filtered files: ${filteredFiles.length}`);
+  const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
+  const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
+  const sequenceDiagram = await maybeGenerateSequenceDiagram({
+    enabled: directoryCount > 3,
+    model,
+    tools: [...readTools, ...githubTools],
+    config,
+    prInfo: input.prInfo,
+    changedFiles: filteredFiles,
+    effectiveThinkingLevel,
+    effectiveTemperature,
+    log,
+    onBilling: (usage) => {
+      const cost = calculateCost(model, usage);
+      summaryState.billing.input += usage.input;
+      summaryState.billing.output += usage.output;
+      summaryState.billing.total += usage.totalTokens;
+      summaryState.billing.cost += cost.total;
+    },
+  });
   const userPrompt = buildUserPrompt({
     prTitle: input.prInfo.title,
     prBody: input.prInfo.body,
     changedFiles: filteredFiles.map((f) => f.filename),
+    directoryCount,
     maxFiles: config.maxFiles,
     ignorePatterns: config.ignorePatterns,
     existingComments: input.existingComments.length,
@@ -222,6 +242,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     previousReviewUrl: input.previousReviewUrl ?? null,
     previousReviewAt: input.previousReviewAt ?? null,
     previousReviewBody: input.previousReviewBody ?? null,
+    sequenceDiagram,
   });
 
   let abortedByLimit = false;
@@ -319,17 +340,174 @@ function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): Cha
   return files.filter((file) => !ignorePatterns.some((pattern) => minimatch(file.filename, pattern)));
 }
 
-function calculateMaxIterations(model: ReturnType<typeof getModel>, fileCount: number): number {
-  const baseIterations = 10;
-  const perFileIterations = 5;
-  let multiplier = 1.0;
-  if (model.provider === "google" && isGemini3(model.id)) {
-    multiplier *= 1.2;
+const execFileAsync = promisify(execFile);
+const generatedCache = new Map<string, boolean>();
+
+export async function filterDiagramFiles(files: ChangedFile[], repoRoot: string): Promise<ChangedFile[]> {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      if (isTestPath(file.filename)) return null;
+      const isGenerated = await isGeneratedPath(repoRoot, file.filename);
+      if (isGenerated) return null;
+      return file;
+    })
+  );
+  return results.filter(Boolean) as ChangedFile[];
+}
+
+export function isTestPath(file: string): boolean {
+  const patterns = [
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*_test.*",
+    "**/*-test.*",
+  ];
+  return patterns.some((pattern) => minimatch(file, pattern));
+}
+
+export async function isGeneratedPath(repoRoot: string, file: string): Promise<boolean> {
+  const cached = generatedCache.get(file);
+  if (cached !== undefined) return cached;
+  try {
+    const { stdout } = await execFileAsync("git", ["check-attr", "linguist-generated", "--", file], {
+      cwd: repoRoot,
+    });
+    const value = stdout.trim().split(":").pop()?.trim();
+    const isGenerated = value === "true" || value === "set";
+    generatedCache.set(file, isGenerated);
+    return isGenerated;
+  } catch {
+    generatedCache.set(file, false);
+    return false;
   }
-  if (model.contextWindow && model.contextWindow < 100_000) {
-    multiplier *= 1.1;
+}
+
+function countDistinctDirectories(files: string[]): number {
+  const dirs = new Set<string>();
+  for (const file of files) {
+    const dir = path.posix.dirname(file);
+    dirs.add(dir === "." ? "(root)" : dir);
   }
-  return Math.ceil((baseIterations + fileCount * perFileIterations) * multiplier);
+  return dirs.size;
+}
+
+async function maybeGenerateSequenceDiagram(params: {
+  enabled: boolean;
+  model: ReturnType<typeof getModel>;
+  tools: AgentTool<any>[];
+  config: ReviewConfig;
+  prInfo: PullRequestInfo;
+  changedFiles: ChangedFile[];
+  effectiveThinkingLevel: ThinkingLevel;
+  effectiveTemperature?: number;
+  log: (...args: unknown[]) => void;
+  onBilling?: (usage: Usage) => void;
+}): Promise<string | null> {
+  if (!params.enabled) return null;
+
+  const diagramAgent = new Agent({
+    initialState: {
+      systemPrompt: buildDiagramSystemPrompt(),
+      model: params.model,
+      tools: params.tools,
+      messages: [],
+      thinkingLevel: params.effectiveThinkingLevel,
+    },
+    getApiKey: () => params.config.apiKey,
+    streamFn: (modelArg, context, options) =>
+      streamSimple(modelArg, context, {
+        ...options,
+        temperature: params.effectiveTemperature ?? options.temperature,
+      }),
+  });
+  diagramAgent.subscribe((event) => {
+    if (event.type === "message_end" && event.message.role === "assistant" && event.message.usage) {
+      params.onBilling?.(event.message.usage);
+    }
+  });
+
+  const diagramPrompt = buildDiagramUserPrompt({
+    prTitle: params.prInfo.title,
+    prBody: params.prInfo.body,
+    changedFiles: params.changedFiles.map((file) => file.filename),
+  });
+
+  try {
+    await diagramAgent.prompt(diagramPrompt);
+    const text = extractAssistantText(diagramAgent.state.messages);
+    const diagram = normalizeMermaidDiagram(text);
+    if (!diagram) {
+      params.log("diagram agent produced no usable output");
+      return null;
+    }
+    return diagram;
+  } catch (error) {
+    params.log("diagram agent failed", error);
+    return null;
+  }
+}
+
+function buildDiagramSystemPrompt(): string {
+  return `# Role
+You generate a Mermaid sequence diagram for a pull request.
+
+# Constraints
+- Output Mermaid sequence diagram code only. Do not wrap in markdown fences or add commentary.
+- Start with "sequenceDiagram".
+- Keep it concise and focused on key interactions introduced or modified by the PR.
+
+# Workflow
+1) Read the PR context and changed files.
+2) Use get_diff and read to understand key interactions.
+3) Produce the sequence diagram code.`;
+}
+
+function buildDiagramUserPrompt(params: { prTitle: string; prBody: string; changedFiles: string[] }): string {
+  const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
+  const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
+  return `# PR Context
+PR title: ${params.prTitle}
+PR description: ${body}
+
+Changed files:
+${files}
+
+# Task
+Generate a mermaid sequence diagram (only the code, no fences). Use tools if needed.`;
+}
+
+function extractAssistantText(messages: any[]): string {
+  const lastAssistant = [...messages].reverse().find((msg) => msg?.role === "assistant");
+  if (!lastAssistant) return "";
+  const content = lastAssistant.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part?.type === "text" && typeof part?.text === "string")
+      .map((part) => part.text)
+      .join("");
+  }
+  return "";
+}
+
+function normalizeMermaidDiagram(text: string): string | null {
+  if (!text) return null;
+  let normalized = text.trim();
+  const fenced = normalized.match(/```mermaid\s*([\s\S]*?)```/i);
+  if (fenced) {
+    normalized = fenced[1].trim();
+  }
+  const sequenceIndex = normalized.indexOf("sequenceDiagram");
+  if (sequenceIndex > 0) {
+    normalized = normalized.slice(sequenceIndex);
+  }
+  if (!normalized.startsWith("sequenceDiagram")) {
+    return null;
+  }
+  return normalized;
 }
 
 async function withRetries(

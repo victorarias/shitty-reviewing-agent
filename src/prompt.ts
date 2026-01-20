@@ -49,6 +49,13 @@ Rules:
 - If there are no items for a section, write "- None" (except Multi-file Suggestions).
 - If there are no multi-file suggestions, omit the "Multi-file Suggestions" section entirely.
 - Preface: First review → "Here's my complete review of this PR." Follow-up → "Considering my initial review and the changes you made, here's what I found now:" (or similar).
+- If a prebuilt sequence diagram is provided in the user prompt, add it under a collapsible section like:
+  <details><summary>Sequence diagram</summary>
+  \`\`\`mermaid
+  sequenceDiagram
+  ...
+  \`\`\`
+  </details>
 
 # Style
 - Tone: precise but light-hearted. Technical feedback must be unambiguous and actionable.
@@ -60,6 +67,7 @@ export function buildUserPrompt(params: {
   prTitle: string;
   prBody: string;
   changedFiles: string[];
+  directoryCount?: number;
   maxFiles: number;
   ignorePatterns: string[];
   existingComments?: number;
@@ -70,6 +78,7 @@ export function buildUserPrompt(params: {
   previousReviewUrl?: string | null;
   previousReviewAt?: string | null;
   previousReviewBody?: string | null;
+  sequenceDiagram?: string | null;
 }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
   const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
@@ -82,6 +91,8 @@ export function buildUserPrompt(params: {
   const previousReviewAt = params.previousReviewAt ? params.previousReviewAt : "(unknown)";
   const previousReviewUrl = params.previousReviewUrl ? params.previousReviewUrl : "(unknown)";
   const previousReviewBody = params.previousReviewBody ? params.previousReviewBody : "";
+  const directoryCount = params.directoryCount ?? 0;
+  const hasSequenceDiagram = params.sequenceDiagram && params.sequenceDiagram.trim().length > 0;
 
   return `# PR Context
 PR title: ${params.prTitle}
@@ -94,6 +105,7 @@ Metadata:
 - Existing PR comments (issue + review): ${commentCount}
 - Last reviewed SHA: ${lastReview}
 - Current head SHA: ${headSha}
+- Distinct directories touched: ${directoryCount}
 ${scopeWarning ? `- Review scope note: ${scopeWarning}` : ""}
 
 # Previous Review
@@ -107,5 +119,9 @@ ${previousReviewBody ? `\nPrevious summary:\n${previousReviewBody}` : ""}
 - Ignore patterns: ${ignore}
 
 # Task
-Review this pull request. Start by calling get_pr_info, get_changed_files, and get_review_context.`;
+Review this pull request. Start by calling get_pr_info, get_changed_files, and get_review_context.
+${hasSequenceDiagram ? "Include the provided sequence diagram in the summary under a collapsible Details section." : ""}` +
+    (hasSequenceDiagram
+      ? `\n\n# Prebuilt Diagram\n${params.sequenceDiagram?.trim()}\n`
+      : "");
 }
