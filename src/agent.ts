@@ -412,8 +412,18 @@ async function summarizeForCompaction(
   const key = apiKey?.trim() ? apiKey : undefined;
   let output = "";
   for await (const event of streamSimple(model, context as any, { apiKey: key })) {
-    if (event.type === "message_end" && event.message.role === "assistant") {
+    if (event.type === "text_delta") {
+      output += event.delta;
+    }
+    if (event.type === "done" && output.trim().length === 0) {
       const text = event.message.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("");
+      output += text;
+    }
+    if (event.type === "error" && output.trim().length === 0) {
+      const text = event.error.content
         .filter((c: any) => c.type === "text")
         .map((c: any) => c.text)
         .join("");
