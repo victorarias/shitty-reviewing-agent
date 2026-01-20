@@ -90,6 +90,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       cost: 0,
     },
   };
+  const contextState = {
+    filesRead: new Set<string>(),
+    filesDiffed: new Set<string>(),
+    truncatedReads: new Set<string>(),
+    partialReads: new Set<string>(),
+  };
 
   const cache = {
     prInfo: input.prInfo,
@@ -155,12 +161,14 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (estimated < threshold) {
         return messages;
       }
-      const { kept, pruned } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
+      const { kept, pruned, prunedCount } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
       if (pruned.length === 0) return kept;
       const summary = compactionModel
         ? await summarizeForCompaction(pruned, compactionModel, config.apiKey)
         : buildDeterministicSummary(pruned);
+      const contextSummary = buildContextSummaryMessage(contextState, prunedCount, summaryState);
       return [
+        contextSummary,
         {
           role: "user",
           content: `Compacted context summary:\n${summary}`,
@@ -186,6 +194,15 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (summaryState.posted) {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
       }
+      if (event.toolName === "read" && event.args?.path) {
+        contextState.filesRead.add(event.args.path);
+        if (event.args.start_line || event.args.end_line) {
+          contextState.partialReads.add(event.args.path);
+        }
+      }
+      if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
+        contextState.filesDiffed.add(event.args.path);
+      }
       log(`tool start: ${event.toolName}`, event.args ?? "");
       if (toolExecutions >= maxIterations) {
         summaryState.abortedByLimit = true;
@@ -194,6 +211,9 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+      if (event.toolName === "read" && event.result?.details?.truncated && event.result?.details?.path) {
+        contextState.truncatedReads.add(event.result.details.path);
+      }
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
@@ -360,7 +380,7 @@ export function resolveCompactionModel(config: ReviewConfig): string | null {
   return config.modelId || null;
 }
 
-function estimateTokens(messages: any[]): number {
+export function estimateTokens(messages: any[]): number {
   let chars = 0;
   for (const message of messages) {
     const content = message?.content;
@@ -387,7 +407,10 @@ function estimateTokens(messages: any[]): number {
   return Math.ceil(chars / 4);
 }
 
-function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; pruned: any[] } {
+export function pruneMessages(
+  messages: any[],
+  tokenBudget: number
+): { kept: any[]; pruned: any[]; prunedCount: number } {
   const kept: any[] = [];
   let tokens = 0;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -399,7 +422,8 @@ function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; pru
     kept.unshift(msg);
     tokens += msgTokens;
   }
-  return { kept, pruned: messages.slice(0, messages.length - kept.length) };
+  const pruned = messages.slice(0, messages.length - kept.length);
+  return { kept, pruned, prunedCount: pruned.length };
 }
 
 async function summarizeForCompaction(
@@ -451,6 +475,37 @@ function buildCompactionPrompt(messages: any[]): string {
     `Be concise and bullet-pointed.\n\n${rendered}`;
 }
 
+export function buildContextSummaryMessage(
+  contextState: {
+    filesRead: Set<string>;
+    filesDiffed: Set<string>;
+    truncatedReads: Set<string>;
+    partialReads: Set<string>;
+  },
+  prunedCount: number,
+  summaryState: { inlineComments: number; suggestions: number; posted: boolean }
+): { role: string; content: string; timestamp: number } {
+  const readFiles = formatSet(contextState.filesRead);
+  const diffFiles = formatSet(contextState.filesDiffed);
+  const truncated = formatSet(contextState.truncatedReads);
+  const partial = formatSet(contextState.partialReads);
+  const lines = [
+    `[${prunedCount} earlier messages pruned for context limits]`,
+    `Files read: ${readFiles}`,
+    `Files with diffs: ${diffFiles}`,
+    `Partial reads: ${partial}`,
+    `Truncated reads: ${truncated}`,
+    `Inline comments posted: ${summaryState.inlineComments}`,
+    `Suggestions posted: ${summaryState.suggestions}`,
+    `Summary posted: ${summaryState.posted ? "yes" : "no"}`,
+  ];
+  return {
+    role: "user",
+    content: `Context summary:\n${lines.map((line) => `- ${line}`).join("\n")}`,
+    timestamp: Date.now(),
+  };
+}
+
 function buildDeterministicSummary(messages: any[]): string {
   const lines = messages
     .filter((msg) => msg.role === "assistant")
@@ -468,6 +523,13 @@ function buildDeterministicSummary(messages: any[]): string {
     return "Earlier context was compacted to fit within model limits.";
   }
   return `Recent assistant outputs:\n- ${lines.join("\n- ")}`;
+}
+
+export function formatSet(values: Set<string>, limit = 8): string {
+  if (values.size === 0) return "none";
+  const list = Array.from(values).sort();
+  if (list.length <= limit) return list.join(", ");
+  return `${list.slice(0, limit).join(", ")} (+${list.length - limit} more)`;
 }
 
 function safeStringify(value: unknown): string {

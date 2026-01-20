@@ -43,10 +43,24 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
       const joined = slice.join("\n");
       const maxChars = params.max_chars ?? 20000;
       const truncated = joined.length > maxChars;
-      const finalText = truncated ? joined.slice(0, maxChars) + "\n...<truncated>" : joined;
+      const isPartial = start !== 1 || end !== lines.length;
+      const header = truncated || isPartial
+        ? `[read ${params.path}] lines ${start}-${end} of ${lines.length}` +
+          (truncated ? ` (truncated at ${maxChars} chars; request smaller ranges to read more)` : "") +
+          "\n"
+        : "";
+      const body = truncated ? joined.slice(0, maxChars) + "\n...<truncated>" : joined;
+      const finalText = `${header}${body}`;
       return {
         content: [{ type: "text", text: finalText }],
-        details: { path: params.path, truncated },
+        details: {
+          path: params.path,
+          truncated,
+          startLine: start,
+          endLine: end,
+          totalLines: lines.length,
+          maxChars,
+        },
       };
     },
   };
