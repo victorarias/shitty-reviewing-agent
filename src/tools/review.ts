@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
-import type { ExistingComment, ReviewThreadInfo } from "../types.js";
+import type { ChangedFile, ExistingComment, ReviewThreadInfo } from "../types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -14,6 +14,7 @@ interface ReviewToolDeps {
   headSha: string;
   modelId: string;
   reviewSha: string;
+  changedFiles: ChangedFile[];
   getBilling: () => { input: number; output: number; total: number; cost: number };
   existingComments: ExistingComment[];
   reviewThreads: ReviewThreadInfo[];
@@ -26,7 +27,7 @@ interface ReviewToolDeps {
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById } = buildThreadIndex(deps.reviewThreads);
-  const issueState: ReviewIssue[] = [];
+  const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -49,6 +50,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
+      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
+      if (!diffCheck.ok) {
+        return {
+          content: [{ type: "text", text: diffCheck.message }],
+          details: { id: -1 },
+        };
+      }
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -151,6 +159,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: SuggestSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
+      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
+      if (!diffCheck.ok) {
+        return {
+          content: [{ type: "text", text: diffCheck.message }],
+          details: { id: -1 },
+        };
+      }
       const body = wrapSuggestion(params.suggestion, params.comment);
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
@@ -272,7 +287,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const summaryTool: AgentTool<typeof SummarySchema, { id: number }> = {
     name: "post_summary",
     label: "Post summary",
-    description: "Post the final review summary as a PR comment. This MUST be your last action and your last output; do not call any tools or add text after this.",
+    description: "Post the final review summary as a PR comment.",
     parameters: SummarySchema,
     execute: async (_id, params) => {
       if (deps.summaryPosted?.()) {
@@ -299,41 +314,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const recordIssueTool: AgentTool<typeof RecordIssueSchema, { total: number }> = {
-    name: "record_issue",
-    label: "Record issue",
-    description: "Record a review issue for summary counts. Use once per unique finding.",
-    parameters: RecordIssueSchema,
-    execute: async (_id, params) => {
-      issueState.push({
-        category: params.category as IssueCategory,
-        description: params.description,
-        path: params.path,
-        line: params.line,
-        severity: params.severity as IssueSeverity,
-      });
-      return {
-        content: [{ type: "text", text: `Issue recorded. Total issues: ${issueState.length}.` }],
-        details: { total: issueState.length },
-      };
-    },
-  };
-
-  const getIssueSummaryTool: AgentTool<typeof IssueSummarySchema, IssueSummary> = {
-    name: "get_issue_summary",
-    label: "Get issue summary",
-    description: "Summarize recorded issues by category for inclusion in the final summary.",
-    parameters: IssueSummarySchema,
-    execute: async () => {
-      const summary = summarizeIssues(issueState);
-      return {
-        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
-        details: summary,
-      };
-    },
-  };
-
-  return [listThreadsTool, commentTool, suggestTool, replyTool, recordIssueTool, getIssueSummaryTool, summaryTool];
+  return [listThreadsTool, commentTool, suggestTool, replyTool, summaryTool];
 }
 
 const CommentSchema = Type.Object({
@@ -370,80 +351,9 @@ const ReplySchema = Type.Object({
   body: Type.String({ description: "Reply body" }),
 });
 
-const RecordIssueSchema = Type.Object({
-  category: Type.String({
-    description: "Issue category",
-    enum: ["Bug", "Security", "Performance", "Unused Code", "Duplicated Code", "Refactoring", "Documentation"],
-  }),
-  description: Type.String({ description: "Short description of the issue" }),
-  path: Type.Optional(Type.String({ description: "File path" })),
-  line: Type.Optional(Type.Integer({ minimum: 1 })),
-  severity: Type.Optional(Type.String({ description: "Severity", enum: ["low", "medium", "high", "critical"] })),
-});
-
-const IssueSummarySchema = Type.Object({});
-
 function wrapSuggestion(suggestion: string, comment?: string): string {
   const prefix = comment?.trim() ? `${comment.trim()}\n\n` : "";
   return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
-}
-
-type IssueCategory =
-  | "Bug"
-  | "Security"
-  | "Performance"
-  | "Unused Code"
-  | "Duplicated Code"
-  | "Refactoring"
-  | "Documentation";
-
-type IssueSeverity = "low" | "medium" | "high" | "critical";
-
-interface ReviewIssue {
-  category: IssueCategory;
-  description: string;
-  path?: string;
-  line?: number;
-  severity?: IssueSeverity;
-}
-
-interface IssueSummary {
-  total: number;
-  byCategory: Record<IssueCategory, number>;
-  keyFindings: string[];
-}
-
-function summarizeIssues(issues: ReviewIssue[]): IssueSummary {
-  const byCategory = {
-    Bug: 0,
-    Security: 0,
-    Performance: 0,
-    "Unused Code": 0,
-    "Duplicated Code": 0,
-    Refactoring: 0,
-    Documentation: 0,
-  };
-  for (const issue of issues) {
-    byCategory[issue.category] += 1;
-  }
-  const keyFindings = issues
-    .slice(0, 10)
-    .map((issue) => formatIssueFinding(issue));
-  return {
-    total: issues.length,
-    byCategory,
-    keyFindings,
-  };
-}
-
-function formatIssueFinding(issue: ReviewIssue): string {
-  if (issue.path && issue.line) {
-    return `${issue.path}:${issue.line} - ${issue.description}`;
-  }
-  if (issue.path) {
-    return `${issue.path} - ${issue.description}`;
-  }
-  return issue.description;
 }
 
 function buildLocationIndex(comments: ExistingComment[]): {
@@ -537,6 +447,66 @@ function buildThreadAmbiguityResponse(
     content: [{ type: "text", text: `${header}\n${guidance}\n${formatted}` }],
     details: { id: -1 },
   };
+}
+
+function lineExistsInDiff(
+  patch: string | undefined,
+  line: number,
+  side?: "LEFT" | "RIGHT"
+): { ok: boolean; message: string } {
+  if (!patch) {
+    return {
+      ok: false,
+      message: "No diff available for this file. It may be binary or too large to diff; avoid inline comments.",
+    };
+  }
+  if (!side) {
+    return {
+      ok: false,
+      message: "Missing side (LEFT or RIGHT). Specify side to validate the diff line.",
+    };
+  }
+  const matches = lineInPatch(patch, line, side);
+  if (!matches) {
+    return {
+      ok: false,
+      message: `Line ${line} is not present on ${side} side of the diff for this file. Use get_diff to find a valid line.`,
+    };
+  }
+  return { ok: true, message: "ok" };
+}
+
+function lineInPatch(patch: string, targetLine: number, side: "LEFT" | "RIGHT"): boolean {
+  const lines = patch.split(/\r?\n/);
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of lines) {
+    const header = line.match(/^@@ -(\d+),?\d* \+(\d+),?\d* @@/);
+    if (header) {
+      oldLine = Number.parseInt(header[1], 10);
+      newLine = Number.parseInt(header[2], 10);
+      continue;
+    }
+    if (line.startsWith("@@")) continue;
+    if (line.startsWith("+")) {
+      if (side === "RIGHT" && newLine === targetLine) return true;
+      newLine += 1;
+      continue;
+    }
+    if (line.startsWith("-")) {
+      if (side === "LEFT" && oldLine === targetLine) return true;
+      oldLine += 1;
+      continue;
+    }
+    if (line.startsWith(" ")) {
+      if (side === "RIGHT" && newLine === targetLine) return true;
+      if (side === "LEFT" && oldLine === targetLine) return true;
+      oldLine += 1;
+      newLine += 1;
+      continue;
+    }
+  }
+  return false;
 }
 function ensureSummaryFooter(
   body: string,

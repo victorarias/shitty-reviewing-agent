@@ -107,6 +107,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     headSha: input.prInfo.headSha,
     modelId: config.modelId,
     reviewSha: input.prInfo.headSha,
+    changedFiles: input.changedFiles,
     getBilling: () => summaryState.billing,
     existingComments: input.existingComments,
     reviewThreads: input.reviewThreads,
