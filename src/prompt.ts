@@ -51,10 +51,10 @@ Rules:
 - Preface: First review → "Here's my complete review of this PR." Follow-up → "Considering my initial review and the changes you made, here's what I found now:" (or similar).
 - If a prebuilt sequence diagram is provided in the user prompt, add it under a collapsible section like:
   <details><summary>Sequence diagram</summary>
-  ```mermaid
+  \`\`\`mermaid
   sequenceDiagram
   ...
-  ```
+  \`\`\`
   </details>
 
 # Style
