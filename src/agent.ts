@@ -165,6 +165,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+      if (event.toolName === "post_summary") {
+        agent.abort();
+        return;
+      }
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
