@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createReadOnlyTools } from "../src/tools/fs.ts";
 
-const tempPath = path.join(process.cwd(), "data", "tmp-read-test.txt");
+const tempDir = path.join(process.cwd(), "data");
+const tempPath = path.join(tempDir, "tmp-read-test.txt");
 
 afterEach(async () => {
   try {
@@ -14,6 +15,7 @@ afterEach(async () => {
 });
 
 test("read tool annotates partial reads", async () => {
+  await fs.mkdir(tempDir, { recursive: true });
   const content = Array.from({ length: 6 }, (_, i) => `line-${i + 1}`).join("\n");
   await fs.writeFile(tempPath, content, "utf8");
   const tools = createReadOnlyTools(process.cwd());
@@ -33,6 +35,7 @@ test("read tool annotates partial reads", async () => {
 });
 
 test("read tool annotates truncation", async () => {
+  await fs.mkdir(tempDir, { recursive: true });
   const content = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
   await fs.writeFile(tempPath, content, "utf8");
   const tools = createReadOnlyTools(process.cwd());
