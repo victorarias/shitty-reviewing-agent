@@ -30,7 +30,7 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). `gemini` is accepted as an alias for `google`. `vertex`/`vertex-ai` map to `google-vertex`.
+- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
 - `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
 - `model` (required): Model name
 - `compaction-model` (optional): Model used for context compaction summaries. Defaults to `gemini-3-flash-preview` when provider is `google`, otherwise uses `model`.
@@ -47,6 +47,9 @@ jobs:
 - Requires `actions/checkout` so files are available locally.
 - Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
 - Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
+- For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
+- The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
+- For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 
 Minimal workflow (implicit token):
 

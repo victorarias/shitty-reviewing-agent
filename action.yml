@@ -3,7 +3,7 @@ description: "Agent-driven PR reviewer using LLMs"
 author: "shitty-reviewing-agent"
 inputs:
   provider:
-    description: "LLM provider (openrouter, gemini, anthropic, openai, etc.)"
+    description: "LLM provider (openrouter, gemini, anthropic, openai, etc.). Aliases: gemini→google, vertex→google-vertex."
     required: true
   api-key:
     description: "API key for the LLM provider"
