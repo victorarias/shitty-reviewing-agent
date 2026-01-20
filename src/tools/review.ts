@@ -271,7 +271,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const summaryTool: AgentTool<typeof SummarySchema, { id: number }> = {
     name: "post_summary",
     label: "Post summary",
-    description: "Post the final review summary as a PR comment.",
+    description: "Post the final review summary as a PR comment. This MUST be your last action and your last output; do not call any tools or add text after this.",
     parameters: SummarySchema,
     execute: async (_id, params) => {
       if (deps.summaryPosted?.()) {

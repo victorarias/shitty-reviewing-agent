@@ -154,6 +154,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       toolExecutions += 1;
       if (summaryState.posted) {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
+        agent.abort();
+        return;
       }
       log(`tool start: ${event.toolName}`, event.args ?? "");
       if (toolExecutions >= maxIterations) {
@@ -163,6 +165,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+      if (event.toolName === "post_summary") {
+        agent.abort();
+        return;
+      }
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
