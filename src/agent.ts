@@ -136,6 +136,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   const tools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
 
   const model = getModel(config.provider as any, config.modelId as any);
+  const compactionModelId = resolveCompactionModel(config);
+  const compactionModel = compactionModelId
+    ? getModel(config.provider as any, compactionModelId as any)
+    : null;
   const agent = new Agent({
     initialState: {
       systemPrompt: buildSystemPrompt(),
@@ -143,6 +147,27 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       tools,
       messages: [],
       thinkingLevel: effectiveThinkingLevel,
+    },
+    transformContext: async (messages) => {
+      const maxTokens = model.contextWindow || 120000;
+      const threshold = Math.floor(maxTokens * 0.8);
+      const estimated = estimateTokens(messages);
+      if (estimated < threshold) {
+        return messages;
+      }
+      const { kept, pruned } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
+      if (pruned.length === 0) return kept;
+      const summary = compactionModel
+        ? await summarizeForCompaction(pruned, compactionModel, config.apiKey)
+        : buildDeterministicSummary(pruned);
+      return [
+        {
+          role: "user",
+          content: `Compacted context summary:\n${summary}`,
+          timestamp: Date.now(),
+        },
+        ...kept,
+      ];
     },
     getApiKey: () => config.apiKey,
     streamFn: (modelArg, context, options) =>
@@ -325,6 +350,114 @@ function deriveErrorReason(message: string): string {
 
 function isQuotaError(message: string): boolean {
   return /quota|resource_exhausted|rate limit|429/i.test(message);
+}
+
+export function resolveCompactionModel(config: ReviewConfig): string | null {
+  if (config.compactionModel) return config.compactionModel;
+  if (config.provider === "google") {
+    return "gemini-3-flash-preview";
+  }
+  return config.modelId || null;
+}
+
+function estimateTokens(messages: any[]): number {
+  let chars = 0;
+  for (const message of messages) {
+    const content = message?.content;
+    if (typeof content === "string") {
+      chars += content.length;
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (typeof part?.text === "string") {
+          chars += part.text.length;
+        } else if (typeof part?.thinking === "string") {
+          chars += part.thinking.length;
+        } else {
+          chars += JSON.stringify(part ?? "").length;
+        }
+      }
+      continue;
+    }
+    if (content) {
+      chars += JSON.stringify(content).length;
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; pruned: any[] } {
+  const kept: any[] = [];
+  let tokens = 0;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    const msgTokens = estimateTokens([msg]);
+    if (tokens + msgTokens > tokenBudget) {
+      break;
+    }
+    kept.unshift(msg);
+    tokens += msgTokens;
+  }
+  return { kept, pruned: messages.slice(0, messages.length - kept.length) };
+}
+
+async function summarizeForCompaction(
+  messages: any[],
+  model: ReturnType<typeof getModel>,
+  apiKey: string
+): Promise<string> {
+  const summaryPrompt = buildCompactionPrompt(messages);
+  const context = [{ role: "user", content: summaryPrompt }];
+  const key = apiKey?.trim() ? apiKey : undefined;
+  let output = "";
+  for await (const event of streamSimple(model, context as any, { apiKey: key })) {
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      const text = event.message.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("");
+      output += text;
+    }
+  }
+  return output.trim() || buildDeterministicSummary(messages);
+}
+
+function buildCompactionPrompt(messages: any[]): string {
+  const rendered = messages
+    .map((msg) => {
+      const role = msg.role ?? "unknown";
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map((part: any) => part.text ?? part.thinking ?? "").join("")
+          : JSON.stringify(msg.content ?? "");
+      const truncated = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+      return `[${role}] ${truncated}`;
+    })
+    .join("\n");
+  return `Summarize the following conversation context for a code review agent.\n` +
+    `Focus on: key findings, decisions, outstanding issues, and files discussed.\n` +
+    `Be concise and bullet-pointed.\n\n${rendered}`;
+}
+
+function buildDeterministicSummary(messages: any[]): string {
+  const lines = messages
+    .filter((msg) => msg.role === "assistant")
+    .map((msg) => {
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map((part: any) => part.text ?? "").join("")
+          : "";
+      return text.trim();
+    })
+    .filter(Boolean)
+    .slice(-5);
+  if (lines.length === 0) {
+    return "Earlier context was compacted to fit within model limits.";
+  }
+  return `Recent assistant outputs:\n- ${lines.join("\n- ")}`;
 }
 
 function safeStringify(value: unknown): string {

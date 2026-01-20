@@ -70,6 +70,7 @@ function readConfig(): ReviewConfig {
   const provider = normalizeProvider(providerRaw);
   const apiKey = core.getInput("api-key");
   const modelId = core.getInput("model", { required: true });
+  const compactionModel = core.getInput("compaction-model") || "";
   const maxFilesRaw = core.getInput("max-files") || "50";
   const debugRaw = core.getInput("debug") || "false";
   const reasoningRaw = core.getInput("reasoning") || "off";
@@ -104,6 +105,7 @@ function readConfig(): ReviewConfig {
     provider,
     apiKey: apiKey || "",
     modelId,
+    compactionModel: compactionModel.trim() ? compactionModel.trim() : undefined,
     maxFiles,
     ignorePatterns,
     repoRoot,

@@ -11,6 +11,9 @@ inputs:
   model:
     description: "Model to use (e.g., anthropic/claude-sonnet-4)"
     required: true
+  compaction-model:
+    description: "Optional model to use for context compaction summaries (defaults to gemini-3-flash-preview for Google, else same as model)"
+    required: false
   max-files:
     description: "Max files to review (skips if exceeded)"
     required: false

@@ -24,6 +24,7 @@ export interface ReviewConfig {
   provider: string;
   apiKey: string;
   modelId: string;
+  compactionModel?: string;
   maxFiles: number;
   ignorePatterns: string[];
   repoRoot: string;
