@@ -1,0 +1,9 @@
+Context summary:
+- [4 earlier messages pruned for context limits]
+- Files read: src/agent.ts, src/prompt.ts
+- Files with diffs: src/agent.ts, tests/summary.test.ts
+- Partial reads: src/agent.ts
+- Truncated reads: none
+- Inline comments posted: 2
+- Suggestions posted: 1
+- Summary posted: no

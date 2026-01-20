@@ -1,0 +1,73 @@
+{
+  "messages": [
+    {
+      "id": "sys-1",
+      "content": "System: review guidelines and tools."
+    },
+    {
+      "id": "user-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Please review the changes in src/agent.ts and src/prompt.ts."
+        }
+      ]
+    },
+    {
+      "id": "assistant-1",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "I will inspect diffs and request context where needed."
+        },
+        {
+          "type": "text",
+          "text": "Starting review now."
+        }
+      ]
+    },
+    {
+      "id": "tool-1",
+      "content": {
+        "tool": "get_changed_files",
+        "result": {
+          "files": [
+            "src/agent.ts",
+            "src/prompt.ts",
+            "tests/summary.test.ts"
+          ]
+        }
+      }
+    },
+    {
+      "id": "assistant-2",
+      "content": [
+        {
+          "type": "text",
+          "text": "Found potential issues in context pruning. Will add comments."
+        }
+      ]
+    }
+  ],
+  "tokenBudget": 20,
+  "contextState": {
+    "filesRead": [
+      "src/agent.ts",
+      "src/prompt.ts"
+    ],
+    "filesDiffed": [
+      "src/agent.ts",
+      "tests/summary.test.ts"
+    ],
+    "partialReads": [
+      "src/agent.ts"
+    ],
+    "truncatedReads": []
+  },
+  "summaryState": {
+    "inlineComments": 2,
+    "suggestions": 1,
+    "posted": false
+  },
+  "prunedCount": 4
+}

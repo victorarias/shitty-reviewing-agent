@@ -1,6 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { buildContextSummaryMessage, estimateTokens, formatSet, pruneMessages } from "../src/agent";
 
+type ContextFixture = {
+  messages: Array<{ id: string; content: unknown }>;
+  tokenBudget: number;
+  contextState: {
+    filesRead: string[];
+    filesDiffed: string[];
+    partialReads: string[];
+    truncatedReads: string[];
+  };
+  summaryState: {
+    inlineComments: number;
+    suggestions: number;
+    posted: boolean;
+  };
+  prunedCount: number;
+};
+
 describe("context management helpers", () => {
   test("estimateTokens counts text and thinking content", () => {
     const textOnly = estimateTokens([
@@ -114,5 +131,34 @@ describe("context management helpers", () => {
     expect(summary.content).toContain("Truncated reads: none");
     expect(summary.content).toContain("Suggestions posted: 2");
     expect(summary.content).toContain("Summary posted: no");
+  });
+
+  test("golden context summary + pruning behavior", async () => {
+    const fixture = (await Bun.file("tests/fixtures/context-management.json").json()) as ContextFixture;
+    const expectedSummary = await Bun.file("tests/fixtures/context-summary.golden.txt").text();
+    const expectedPrune = await Bun.file("tests/fixtures/context-prune.golden.json").json();
+
+    const originalNow = Date.now;
+    Date.now = () => 123456;
+
+    const { kept, prunedCount } = pruneMessages(fixture.messages, fixture.tokenBudget);
+    expect(prunedCount).toBe(expectedPrune.prunedCount);
+    expect(kept.map((msg) => msg.id)).toEqual(expectedPrune.keptIds);
+
+    const summary = buildContextSummaryMessage(
+      {
+        filesRead: new Set(fixture.contextState.filesRead),
+        filesDiffed: new Set(fixture.contextState.filesDiffed),
+        partialReads: new Set(fixture.contextState.partialReads),
+        truncatedReads: new Set(fixture.contextState.truncatedReads),
+      },
+      fixture.prunedCount,
+      fixture.summaryState
+    );
+
+    Date.now = originalNow;
+
+    expect(summary.timestamp).toBe(123456);
+    expect(summary.content).toBe(expectedSummary);
   });
 });
