@@ -58,6 +58,7 @@ test("list_threads_for_location filters by side", async () => {
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments: [],
     reviewThreads,

@@ -30,6 +30,8 @@ function getTool(tools: ReturnType<typeof createReviewTools>, name: string) {
   return tool;
 }
 
+const patch = `@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n`;
+
 test("comment tool replies to latest active thread root", async () => {
   const existingComments: ExistingComment[] = [
     {
@@ -39,7 +41,7 @@ test("comment tool replies to latest active thread root", async () => {
       url: "https://example.com/1",
       type: "review",
       path: "src/index.ts",
-      line: 10,
+      line: 1,
       updatedAt: "2026-01-01T00:00:00Z",
     },
     {
@@ -49,7 +51,7 @@ test("comment tool replies to latest active thread root", async () => {
       url: "https://example.com/2",
       type: "review",
       path: "src/index.ts",
-      line: 10,
+      line: 1,
       inReplyToId: 1,
       updatedAt: "2026-01-03T00:00:00Z",
     },
@@ -64,13 +66,14 @@ test("comment tool replies to latest active thread root", async () => {
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments,
     reviewThreads: [
       {
         id: 99,
         path: "src/index.ts",
-        line: 10,
+        line: 1,
         side: "RIGHT",
         isOutdated: false,
         resolved: false,
@@ -85,7 +88,7 @@ test("comment tool replies to latest active thread root", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 10,
+    line: 1,
     side: "RIGHT",
     body: "New feedback",
   });
@@ -106,6 +109,7 @@ test("comment tool falls back to new comment when no thread", async () => {
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments,
     reviewThreads: [],
@@ -114,7 +118,8 @@ test("comment tool falls back to new comment when no thread", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 10,
+    line: 1,
+    side: "RIGHT",
     body: "New feedback",
   });
 
@@ -131,7 +136,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/10",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       updatedAt: "2026-01-01T00:00:00Z",
     },
@@ -142,7 +147,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/11",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       updatedAt: "2026-01-02T00:00:00Z",
     },
@@ -153,7 +158,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/12",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       inReplyToId: 10,
       updatedAt: "2026-01-05T00:00:00Z",
@@ -169,6 +174,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments,
     reviewThreads: [],
@@ -177,7 +183,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 20,
+    line: 1,
     side: "RIGHT",
     body: "Follow-up",
   });
@@ -198,6 +204,7 @@ test("comment tool errors when threads exist and no side/thread_id specified", a
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments,
     reviewThreads: [
@@ -237,7 +244,7 @@ test("comment tool errors when threads exist and no side/thread_id specified", a
 
   expect(calls.length).toBe(0);
   expect(result.details.id).toBe(-1);
-  expect(result.content[0].text).toContain("Threads exist");
+  expect(result.content[0].text).toContain("Missing side");
 });
 
 test("comment tool can force new thread with allow_new_thread", async () => {
@@ -251,13 +258,14 @@ test("comment tool can force new thread with allow_new_thread", async () => {
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
     existingComments,
     reviewThreads: [
       {
         id: 14,
         path: "src/index.ts",
-        line: 40,
+        line: 1,
         side: "RIGHT",
         isOutdated: false,
         resolved: false,
@@ -272,7 +280,8 @@ test("comment tool can force new thread with allow_new_thread", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 40,
+    line: 1,
+    side: "RIGHT",
     body: "Fresh thread",
     allow_new_thread: true,
   });
@@ -281,9 +290,8 @@ test("comment tool can force new thread with allow_new_thread", async () => {
   expect(calls[0].type).toBe("comment");
 });
 
-test("record_issue and get_issue_summary track counts", async () => {
-  const existingComments: ExistingComment[] = [];
-  const { octokit } = makeOctokitSpy();
+test("comment tool rejects lines not in diff", async () => {
+  const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
     octokit: octokit as any,
     owner: "o",
@@ -292,30 +300,142 @@ test("record_issue and get_issue_summary track counts", async () => {
     headSha: "sha",
     modelId: "model",
     reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
     getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
-    existingComments,
+    existingComments: [],
     reviewThreads: [],
   });
 
-  const recordTool = getTool(tools, "record_issue");
-  const summaryTool = getTool(tools, "get_issue_summary");
-
-  await recordTool.execute("", {
-    category: "Bug",
-    description: "Null deref",
+  const commentTool = getTool(tools, "comment");
+  const result = await commentTool.execute("", {
     path: "src/index.ts",
-    line: 10,
-    severity: "high",
-  });
-  await recordTool.execute("", {
-    category: "Documentation",
-    description: "Missing docs",
+    line: 99,
+    side: "RIGHT",
+    body: "Out of diff",
   });
 
-  const result = await summaryTool.execute("", {});
-  const summary = result.details as any;
-  expect(summary.total).toBe(2);
-  expect(summary.byCategory.Bug).toBe(1);
-  expect(summary.byCategory.Documentation).toBe(1);
-  expect(summary.keyFindings[0]).toContain("src/index.ts:10");
+  expect(calls.length).toBe(0);
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("not present");
+});
+
+test("comment tool accepts valid diff lines on LEFT/RIGHT", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "LEFT",
+    body: "Old line",
+  });
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "New line",
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("comment");
+  expect(calls[1].type).toBe("comment");
+});
+
+test("comment tool allows replies by thread_id even when line not in diff", async () => {
+  const patch = `@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n`;
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [
+      {
+        id: 101,
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-06T00:00:00Z",
+        lastActor: "dev",
+        rootCommentId: 500,
+        url: "https://example.com/thread/101",
+      },
+    ],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 999,
+    thread_id: 101,
+    body: "Follow-up reply",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("reply");
+  expect(calls[0].args.comment_id).toBe(500);
+});
+
+test("suggest tool allows replies by thread_id even when line not in diff", async () => {
+  const patch = `@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n`;
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [
+      {
+        id: 102,
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-06T00:00:00Z",
+        lastActor: "dev",
+        rootCommentId: 501,
+        url: "https://example.com/thread/102",
+      },
+    ],
+  });
+
+  const suggestTool = getTool(tools, "suggest");
+  await suggestTool.execute("", {
+    path: "src/index.ts",
+    line: 999,
+    thread_id: 102,
+    suggestion: "const a = 3;",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("reply");
+  expect(calls[0].args.comment_id).toBe(501);
 });
