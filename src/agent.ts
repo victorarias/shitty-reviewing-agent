@@ -154,6 +154,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       toolExecutions += 1;
       if (summaryState.posted) {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
+        agent.abort();
+        return;
       }
       log(`tool start: ${event.toolName}`, event.args ?? "");
       if (toolExecutions >= maxIterations) {
