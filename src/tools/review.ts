@@ -26,6 +26,7 @@ interface ReviewToolDeps {
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById } = buildThreadIndex(deps.reviewThreads);
+  const issueState: ReviewIssue[] = [];
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -298,7 +299,41 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listThreadsTool, commentTool, suggestTool, replyTool, summaryTool];
+  const recordIssueTool: AgentTool<typeof RecordIssueSchema, { total: number }> = {
+    name: "record_issue",
+    label: "Record issue",
+    description: "Record a review issue for summary counts. Use once per unique finding.",
+    parameters: RecordIssueSchema,
+    execute: async (_id, params) => {
+      issueState.push({
+        category: params.category as IssueCategory,
+        description: params.description,
+        path: params.path,
+        line: params.line,
+        severity: params.severity as IssueSeverity,
+      });
+      return {
+        content: [{ type: "text", text: `Issue recorded. Total issues: ${issueState.length}.` }],
+        details: { total: issueState.length },
+      };
+    },
+  };
+
+  const getIssueSummaryTool: AgentTool<typeof IssueSummarySchema, IssueSummary> = {
+    name: "get_issue_summary",
+    label: "Get issue summary",
+    description: "Summarize recorded issues by category for inclusion in the final summary.",
+    parameters: IssueSummarySchema,
+    execute: async () => {
+      const summary = summarizeIssues(issueState);
+      return {
+        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+        details: summary,
+      };
+    },
+  };
+
+  return [listThreadsTool, commentTool, suggestTool, replyTool, recordIssueTool, getIssueSummaryTool, summaryTool];
 }
 
 const CommentSchema = Type.Object({
@@ -335,9 +370,80 @@ const ReplySchema = Type.Object({
   body: Type.String({ description: "Reply body" }),
 });
 
+const RecordIssueSchema = Type.Object({
+  category: Type.String({
+    description: "Issue category",
+    enum: ["Bug", "Security", "Performance", "Unused Code", "Duplicated Code", "Refactoring", "Documentation"],
+  }),
+  description: Type.String({ description: "Short description of the issue" }),
+  path: Type.Optional(Type.String({ description: "File path" })),
+  line: Type.Optional(Type.Integer({ minimum: 1 })),
+  severity: Type.Optional(Type.String({ description: "Severity", enum: ["low", "medium", "high", "critical"] })),
+});
+
+const IssueSummarySchema = Type.Object({});
+
 function wrapSuggestion(suggestion: string, comment?: string): string {
   const prefix = comment?.trim() ? `${comment.trim()}\n\n` : "";
   return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
+}
+
+type IssueCategory =
+  | "Bug"
+  | "Security"
+  | "Performance"
+  | "Unused Code"
+  | "Duplicated Code"
+  | "Refactoring"
+  | "Documentation";
+
+type IssueSeverity = "low" | "medium" | "high" | "critical";
+
+interface ReviewIssue {
+  category: IssueCategory;
+  description: string;
+  path?: string;
+  line?: number;
+  severity?: IssueSeverity;
+}
+
+interface IssueSummary {
+  total: number;
+  byCategory: Record<IssueCategory, number>;
+  keyFindings: string[];
+}
+
+function summarizeIssues(issues: ReviewIssue[]): IssueSummary {
+  const byCategory = {
+    Bug: 0,
+    Security: 0,
+    Performance: 0,
+    "Unused Code": 0,
+    "Duplicated Code": 0,
+    Refactoring: 0,
+    Documentation: 0,
+  };
+  for (const issue of issues) {
+    byCategory[issue.category] += 1;
+  }
+  const keyFindings = issues
+    .slice(0, 10)
+    .map((issue) => formatIssueFinding(issue));
+  return {
+    total: issues.length,
+    byCategory,
+    keyFindings,
+  };
+}
+
+function formatIssueFinding(issue: ReviewIssue): string {
+  if (issue.path && issue.line) {
+    return `${issue.path}:${issue.line} - ${issue.description}`;
+  }
+  if (issue.path) {
+    return `${issue.path} - ${issue.description}`;
+  }
+  return issue.description;
 }
 
 function buildLocationIndex(comments: ExistingComment[]): {
