@@ -1,0 +1,55 @@
+[
+  {
+    "id": 1001,
+    "author": "bot",
+    "body": "Test dependency comment",
+    "url": "https://example.com/r/1001",
+    "type": "review",
+    "path": "infra/chart.yaml",
+    "line": 7,
+    "side": "RIGHT",
+    "updatedAt": "2026-01-20T12:36:47Z"
+  },
+  {
+    "id": 1002,
+    "author": "bot",
+    "body": "BQ external format comment",
+    "url": "https://example.com/r/1002",
+    "type": "review",
+    "path": "infra/values-prod.yaml",
+    "line": 282,
+    "side": "RIGHT",
+    "updatedAt": "2026-01-20T12:36:47Z"
+  },
+  {
+    "id": 1003,
+    "author": "bot",
+    "body": "Dead letter topic disabled",
+    "url": "https://example.com/r/1003",
+    "type": "review",
+    "path": "infra/values-prod.yaml",
+    "line": 284,
+    "side": "RIGHT",
+    "updatedAt": "2026-01-20T12:36:48Z"
+  },
+  {
+    "id": 1004,
+    "author": "bot",
+    "body": "Follow-up on test dependency",
+    "url": "https://example.com/r/1004",
+    "type": "review",
+    "path": "infra/chart.yaml",
+    "line": 7,
+    "side": "RIGHT",
+    "inReplyToId": 1001,
+    "updatedAt": "2026-01-20T14:09:39Z"
+  },
+  {
+    "id": 2001,
+    "author": "human",
+    "body": "Top-level issue comment",
+    "url": "https://example.com/i/2001",
+    "type": "issue",
+    "updatedAt": "2026-01-20T12:00:00Z"
+  }
+]
