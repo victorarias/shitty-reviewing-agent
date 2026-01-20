@@ -1,0 +1,51 @@
+import { test, expect, afterEach } from "bun:test";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { createReadOnlyTools } from "../src/tools/fs.ts";
+
+const tempPath = path.join(process.cwd(), "data", "tmp-read-test.txt");
+
+afterEach(async () => {
+  try {
+    await fs.unlink(tempPath);
+  } catch {
+    // ignore
+  }
+});
+
+test("read tool annotates partial reads", async () => {
+  const content = Array.from({ length: 6 }, (_, i) => `line-${i + 1}`).join("\n");
+  await fs.writeFile(tempPath, content, "utf8");
+  const tools = createReadOnlyTools(process.cwd());
+  const readTool = tools.find((tool) => tool.name === "read");
+  if (!readTool) throw new Error("read tool missing");
+
+  const result = await readTool.execute("", {
+    path: path.posix.join("data", "tmp-read-test.txt"),
+    start_line: 1,
+    end_line: 2,
+    max_chars: 1000,
+  });
+
+  expect(result.content[0].text).toContain("lines 1-2 of 6");
+  expect(result.content[0].text).toContain("line-1");
+  expect(result.content[0].text).toContain("line-2");
+});
+
+test("read tool annotates truncation", async () => {
+  const content = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
+  await fs.writeFile(tempPath, content, "utf8");
+  const tools = createReadOnlyTools(process.cwd());
+  const readTool = tools.find((tool) => tool.name === "read");
+  if (!readTool) throw new Error("read tool missing");
+
+  const result = await readTool.execute("", {
+    path: path.posix.join("data", "tmp-read-test.txt"),
+    start_line: 1,
+    end_line: 10,
+    max_chars: 10,
+  });
+
+  expect(result.content[0].text).toContain("truncated at 10 chars");
+  expect(result.content[0].text).toContain("...<truncated>");
+});
