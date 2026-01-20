@@ -3,6 +3,8 @@ import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { buildSummaryMarkdown } from "./summary.js";
@@ -203,7 +205,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
 
   const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
   log(`filtered files: ${filteredFiles.length}`);
-  const directoryCount = countDistinctDirectories(filteredFiles.map((file) => file.filename));
+  const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
+  const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
   const sequenceDiagram = await maybeGenerateSequenceDiagram({
     enabled: directoryCount > 3,
     model,
@@ -214,6 +217,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     effectiveThinkingLevel,
     effectiveTemperature,
     log,
+    onBilling: (usage) => {
+      const cost = calculateCost(model, usage);
+      summaryState.billing.input += usage.input;
+      summaryState.billing.output += usage.output;
+      summaryState.billing.total += usage.totalTokens;
+      summaryState.billing.cost += cost.total;
+    },
   });
   const userPrompt = buildUserPrompt({
     prTitle: input.prInfo.title,
@@ -328,6 +338,51 @@ function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): Cha
   return files.filter((file) => !ignorePatterns.some((pattern) => minimatch(file.filename, pattern)));
 }
 
+const execFileAsync = promisify(execFile);
+const generatedCache = new Map<string, boolean>();
+
+async function filterDiagramFiles(files: ChangedFile[], repoRoot: string): Promise<ChangedFile[]> {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      if (isTestPath(file.filename)) return null;
+      const isGenerated = await isGeneratedPath(repoRoot, file.filename);
+      if (isGenerated) return null;
+      return file;
+    })
+  );
+  return results.filter(Boolean) as ChangedFile[];
+}
+
+function isTestPath(file: string): boolean {
+  const patterns = [
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*_test.*",
+    "**/*-test.*",
+  ];
+  return patterns.some((pattern) => minimatch(file, pattern));
+}
+
+async function isGeneratedPath(repoRoot: string, file: string): Promise<boolean> {
+  const cached = generatedCache.get(file);
+  if (cached !== undefined) return cached;
+  try {
+    const { stdout } = await execFileAsync("git", ["check-attr", "linguist-generated", "--", file], {
+      cwd: repoRoot,
+    });
+    const value = stdout.trim().split(":").pop()?.trim();
+    const isGenerated = value === "true" || value === "set";
+    generatedCache.set(file, isGenerated);
+    return isGenerated;
+  } catch {
+    generatedCache.set(file, false);
+    return false;
+  }
+}
+
 function countDistinctDirectories(files: string[]): number {
   const dirs = new Set<string>();
   for (const file of files) {
@@ -347,6 +402,7 @@ async function maybeGenerateSequenceDiagram(params: {
   effectiveThinkingLevel: ThinkingLevel;
   effectiveTemperature?: number;
   log: (...args: unknown[]) => void;
+  onBilling?: (usage: { input: number; output: number; totalTokens: number }) => void;
 }): Promise<string | null> {
   if (!params.enabled) return null;
 
@@ -364,6 +420,16 @@ async function maybeGenerateSequenceDiagram(params: {
         ...options,
         temperature: params.effectiveTemperature ?? options.temperature,
       }),
+  });
+  diagramAgent.subscribe((event) => {
+    if (event.type === "message_end" && event.message.role === "assistant" && event.message.usage) {
+      const usage = event.message.usage;
+      params.onBilling?.({
+        input: usage.input,
+        output: usage.output,
+        totalTokens: usage.totalTokens,
+      });
+    }
   });
 
   const diagramPrompt = buildDiagramUserPrompt({
