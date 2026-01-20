@@ -30,7 +30,7 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). `gemini` is accepted as an alias for `google`. `vertex`/`vertex-ai` map to `google-vertex`.
+- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`, `claude` → `anthropic`, `gpt`/`chatgpt` → `openai`.
 - `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
 - `model` (required): Model name
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
@@ -46,6 +46,7 @@ jobs:
 - Requires `actions/checkout` so files are available locally.
 - Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
 - Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
+- For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
 
 Minimal workflow (implicit token):
 
