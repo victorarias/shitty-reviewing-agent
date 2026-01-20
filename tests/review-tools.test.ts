@@ -280,3 +280,42 @@ test("comment tool can force new thread with allow_new_thread", async () => {
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
 });
+
+test("record_issue and get_issue_summary track counts", async () => {
+  const existingComments: ExistingComment[] = [];
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const recordTool = getTool(tools, "record_issue");
+  const summaryTool = getTool(tools, "get_issue_summary");
+
+  await recordTool.execute("", {
+    category: "Bug",
+    description: "Null deref",
+    path: "src/index.ts",
+    line: 10,
+    severity: "high",
+  });
+  await recordTool.execute("", {
+    category: "Documentation",
+    description: "Missing docs",
+  });
+
+  const result = await summaryTool.execute("", {});
+  const summary = result.details as any;
+  expect(summary.total).toBe(2);
+  expect(summary.byCategory.Bug).toBe(1);
+  expect(summary.byCategory.Documentation).toBe(1);
+  expect(summary.keyFindings[0]).toContain("src/index.ts:10");
+});
