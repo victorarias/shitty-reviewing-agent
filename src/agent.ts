@@ -90,6 +90,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       cost: 0,
     },
   };
+  const contextState = {
+    filesRead: new Set<string>(),
+    filesDiffed: new Set<string>(),
+    truncatedReads: new Set<string>(),
+    partialReads: new Set<string>(),
+  };
 
   const cache = {
     prInfo: input.prInfo,
@@ -136,10 +142,6 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   const tools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
 
   const model = getModel(config.provider as any, config.modelId as any);
-  const compactionModelId = resolveCompactionModel(config);
-  const compactionModel = compactionModelId
-    ? getModel(config.provider as any, compactionModelId as any)
-    : null;
   const agent = new Agent({
     initialState: {
       systemPrompt: buildSystemPrompt(),
@@ -155,19 +157,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (estimated < threshold) {
         return messages;
       }
-      const { kept, pruned } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
-      if (pruned.length === 0) return kept;
-      const summary = compactionModel
-        ? await summarizeForCompaction(pruned, compactionModel, config.apiKey)
-        : buildDeterministicSummary(pruned);
-      return [
-        {
-          role: "user",
-          content: `Compacted context summary:\n${summary}`,
-          timestamp: Date.now(),
-        },
-        ...kept,
-      ];
+      const { kept, prunedCount } = pruneMessages(messages, threshold);
+      if (prunedCount === 0) {
+        return kept;
+      }
+      const summary = buildContextSummaryMessage(contextState, prunedCount, summaryState);
+      return [summary, ...kept];
     },
     getApiKey: () => config.apiKey,
     streamFn: (modelArg, context, options) =>
@@ -186,6 +181,15 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (summaryState.posted) {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
       }
+      if (event.toolName === "read" && event.args?.path) {
+        contextState.filesRead.add(event.args.path);
+        if (event.args.start_line || event.args.end_line) {
+          contextState.partialReads.add(event.args.path);
+        }
+      }
+      if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
+        contextState.filesDiffed.add(event.args.path);
+      }
       log(`tool start: ${event.toolName}`, event.args ?? "");
       if (toolExecutions >= maxIterations) {
         summaryState.abortedByLimit = true;
@@ -194,6 +198,9 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     if (event.type === "tool_execution_end") {
       log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+      if (event.toolName === "read" && event.result?.details?.truncated && event.result?.details?.path) {
+        contextState.truncatedReads.add(event.result.details.path);
+      }
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
@@ -352,15 +359,7 @@ function isQuotaError(message: string): boolean {
   return /quota|resource_exhausted|rate limit|429/i.test(message);
 }
 
-export function resolveCompactionModel(config: ReviewConfig): string | null {
-  if (config.compactionModel) return config.compactionModel;
-  if (config.provider === "google") {
-    return "gemini-3-flash-preview";
-  }
-  return config.modelId || null;
-}
-
-function estimateTokens(messages: any[]): number {
+export function estimateTokens(messages: any[]): number {
   let chars = 0;
   for (const message of messages) {
     const content = message?.content;
@@ -387,7 +386,7 @@ function estimateTokens(messages: any[]): number {
   return Math.ceil(chars / 4);
 }
 
-function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; pruned: any[] } {
+export function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; prunedCount: number } {
   const kept: any[] = [];
   let tokens = 0;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -399,75 +398,45 @@ function pruneMessages(messages: any[], tokenBudget: number): { kept: any[]; pru
     kept.unshift(msg);
     tokens += msgTokens;
   }
-  return { kept, pruned: messages.slice(0, messages.length - kept.length) };
+  return { kept, prunedCount: messages.length - kept.length };
 }
 
-async function summarizeForCompaction(
-  messages: any[],
-  model: ReturnType<typeof getModel>,
-  apiKey: string
-): Promise<string> {
-  const summaryPrompt = buildCompactionPrompt(messages);
-  const context = [{ role: "user", content: summaryPrompt }];
-  const key = apiKey?.trim() ? apiKey : undefined;
-  let output = "";
-  for await (const event of streamSimple(model, context as any, { apiKey: key })) {
-    if (event.type === "text_delta") {
-      output += event.delta;
-    }
-    if (event.type === "done" && output.trim().length === 0) {
-      const text = event.message.content
-        .filter((c: any) => c.type === "text")
-        .map((c: any) => c.text)
-        .join("");
-      output += text;
-    }
-    if (event.type === "error" && output.trim().length === 0) {
-      const text = event.error.content
-        .filter((c: any) => c.type === "text")
-        .map((c: any) => c.text)
-        .join("");
-      output += text;
-    }
-  }
-  return output.trim() || buildDeterministicSummary(messages);
+export function buildContextSummaryMessage(
+  contextState: {
+    filesRead: Set<string>;
+    filesDiffed: Set<string>;
+    truncatedReads: Set<string>;
+    partialReads: Set<string>;
+  },
+  prunedCount: number,
+  summaryState: { inlineComments: number; suggestions: number; posted: boolean }
+): { role: string; content: string; timestamp: number } {
+  const readFiles = formatSet(contextState.filesRead);
+  const diffFiles = formatSet(contextState.filesDiffed);
+  const truncated = formatSet(contextState.truncatedReads);
+  const partial = formatSet(contextState.partialReads);
+  const lines = [
+    `[${prunedCount} earlier messages pruned for context limits]`,
+    `Files read: ${readFiles}`,
+    `Files with diffs: ${diffFiles}`,
+    `Partial reads: ${partial}`,
+    `Truncated reads: ${truncated}`,
+    `Inline comments posted: ${summaryState.inlineComments}`,
+    `Suggestions posted: ${summaryState.suggestions}`,
+    `Summary posted: ${summaryState.posted ? "yes" : "no"}`,
+  ];
+  return {
+    role: "user",
+    content: `Context summary:\n${lines.map((line) => `- ${line}`).join("\n")}`,
+    timestamp: Date.now(),
+  };
 }
 
-function buildCompactionPrompt(messages: any[]): string {
-  const rendered = messages
-    .map((msg) => {
-      const role = msg.role ?? "unknown";
-      const text = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map((part: any) => part.text ?? part.thinking ?? "").join("")
-          : JSON.stringify(msg.content ?? "");
-      const truncated = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
-      return `[${role}] ${truncated}`;
-    })
-    .join("\n");
-  return `Summarize the following conversation context for a code review agent.\n` +
-    `Focus on: key findings, decisions, outstanding issues, and files discussed.\n` +
-    `Be concise and bullet-pointed.\n\n${rendered}`;
-}
-
-function buildDeterministicSummary(messages: any[]): string {
-  const lines = messages
-    .filter((msg) => msg.role === "assistant")
-    .map((msg) => {
-      const text = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map((part: any) => part.text ?? "").join("")
-          : "";
-      return text.trim();
-    })
-    .filter(Boolean)
-    .slice(-5);
-  if (lines.length === 0) {
-    return "Earlier context was compacted to fit within model limits.";
-  }
-  return `Recent assistant outputs:\n- ${lines.join("\n- ")}`;
+export function formatSet(values: Set<string>, limit = 8): string {
+  if (values.size === 0) return "none";
+  const list = Array.from(values).sort();
+  if (list.length <= limit) return list.join(", ");
+  return `${list.slice(0, limit).join(", ")} (+${list.length - limit} more)`;
 }
 
 function safeStringify(value: unknown): string {
