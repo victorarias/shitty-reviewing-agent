@@ -129,13 +129,16 @@ function parseReasoning(value: string): ReviewConfig["reasoning"] {
 
 function normalizeProvider(value: string): string {
   const lowered = value.trim().toLowerCase();
-  if (lowered === "gemini") {
-    return "google";
-  }
-  if (lowered === "vertex" || lowered === "vertexai" || lowered === "vertex-ai") {
-    return "google-vertex";
-  }
-  return value.trim();
+  const aliases: Record<string, string> = {
+    gemini: "google",
+    vertex: "google-vertex",
+    vertexai: "google-vertex",
+    "vertex-ai": "google-vertex",
+    claude: "anthropic",
+    gpt: "openai",
+    chatgpt: "openai",
+  };
+  return aliases[lowered] ?? value.trim();
 }
 
 async function resolveGithubAuth(): Promise<{ token: string; authType: string }> {
