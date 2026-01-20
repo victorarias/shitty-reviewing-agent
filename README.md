@@ -30,7 +30,7 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`, `claude` → `anthropic`, `gpt`/`chatgpt` → `openai`.
+- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
 - `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
 - `model` (required): Model name
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
