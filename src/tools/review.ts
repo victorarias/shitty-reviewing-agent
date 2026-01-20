@@ -50,13 +50,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
-      if (!diffCheck.ok) {
-        return {
-          content: [{ type: "text", text: diffCheck.message }],
-          details: { id: -1 },
-        };
-      }
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -78,6 +71,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
+        };
+      }
+      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
+      if (!diffCheck.ok) {
+        return {
+          content: [{ type: "text", text: diffCheck.message }],
+          details: { id: -1 },
         };
       }
 
@@ -159,13 +159,6 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: SuggestSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
-      if (!diffCheck.ok) {
-        return {
-          content: [{ type: "text", text: diffCheck.message }],
-          details: { id: -1 },
-        };
-      }
       const body = wrapSuggestion(params.suggestion, params.comment);
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
@@ -188,6 +181,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
+        };
+      }
+      const diffCheck = lineExistsInDiff(patchByPath.get(params.path), params.line, side);
+      if (!diffCheck.ok) {
+        return {
+          content: [{ type: "text", text: diffCheck.message }],
+          details: { id: -1 },
         };
       }
 

@@ -353,3 +353,89 @@ test("comment tool accepts valid diff lines on LEFT/RIGHT", async () => {
   expect(calls[0].type).toBe("comment");
   expect(calls[1].type).toBe("comment");
 });
+
+test("comment tool allows replies by thread_id even when line not in diff", async () => {
+  const patch = `@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n`;
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [
+      {
+        id: 101,
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-06T00:00:00Z",
+        lastActor: "dev",
+        rootCommentId: 500,
+        url: "https://example.com/thread/101",
+      },
+    ],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 999,
+    thread_id: 101,
+    body: "Follow-up reply",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("reply");
+  expect(calls[0].args.comment_id).toBe(500);
+});
+
+test("suggest tool allows replies by thread_id even when line not in diff", async () => {
+  const patch = `@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n`;
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [
+      {
+        id: 102,
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-06T00:00:00Z",
+        lastActor: "dev",
+        rootCommentId: 501,
+        url: "https://example.com/thread/102",
+      },
+    ],
+  });
+
+  const suggestTool = getTool(tools, "suggest");
+  await suggestTool.execute("", {
+    path: "src/index.ts",
+    line: 999,
+    thread_id: 102,
+    suggestion: "const a = 3;",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("reply");
+  expect(calls[0].args.comment_id).toBe(501);
+});
