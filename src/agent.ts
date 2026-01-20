@@ -1,5 +1,6 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
+import type { Usage } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type { getOctokit } from "@actions/github";
 import path from "node:path";
@@ -111,6 +112,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     headSha: input.prInfo.headSha,
     modelId: config.modelId,
     reviewSha: input.prInfo.headSha,
+    changedFiles: input.changedFiles,
     getBilling: () => summaryState.billing,
     existingComments: input.existingComments,
     reviewThreads: input.reviewThreads,
@@ -402,7 +404,7 @@ async function maybeGenerateSequenceDiagram(params: {
   effectiveThinkingLevel: ThinkingLevel;
   effectiveTemperature?: number;
   log: (...args: unknown[]) => void;
-  onBilling?: (usage: { input: number; output: number; totalTokens: number }) => void;
+  onBilling?: (usage: Usage) => void;
 }): Promise<string | null> {
   if (!params.enabled) return null;
 
@@ -423,12 +425,7 @@ async function maybeGenerateSequenceDiagram(params: {
   });
   diagramAgent.subscribe((event) => {
     if (event.type === "message_end" && event.message.role === "assistant" && event.message.usage) {
-      const usage = event.message.usage;
-      params.onBilling?.({
-        input: usage.input,
-        output: usage.output,
-        totalTokens: usage.totalTokens,
-      });
+      params.onBilling?.(event.message.usage);
     }
   });
 
