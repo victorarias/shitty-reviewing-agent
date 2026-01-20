@@ -146,7 +146,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       }),
   });
 
-  const maxIterations = 10 + config.maxFiles * 5;
+  const maxIterations = calculateMaxIterations(model, config.maxFiles);
   let toolExecutions = 0;
 
   agent.subscribe((event) => {
@@ -310,6 +310,19 @@ function safeStringify(value: unknown): string {
 function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): ChangedFile[] {
   if (ignorePatterns.length === 0) return files;
   return files.filter((file) => !ignorePatterns.some((pattern) => minimatch(file.filename, pattern)));
+}
+
+function calculateMaxIterations(model: ReturnType<typeof getModel>, fileCount: number): number {
+  const baseIterations = 10;
+  const perFileIterations = 5;
+  let multiplier = 1.0;
+  if (model.provider === "google" && isGemini3(model.id)) {
+    multiplier *= 1.2;
+  }
+  if (model.contextWindow && model.contextWindow < 100_000) {
+    multiplier *= 1.1;
+  }
+  return Math.ceil((baseIterations + fileCount * perFileIterations) * multiplier);
 }
 
 async function withRetries(
