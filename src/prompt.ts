@@ -30,7 +30,7 @@ You are a PR reviewing agent running inside a GitHub Action.
 
 | Category | Count |
 |----------|-------|
-| Bugs | 0 |
+| Bug | 0 |
 | Security | 0 |
 | Performance | 0 |
 | Unused Code | 0 |
