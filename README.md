@@ -33,6 +33,7 @@ jobs:
 - `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). `gemini` is accepted as an alias for `google`. `vertex`/`vertex-ai` map to `google-vertex`.
 - `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
 - `model` (required): Model name
+- `compaction-model` (optional): Model used for context compaction summaries. Defaults to `gemini-3-flash-preview` when provider is `google`, otherwise uses `model`.
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
 - `ignore-patterns` (optional, default `*.lock,*.generated.*`): Comma-separated globs to skip
 - `reasoning` (optional, default `off`): Thinking level (`off|minimal|low|medium|high|xhigh`)
