@@ -47,6 +47,8 @@ jobs:
 - Uses the implicit `GITHUB_TOKEN` for PR metadata and comments (no extra setup required).
 - Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
 - For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
+- The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
+- For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 
 Minimal workflow (implicit token):
 
