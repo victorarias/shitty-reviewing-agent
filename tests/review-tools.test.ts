@@ -41,7 +41,7 @@ test("comment tool replies to latest active thread root", async () => {
       url: "https://example.com/1",
       type: "review",
       path: "src/index.ts",
-      line: 10,
+      line: 1,
       updatedAt: "2026-01-01T00:00:00Z",
     },
     {
@@ -51,7 +51,7 @@ test("comment tool replies to latest active thread root", async () => {
       url: "https://example.com/2",
       type: "review",
       path: "src/index.ts",
-      line: 10,
+      line: 1,
       inReplyToId: 1,
       updatedAt: "2026-01-03T00:00:00Z",
     },
@@ -73,7 +73,7 @@ test("comment tool replies to latest active thread root", async () => {
       {
         id: 99,
         path: "src/index.ts",
-        line: 10,
+        line: 1,
         side: "RIGHT",
         isOutdated: false,
         resolved: false,
@@ -88,7 +88,7 @@ test("comment tool replies to latest active thread root", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 10,
+    line: 1,
     side: "RIGHT",
     body: "New feedback",
   });
@@ -118,7 +118,7 @@ test("comment tool falls back to new comment when no thread", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 10,
+    line: 1,
     side: "RIGHT",
     body: "New feedback",
   });
@@ -136,7 +136,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/10",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       updatedAt: "2026-01-01T00:00:00Z",
     },
@@ -147,7 +147,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/11",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       updatedAt: "2026-01-02T00:00:00Z",
     },
@@ -158,7 +158,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
       url: "https://example.com/12",
       type: "review",
       path: "src/index.ts",
-      line: 20,
+      line: 1,
       side: "RIGHT",
       inReplyToId: 10,
       updatedAt: "2026-01-05T00:00:00Z",
@@ -183,7 +183,7 @@ test("comment tool prefers most recent activity when no threads exist", async ()
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 20,
+    line: 1,
     side: "RIGHT",
     body: "Follow-up",
   });
@@ -265,7 +265,7 @@ test("comment tool can force new thread with allow_new_thread", async () => {
       {
         id: 14,
         path: "src/index.ts",
-        line: 40,
+        line: 1,
         side: "RIGHT",
         isOutdated: false,
         resolved: false,
@@ -280,7 +280,7 @@ test("comment tool can force new thread with allow_new_thread", async () => {
   const commentTool = getTool(tools, "comment");
   await commentTool.execute("", {
     path: "src/index.ts",
-    line: 40,
+    line: 1,
     side: "RIGHT",
     body: "Fresh thread",
     allow_new_thread: true,
