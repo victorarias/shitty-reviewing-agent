@@ -1,0 +1,2 @@
+generated/file.ts linguist-generated=true
+not-generated/file.ts linguist-generated=false

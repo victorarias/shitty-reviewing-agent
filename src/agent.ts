@@ -341,7 +341,7 @@ function filterIgnoredFiles(files: ChangedFile[], ignorePatterns: string[]): Cha
 const execFileAsync = promisify(execFile);
 const generatedCache = new Map<string, boolean>();
 
-async function filterDiagramFiles(files: ChangedFile[], repoRoot: string): Promise<ChangedFile[]> {
+export async function filterDiagramFiles(files: ChangedFile[], repoRoot: string): Promise<ChangedFile[]> {
   const results = await Promise.all(
     files.map(async (file) => {
       if (isTestPath(file.filename)) return null;
@@ -353,7 +353,7 @@ async function filterDiagramFiles(files: ChangedFile[], repoRoot: string): Promi
   return results.filter(Boolean) as ChangedFile[];
 }
 
-function isTestPath(file: string): boolean {
+export function isTestPath(file: string): boolean {
   const patterns = [
     "**/__tests__/**",
     "**/test/**",
@@ -366,7 +366,7 @@ function isTestPath(file: string): boolean {
   return patterns.some((pattern) => minimatch(file, pattern));
 }
 
-async function isGeneratedPath(repoRoot: string, file: string): Promise<boolean> {
+export async function isGeneratedPath(repoRoot: string, file: string): Promise<boolean> {
   const cached = generatedCache.get(file);
   if (cached !== undefined) return cached;
   try {
