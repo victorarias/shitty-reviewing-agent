@@ -22,6 +22,20 @@ describe("context management helpers", () => {
     expect(withThinking).toBe(2);
   });
 
+  test("estimateTokens accounts for non-text content safely", () => {
+    const tokens = estimateTokens([
+      {
+        content: [
+          { type: "data", value: { alpha: 1, beta: "two" } },
+        ],
+      },
+      {
+        content: { nested: ["x", "y"] },
+      },
+    ]);
+    expect(tokens).toBeGreaterThan(0);
+  });
+
   test("pruneMessages keeps newest messages within budget", () => {
     const messages = [
       { id: 1, content: "aaaa" },
@@ -35,10 +49,25 @@ describe("context management helpers", () => {
     expect(kept.map((msg) => msg.id)).toEqual([3, 4, 5]);
   });
 
+  test("pruneMessages returns empty when budget is zero", () => {
+    const messages = [
+      { id: 1, content: "aaaa" },
+      { id: 2, content: "bbbb" },
+    ];
+    const { kept, prunedCount } = pruneMessages(messages, 0);
+    expect(kept).toEqual([]);
+    expect(prunedCount).toBe(2);
+  });
+
   test("formatSet limits output and reports remaining count", () => {
     expect(formatSet(new Set())).toBe("none");
     const ten = new Set(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
     expect(formatSet(ten)).toBe("a, b, c, d, e, f, g, h (+2 more)");
+  });
+
+  test("formatSet respects custom limit", () => {
+    const values = new Set(["b", "a", "c"]);
+    expect(formatSet(values, 2)).toBe("a, b (+1 more)");
   });
 
   test("buildContextSummaryMessage formats summary lines consistently", () => {
@@ -65,5 +94,25 @@ describe("context management helpers", () => {
     expect(summary.content).toContain("Inline comments posted: 1");
     expect(summary.content).toContain("Suggestions posted: 0");
     expect(summary.content).toContain("Summary posted: yes");
+  });
+
+  test("buildContextSummaryMessage supports empty sets and no summary", () => {
+    const summary = buildContextSummaryMessage(
+      {
+        filesRead: new Set(),
+        filesDiffed: new Set(),
+        truncatedReads: new Set(),
+        partialReads: new Set(),
+      },
+      0,
+      { inlineComments: 0, suggestions: 2, posted: false }
+    );
+    expect(summary.content).toContain("[0 earlier messages pruned for context limits]");
+    expect(summary.content).toContain("Files read: none");
+    expect(summary.content).toContain("Files with diffs: none");
+    expect(summary.content).toContain("Partial reads: none");
+    expect(summary.content).toContain("Truncated reads: none");
+    expect(summary.content).toContain("Suggestions posted: 2");
+    expect(summary.content).toContain("Summary posted: no");
   });
 });
