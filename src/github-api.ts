@@ -1,97 +1,126 @@
 import type { getOctokit } from "@actions/github";
-import type { RequestInterface } from "@octokit/types";
+import type { ReviewThreadInfo } from "./types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
-type ReviewThreadCommentApi = {
-  id: number;
-  user?: { login?: string | null } | null;
+type ReviewThreadCommentGraphQL = {
+  databaseId?: number | null;
+  author?: { login?: string | null } | null;
   body?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  html_url?: string | null;
-  side?: "LEFT" | "RIGHT";
-  start_side?: "LEFT" | "RIGHT";
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  url?: string | null;
+};
+
+type ReviewThreadGraphQL = {
+  id: string;
+  isResolved?: boolean | null;
+  isOutdated?: boolean | null;
   path?: string | null;
   line?: number | null;
+  comments?: { nodes?: ReviewThreadCommentGraphQL[] | null } | null;
 };
 
-type ReviewThreadApi = {
-  id: number;
-  path?: string;
-  line?: number | null;
-  side?: "LEFT" | "RIGHT";
-  start_side?: "LEFT" | "RIGHT";
-  is_outdated?: boolean;
-  resolved?: boolean;
-  comments?: ReviewThreadCommentApi[];
+type ReviewThreadGraphQLResponse = {
+  repository?: {
+    pullRequest?: {
+      reviewThreads?: {
+        nodes?: ReviewThreadGraphQL[] | null;
+        pageInfo?: { hasNextPage: boolean; endCursor?: string | null } | null;
+      } | null;
+    } | null;
+  } | null;
 };
 
-export async function listReviewThreads(
+const REVIEW_THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $after) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first: 100) {
+            nodes {
+              databaseId
+              author { login }
+              body
+              createdAt
+              updatedAt
+              url
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}`;
+
+export async function fetchReviewThreadsGraphQL(
   octokit: Octokit,
   params: { owner: string; repo: string; pull_number: number }
-): Promise<ReviewThreadApi[]> {
-  const request = octokit.request as RequestInterface;
-  try {
-    const results: ReviewThreadApi[] = [];
-    let page = 1;
-    while (true) {
-      const response = await request("GET /repos/{owner}/{repo}/pulls/{pull_number}/threads", {
-        ...params,
-        per_page: 100,
-        page,
-      });
-      const data = response.data as ReviewThreadApi[];
-      results.push(...data);
-      if (data.length < 100) break;
-      page += 1;
+): Promise<ReviewThreadGraphQL[]> {
+  const results: ReviewThreadGraphQL[] = [];
+  let after: string | null = null;
+
+  while (true) {
+    const response = await octokit.graphql<ReviewThreadGraphQLResponse>(REVIEW_THREADS_QUERY, {
+      owner: params.owner,
+      repo: params.repo,
+      number: params.pull_number,
+      after,
+    });
+
+    const connection = response.repository?.pullRequest?.reviewThreads;
+    const nodes = connection?.nodes ?? [];
+    results.push(...nodes);
+
+    const pageInfo = connection?.pageInfo;
+    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) {
+      break;
     }
-    return results;
-  } catch (error: any) {
-    const status = error?.status ?? error?.response?.status;
-    if (status === 404) {
-      // Some repos/tokens do not have access to review threads; treat as unavailable.
-      console.warn(
-        `[warn] Unable to list review threads (404) for ${params.owner}/${params.repo}#${params.pull_number}; continuing without threads.`
-      );
-      logRequestDetails(error);
-      await logTokenScopes(request);
-      return [];
-    }
-    const message = error?.message ? String(error.message) : String(error);
-    throw new Error(
-      `Failed to list review threads for ${params.owner}/${params.repo}#${params.pull_number} (status ${status ?? "unknown"}): ${message}`,
-      { cause: error }
-    );
+    after = pageInfo.endCursor;
   }
+
+  return results;
 }
 
-function logRequestDetails(error: any): void {
-  const response = error?.response;
-  if (!response) return;
-  const requestId = response.headers?.["x-github-request-id"] ?? "unknown";
-  const docUrl = response.data?.documentation_url ?? "unknown";
-  const url = response.url ?? response.config?.url ?? "unknown";
-  console.warn(
-    `[warn] listReviewThreads 404 details: request_id=${requestId} url=${url} doc=${docUrl}`
-  );
-}
+export function normalizeReviewThreadsGraphQL(threads: ReviewThreadGraphQL[]): ReviewThreadInfo[] {
+  const normalized: ReviewThreadInfo[] = [];
+  for (const thread of threads) {
+    const comments = thread.comments?.nodes ?? [];
+    const withIds = comments
+      .filter((comment) => comment.databaseId !== null && comment.databaseId !== undefined)
+      .map((comment) => ({
+        id: comment.databaseId as number,
+        author: comment.author?.login ?? "unknown",
+        updatedAt: comment.updatedAt ?? comment.createdAt ?? "",
+        url: comment.url ?? "",
+      }))
+      .filter((comment) => comment.updatedAt);
 
-async function logTokenScopes(request: RequestInterface): Promise<void> {
-  const debug = (process.env.INPUT_DEBUG ?? "").toLowerCase() === "true";
-  if (!debug) return;
-  try {
-    const response = await request("GET /rate_limit", {});
-    const oauthScopes = response.headers?.["x-oauth-scopes"] ?? "unknown";
-    const acceptedScopes = response.headers?.["x-accepted-oauth-scopes"] ?? "unknown";
-    const actor = process.env.GITHUB_ACTOR ?? "unknown";
-    const event = process.env.GITHUB_EVENT_NAME ?? "unknown";
-    const ref = process.env.GITHUB_REF ?? "unknown";
-    console.warn(
-      `[debug] token scopes: oauth=${oauthScopes} accepted=${acceptedScopes} actor=${actor} event=${event} ref=${ref}`
-    );
-  } catch (err: any) {
-    const message = err?.message ? String(err.message) : String(err);
-    console.warn(`[warn] Unable to fetch token scopes via rate_limit: ${message}`);
+    if (withIds.length === 0) continue;
+    const root = withIds[0];
+    const last = [...withIds].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+    normalized.push({
+      id: root.id,
+      path: thread.path ?? "",
+      line: thread.line ?? null,
+      side: undefined,
+      isOutdated: thread.isOutdated ?? false,
+      resolved: thread.isResolved ?? false,
+      lastUpdatedAt: last?.updatedAt ?? "",
+      lastActor: last?.author ?? "unknown",
+      rootCommentId: root.id,
+      url: root.url ?? last?.url ?? "",
+    });
   }
+  return normalized;
 }
