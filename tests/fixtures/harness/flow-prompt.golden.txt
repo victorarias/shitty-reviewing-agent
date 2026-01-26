@@ -26,6 +26,8 @@ Previous summary:
 <!-- sri:bot-comment -->
 <!-- sri:last-reviewed-sha:abcdef1 -->
 
+Note: This is a follow-up review. Focus only on changes since the last review; do not restate unchanged findings.
+
 # Constraints
 - Max files allowed: 5
 - Ignore patterns: **/*.snap

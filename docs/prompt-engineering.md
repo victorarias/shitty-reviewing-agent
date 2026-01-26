@@ -307,7 +307,7 @@ function buildUserPrompt(context: ReviewContext): string {
     parts.push(formatPreviousReview(context.previousReview));
     parts.push(`
 Note: This is a follow-up review. ${context.newCommits} commits since last review.
-Focus on what changed, not what was already reviewed.
+Focus on what changed, not what was already reviewed. Summarize new issues and resolved items only.
 `);
   }
 
