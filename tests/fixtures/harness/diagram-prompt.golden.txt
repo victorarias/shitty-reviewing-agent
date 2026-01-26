@@ -1,0 +1,12 @@
+# PR Context
+PR title: Add notifications
+PR description: Adds notification queue and dispatcher.
+
+Changed files:
+- src/notify/queue.ts
+- src/notify/dispatcher.ts
+- src/notify/handlers/email.ts
+- src/notify/handlers/sms.ts
+
+# Task
+Generate a mermaid sequence diagram (only the code, no fences). Use tools if needed.

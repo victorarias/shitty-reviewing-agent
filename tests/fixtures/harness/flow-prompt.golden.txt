@@ -1,0 +1,33 @@
+# PR Context
+PR title: Add audit log
+PR description: This adds a new audit log entry.
+
+Changed files (after ignore patterns):
+- src/audit.ts
+- src/index.ts
+
+Metadata:
+- Existing PR comments (issue + review): 1
+- Last reviewed SHA: abcdef1
+- Current head SHA: head
+- Distinct directories touched: 1
+
+
+# Previous Review
+- Previous verdict: Approve
+- Previous review at: 2026-01-01T00:00:00Z
+- Previous review URL: https://example.com/comment/1
+
+Previous summary:
+## Review Summary
+
+**Verdict:** Approve
+
+<!-- sri:last-reviewed-sha:abcdef1 -->
+
+# Constraints
+- Max files allowed: 5
+- Ignore patterns: **/*.snap
+
+# Task
+Review this pull request. Start by calling get_pr_info, get_changed_files, and get_review_context.

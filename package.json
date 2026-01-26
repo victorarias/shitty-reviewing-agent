@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "smoke": "node scripts/smoke.mjs",
     "start": "bun src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "test:harness": "bun test tests/flow*.test.ts tests/*prompt*.test.ts tests/summary-posts.test.ts tests/skip-summary.test.ts tests/run-review-*.test.ts tests/app-pr-data.test.ts tests/config.test.ts"
   },
   "engines": {
     "node": ">=20"

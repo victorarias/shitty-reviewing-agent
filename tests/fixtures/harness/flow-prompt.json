@@ -1,0 +1,39 @@
+{
+  "prInfo": {
+    "number": 42,
+    "title": "Add audit log",
+    "body": "This adds a new audit log entry.",
+    "author": "dev",
+    "baseRef": "main",
+    "headRef": "feature/audit",
+    "baseSha": "base",
+    "headSha": "head",
+    "url": "https://example.com/pr/42"
+  },
+  "changedFiles": [
+    {
+      "filename": "src/audit.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 2,
+      "changes": 12
+    },
+    {
+      "filename": "src/index.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 1,
+      "changes": 6
+    }
+  ],
+  "existingComments": [
+    {
+      "id": 1,
+      "author": "bot",
+      "body": "## Review Summary\n\n**Verdict:** Approve\n\n<!-- sri:last-reviewed-sha:abcdef1 -->",
+      "url": "https://example.com/comment/1",
+      "type": "issue",
+      "updatedAt": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
