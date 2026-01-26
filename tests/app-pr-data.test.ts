@@ -8,7 +8,7 @@ const context: ReviewContext = {
   prNumber: 1,
 };
 
-test("fetchExistingComments falls back to threads from review comments on 404", async () => {
+test("fetchExistingComments falls back to threads from review comments on GraphQL failure", async () => {
   const issueComments = [
     {
       id: 1,
@@ -55,11 +55,8 @@ test("fetchExistingComments falls back to threads from review comments on 404", 
       if (fn === octokit.rest.pulls.listReviewComments) return reviewComments;
       return [];
     },
-    request: async () => {
-      const error: any = new Error("Not Found");
-      error.status = 404;
-      error.response = { status: 404, headers: {} };
-      throw error;
+    graphql: async () => {
+      throw new Error("GraphQL error");
     },
   };
 

@@ -1,5 +1,5 @@
 import type * as github from "@actions/github";
-import { listReviewThreads } from "../github-api.js";
+import { fetchReviewThreadsGraphQL, normalizeReviewThreadsGraphQL } from "../github-api.js";
 import { buildThreadsFromReviewComments } from "../review-threads.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewContext, ReviewThreadInfo } from "../types.js";
 
@@ -49,7 +49,7 @@ export async function fetchExistingComments(
   octokit: ReturnType<typeof github.getOctokit>,
   context: ReviewContext
 ): Promise<{ existingComments: ExistingComment[]; reviewThreads: ReviewThreadInfo[] }> {
-  const [issueComments, reviewComments, reviewThreads] = await Promise.all([
+  const [issueComments, reviewComments] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listComments, {
       owner: context.owner,
       repo: context.repo,
@@ -61,11 +61,6 @@ export async function fetchExistingComments(
       repo: context.repo,
       pull_number: context.prNumber,
       per_page: 100,
-    }),
-    listReviewThreads(octokit, {
-      owner: context.owner,
-      repo: context.repo,
-      pull_number: context.prNumber,
     }),
   ]);
 
@@ -91,37 +86,19 @@ export async function fetchExistingComments(
     updatedAt: comment.updated_at ?? comment.created_at ?? "",
   }));
 
-  const normalizedThreads: ReviewThreadInfo[] = reviewThreads.map((thread: any) => {
-    const comments = Array.isArray(thread.comments) ? thread.comments : [];
-    const normalized = comments.map((comment: any) => ({
-      id: comment.id,
-      author: comment.user?.login ?? "unknown",
-      body: comment.body ?? "",
-      createdAt: comment.created_at ?? "",
-      updatedAt: comment.updated_at ?? comment.created_at ?? "",
-      url: comment.html_url ?? "",
-      side: comment.side ?? comment.start_side ?? undefined,
-    }));
-    const lastUpdatedAt =
-      [...normalized]
-        .map((item) => item.updatedAt)
-        .sort((a, b) => b.localeCompare(a))[0] ?? "";
-    const lastComment = [...normalized].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-    const rootComment = normalized[0];
-    const side = (thread.side ?? thread.start_side ?? rootComment?.side) as "LEFT" | "RIGHT" | undefined;
-    return {
-      id: thread.id,
-      path: thread.path ?? comments[0]?.path ?? "",
-      line: thread.line ?? comments[0]?.line ?? null,
-      side,
-      isOutdated: thread.is_outdated ?? false,
-      resolved: thread.resolved ?? false,
-      lastUpdatedAt,
-      lastActor: lastComment?.author ?? "unknown",
-      rootCommentId: rootComment?.id ?? null,
-      url: rootComment?.url ?? lastComment?.url ?? "",
-    };
-  });
+  let normalizedThreads: ReviewThreadInfo[] = [];
+  try {
+    const threads = await fetchReviewThreadsGraphQL(octokit, {
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+    });
+    normalizedThreads = normalizeReviewThreadsGraphQL(threads);
+  } catch (error: any) {
+    console.warn(
+      `[warn] Unable to fetch review threads via GraphQL for ${context.owner}/${context.repo}#${context.prNumber}: ${error?.message ?? error}`
+    );
+  }
 
   const existingComments = [...normalizedIssue, ...normalizedReview];
   const fallbackThreads = normalizedThreads.length === 0
