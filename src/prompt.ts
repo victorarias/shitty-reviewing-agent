@@ -102,7 +102,9 @@ export function buildUserPrompt(params: {
   const previousReviewBody = params.previousReviewBody ? params.previousReviewBody : "";
   const directoryCount = params.directoryCount ?? 0;
   const hasSequenceDiagram = params.sequenceDiagram && params.sequenceDiagram.trim().length > 0;
-  const isFollowUp = Boolean(params.lastReviewedSha) || (params.previousVerdict && params.previousVerdict !== "(none)");
+  const isFollowUp =
+    Boolean(params.lastReviewedSha) ||
+    (params.previousVerdict && params.previousVerdict !== "(none)" && params.previousVerdict !== "Skipped");
 
   return `# PR Context
 PR title: ${params.prTitle}
