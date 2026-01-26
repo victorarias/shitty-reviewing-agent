@@ -50,6 +50,7 @@ jobs:
 - For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
+- LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 
 Minimal workflow (implicit token):
 
