@@ -323,7 +323,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
               url: rootComment?.url ?? lastComment?.url ?? "",
               comments: normalizedComments,
             };
-          }).filter((thread): thread is ReviewContextPayload["reviewThreads"][number] => Boolean(thread));
+          }).filter((thread) => thread !== null) as ReviewContextPayload["reviewThreads"][number][];
           return normalized.length > 0 ? normalized : fallbackThreadsWithComments;
         });
 
