@@ -35,3 +35,22 @@ test("buildUserPrompt includes context", () => {
   expect(prompt).toContain("Last reviewed SHA: deadbeef");
   expect(prompt).toContain("Current head SHA: cafebabe");
 });
+
+test("buildUserPrompt adds follow-up note when prior review exists", () => {
+  const prompt = buildUserPrompt({
+    prTitle: "Test",
+    prBody: "Body",
+    changedFiles: ["src/index.ts"],
+    maxFiles: 50,
+    ignorePatterns: ["*.lock"],
+    existingComments: 1,
+    lastReviewedSha: "deadbeef",
+    headSha: "cafebabe",
+    previousVerdict: "Approve",
+    previousReviewAt: "2026-01-01T00:00:00Z",
+    previousReviewUrl: "https://example.com/review/1",
+  });
+
+  expect(prompt).toContain("Note: This is a follow-up review.");
+  expect(prompt).toContain("Focus only on changes since the last review");
+});

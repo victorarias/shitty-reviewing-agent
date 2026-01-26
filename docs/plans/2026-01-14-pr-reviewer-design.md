@@ -248,6 +248,37 @@ Posted as PR comment:
 *Reviewed by shitty-reviewing-agent • model: {model from input}*
 ```
 
+Follow-up reviews use a delta-only format:
+
+```markdown
+## Review Summary
+
+**Verdict:** Comment | Approve | Request Changes
+
+### Issues Found
+
+| Category | Count |
+|----------|-------|
+| Bugs | 0 |
+| Security | 0 |
+| Performance | 0 |
+| Unused Code | 0 |
+| Duplicated Code | 0 |
+| Refactoring | 1 |
+| Documentation | 0 |
+
+### New Issues Since Last Review
+
+- **src/retry.ts:88** - Backoff now ignores jitter flag in the new branch
+
+### Resolved Since Last Review
+
+- **src/auth.ts:42** - Sanitization added for user input
+
+---
+*Reviewed by shitty-reviewing-agent • model: {model from input}*
+```
+
 ## Project Structure
 
 ```

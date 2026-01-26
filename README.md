@@ -49,6 +49,7 @@ jobs:
 - Docker runtime uses Bun to execute the TypeScript sources directly (no committed `dist/` artifacts).
 - For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
+- Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 
