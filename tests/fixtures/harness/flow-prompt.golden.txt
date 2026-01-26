@@ -23,6 +23,7 @@ Previous summary:
 
 **Verdict:** Approve
 
+<!-- sri:bot-comment -->
 <!-- sri:last-reviewed-sha:abcdef1 -->
 
 # Constraints

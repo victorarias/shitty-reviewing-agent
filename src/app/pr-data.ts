@@ -1,6 +1,5 @@
 import type * as github from "@actions/github";
 import { fetchReviewThreadsGraphQL, normalizeReviewThreadsGraphQL } from "../github-api.js";
-import { buildThreadsFromReviewComments } from "../review-threads.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewContext, ReviewThreadInfo } from "../types.js";
 
 export async function fetchPrData(
@@ -86,26 +85,15 @@ export async function fetchExistingComments(
     updatedAt: comment.updated_at ?? comment.created_at ?? "",
   }));
 
-  let normalizedThreads: ReviewThreadInfo[] = [];
-  try {
-    const threads = await fetchReviewThreadsGraphQL(octokit, {
-      owner: context.owner,
-      repo: context.repo,
-      pull_number: context.prNumber,
-    });
-    normalizedThreads = normalizeReviewThreadsGraphQL(threads);
-  } catch (error: any) {
-    console.warn(
-      `[warn] Unable to fetch review threads via GraphQL for ${context.owner}/${context.repo}#${context.prNumber}: ${error?.message ?? error}`
-    );
-  }
+  const threads = await fetchReviewThreadsGraphQL(octokit, {
+    owner: context.owner,
+    repo: context.repo,
+    pull_number: context.prNumber,
+  });
+  const normalizedThreads = normalizeReviewThreadsGraphQL(threads);
 
   const existingComments = [...normalizedIssue, ...normalizedReview];
-  const fallbackThreads = normalizedThreads.length === 0
-    ? buildThreadsFromReviewComments(existingComments)
-    : normalizedThreads;
-
-  return { existingComments, reviewThreads: fallbackThreads };
+  return { existingComments, reviewThreads: normalizedThreads };
 }
 
 export async function fetchChangesSinceReview(

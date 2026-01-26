@@ -111,6 +111,7 @@ export function normalizeReviewThreadsGraphQL(threads: ReviewThreadGraphQL[]): R
 
     normalized.push({
       id: root.id,
+      threadId: thread.id,
       path: thread.path ?? "",
       line: thread.line ?? null,
       side: undefined,

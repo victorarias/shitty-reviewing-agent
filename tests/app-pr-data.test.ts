@@ -8,7 +8,7 @@ const context: ReviewContext = {
   prNumber: 1,
 };
 
-test("fetchExistingComments falls back to threads from review comments on GraphQL failure", async () => {
+test("fetchExistingComments throws on GraphQL failure", async () => {
   const issueComments = [
     {
       id: 1,
@@ -60,12 +60,14 @@ test("fetchExistingComments falls back to threads from review comments on GraphQ
     },
   };
 
-  const { existingComments, reviewThreads } = await fetchExistingComments(octokit as any, context);
+  let error: unknown = null;
+  try {
+    await fetchExistingComments(octokit as any, context);
+  } catch (err) {
+    error = err;
+  }
 
-  expect(existingComments.length).toBe(3);
-  expect(reviewThreads.length).toBe(1);
-  expect(reviewThreads[0].rootCommentId).toBe(10);
-  expect(reviewThreads[0].lastActor).toBe("carol");
+  expect(error).toBeTruthy();
 });
 
 test("fetchChangesSinceReview returns warning on 404 compare", async () => {

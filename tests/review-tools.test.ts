@@ -24,6 +24,10 @@ function makeOctokitSpy() {
         createComment: async () => ({ data: { id: 303 } }),
       },
     },
+    graphql: async (query: string, args: any) => {
+      calls.push({ type: "graphql", args: { query, ...args } });
+      return { resolveReviewThread: { thread: { id: args.threadId, isResolved: true } } };
+    },
   };
   return { octokit, calls };
 }
@@ -172,6 +176,88 @@ test("comment tool falls back to new comment when no thread", async () => {
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
+});
+
+test("comment tool appends bot marker to new comments", async () => {
+  const existingComments: ExistingComment[] = [];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "New feedback",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].args.body).toContain("<!-- sri:bot-comment -->");
+});
+
+test("resolve_thread replies with explanation and resolves bot thread", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 5,
+      author: "github-actions[bot]",
+      body: "Original issue\n\n<!-- sri:bot-comment -->",
+      url: "https://example.com/5",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [
+      {
+        id: 5,
+        threadId: "T123",
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-02T00:00:00Z",
+        lastActor: "github-actions[bot]",
+        rootCommentId: 5,
+        url: "https://example.com/thread/5",
+      },
+    ],
+  });
+
+  const resolveTool = getTool(tools, "resolve_thread");
+  await resolveTool.execute("", {
+    thread_id: 5,
+    body: "Fixed by validating input upstream.",
+  });
+
+  expect(calls.find((call) => call.type === "reply")?.args.body).toContain("<!-- sri:bot-comment -->");
+  expect(calls.find((call) => call.type === "graphql")?.args.threadId).toBe("T123");
 });
 
 test("comment tool prefers most recent activity when no threads exist", async () => {

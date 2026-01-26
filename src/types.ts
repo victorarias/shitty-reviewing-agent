@@ -54,6 +54,7 @@ export interface ExistingComment {
 
 export interface ReviewThreadInfo {
   id: number;
+  threadId?: string;
   path: string;
   line: number | null;
   side?: "LEFT" | "RIGHT";
