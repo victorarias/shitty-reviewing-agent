@@ -42,6 +42,8 @@ export interface ReviewContext {
 export interface ExistingComment {
   id: number;
   author: string;
+  authorType?: string;
+  authorAssociation?: string;
   body: string;
   url: string;
   type: "issue" | "review";
@@ -54,6 +56,7 @@ export interface ExistingComment {
 
 export interface ReviewThreadInfo {
   id: number;
+  threadId?: string;
   path: string;
   line: number | null;
   side?: "LEFT" | "RIGHT";

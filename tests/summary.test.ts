@@ -14,6 +14,7 @@ test("buildSummaryMarkdown adds footer + marker", () => {
   });
 
   expect(body).toContain("Reviewed by shitty-reviewing-agent");
+  expect(body).toContain("sri:bot-comment");
   expect(body).toContain("sri:last-reviewed-sha:abc1234");
   expect(body).toContain("Billing: input 1");
 });

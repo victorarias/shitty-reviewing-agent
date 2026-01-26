@@ -6,6 +6,9 @@ import type { ChangedFile, ExistingComment, ReviewThreadInfo } from "../types.js
 
 type Octokit = ReturnType<typeof getOctokit>;
 
+const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
+const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread {\n      id\n      isResolved\n    }\n  }\n}`;
+
 interface ReviewToolDeps {
   octokit: Octokit;
   owner: string;
@@ -28,6 +31,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById, threadLastActorById, threadLastCommentById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById, threadsByRootCommentId } = buildThreadIndex(deps.reviewThreads);
   const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
+  const commentById = new Map(deps.existingComments.map((comment) => [comment.id, comment]));
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -50,6 +54,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
+      const body = ensureBotMarker(params.body);
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -59,7 +64,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           };
         }
         const latest = getLatestThreadComment(thread.rootCommentId, threadLastCommentById, thread.lastActor);
-        if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+        if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
           return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread.id);
         }
         const response = await safeCall(() =>
@@ -68,7 +73,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
             repo: deps.repo,
             pull_number: deps.pullNumber,
             comment_id: thread.rootCommentId,
-            body: params.body,
+            body,
           })
         );
         deps.onInlineComment?.();
@@ -98,7 +103,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           const thread = sideThreads[0];
           if (thread.rootCommentId) {
             const latest = getLatestThreadComment(thread.rootCommentId, threadLastCommentById, thread.lastActor);
-            if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+            if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
               return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread.id);
             }
             const response = await safeCall(() =>
@@ -107,7 +112,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
                 repo: deps.repo,
                 pull_number: deps.pullNumber,
                 comment_id: thread.rootCommentId,
-                body: params.body,
+                body,
               })
             );
             deps.onInlineComment?.();
@@ -126,8 +131,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line, side);
       if (existing && !params.allow_new_thread) {
         const thread = threadsByRootCommentId.get(existing.id);
-        const latest = getLatestThreadComment(existing.id, threadLastCommentById, threadLastActorById.get(existing.id) ?? existing.author);
-        if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+        const latest = getLatestThreadComment(
+          existing.id,
+          threadLastCommentById,
+          threadLastActorById.get(existing.id) ?? existing.author,
+          existing.authorType
+        );
+        if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
           return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread?.id);
         }
         const response = await safeCall(() =>
@@ -136,7 +146,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
             repo: deps.repo,
             pull_number: deps.pullNumber,
             comment_id: existing.id,
-            body: params.body,
+            body,
           })
         );
         deps.onInlineComment?.();
@@ -150,13 +160,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           owner: deps.owner,
           repo: deps.repo,
           pull_number: deps.pullNumber,
-          commit_id: deps.headSha,
-          path: params.path,
-          line: params.line,
-          side: side ?? "RIGHT",
-          body: params.body,
-        })
-      );
+        commit_id: deps.headSha,
+        path: params.path,
+        line: params.line,
+        side: side ?? "RIGHT",
+        body,
+      })
+    );
       deps.onInlineComment?.();
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
@@ -172,7 +182,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: SuggestSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const body = wrapSuggestion(params.suggestion, params.comment);
+      const body = ensureBotMarker(wrapSuggestion(params.suggestion, params.comment));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -182,7 +192,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           };
         }
         const latest = getLatestThreadComment(thread.rootCommentId, threadLastCommentById, thread.lastActor);
-        if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+        if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
           return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread.id);
         }
         const response = await safeCall(() =>
@@ -221,7 +231,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           const thread = sideThreads[0];
           if (thread.rootCommentId) {
             const latest = getLatestThreadComment(thread.rootCommentId, threadLastCommentById, thread.lastActor);
-            if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+            if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
               return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread.id);
             }
             const response = await safeCall(() =>
@@ -249,8 +259,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       const existing = findLatestLocation(existingByLocation, threadActivityById, params.path, params.line, side);
       if (existing && !params.allow_new_thread) {
         const thread = threadsByRootCommentId.get(existing.id);
-        const latest = getLatestThreadComment(existing.id, threadLastCommentById, threadLastActorById.get(existing.id) ?? existing.author);
-        if (latest && shouldUpdateDuplicateBot(latest.author, thread)) {
+        const latest = getLatestThreadComment(
+          existing.id,
+          threadLastCommentById,
+          threadLastActorById.get(existing.id) ?? existing.author,
+          existing.authorType
+        );
+        if (latest && shouldUpdateDuplicateBot(latest.author, thread, latest.authorType)) {
           return buildDuplicateUpdateResponse(params.path, params.line, latest.id, latest.author, thread?.id);
         }
         const response = await safeCall(() =>
@@ -299,7 +314,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           owner: deps.owner,
           repo: deps.repo,
           comment_id: params.comment_id,
-          body: params.body,
+          body: ensureBotMarker(params.body),
         })
       );
       return {
@@ -321,12 +336,79 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           repo: deps.repo,
           pull_number: deps.pullNumber,
           comment_id: params.comment_id,
-          body: params.body,
+          body: ensureBotMarker(params.body),
         })
       );
       return {
         content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
         details: { id: response.data.id },
+      };
+    },
+  };
+
+  const resolveTool: AgentTool<typeof ResolveSchema, { id: number }> = {
+    name: "resolve_thread",
+    label: "Resolve review thread",
+    description: "Reply with an explanation and resolve a review thread created by this bot.",
+    parameters: ResolveSchema,
+    execute: async (_id, params) => {
+      const explanation = params.body?.trim();
+      if (!explanation || explanation === BOT_COMMENT_MARKER) {
+        return {
+          content: [{ type: "text", text: "Resolution requires a non-empty explanation in body." }],
+          details: { id: -1 },
+        };
+      }
+      const thread = threadsById.get(params.thread_id) ?? threadsByRootCommentId.get(params.thread_id);
+      if (!thread) {
+        return {
+          content: [{ type: "text", text: `Thread ${params.thread_id} not found.` }],
+          details: { id: -1 },
+        };
+      }
+      if (thread.resolved) {
+        return {
+          content: [{ type: "text", text: `Thread ${thread.id} is already resolved.` }],
+          details: { id: -1 },
+        };
+      }
+      const rootId = thread.rootCommentId ?? thread.id;
+      const rootComment = commentById.get(rootId);
+      if (!rootComment) {
+        return {
+          content: [{ type: "text", text: `Unable to load root comment for thread ${thread.id}.` }],
+          details: { id: -1 },
+        };
+      }
+      if (!isBotComment(rootComment)) {
+        return {
+          content: [{ type: "text", text: `Thread ${thread.id} is not authored by this bot; refusing to resolve.` }],
+          details: { id: -1 },
+        };
+      }
+      if (!thread.threadId) {
+        return {
+          content: [{ type: "text", text: `Thread ${thread.id} missing GraphQL thread id; cannot resolve.` }],
+          details: { id: -1 },
+        };
+      }
+      const reply = await safeCall(() =>
+        deps.octokit.rest.pulls.createReplyForReviewComment({
+          owner: deps.owner,
+          repo: deps.repo,
+          pull_number: deps.pullNumber,
+          comment_id: rootId,
+          body: ensureBotMarker(params.body),
+        })
+      );
+      await safeCall(() =>
+        deps.octokit.graphql(RESOLVE_THREAD_MUTATION, {
+          threadId: thread.threadId,
+        })
+      );
+      return {
+        content: [{ type: "text", text: `Resolved thread ${thread.id} with reply ${reply.data.id}.` }],
+        details: { id: reply.data.id },
       };
     },
   };
@@ -361,7 +443,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listThreadsTool, commentTool, suggestTool, updateTool, replyTool, summaryTool];
+  return [listThreadsTool, commentTool, suggestTool, updateTool, replyTool, resolveTool, summaryTool];
 }
 
 const CommentSchema = Type.Object({
@@ -398,6 +480,11 @@ const ReplySchema = Type.Object({
   body: Type.String({ description: "Reply body" }),
 });
 
+const ResolveSchema = Type.Object({
+  thread_id: Type.Integer({ minimum: 1, description: "Thread id to resolve." }),
+  body: Type.String({ description: "Explanation for why the thread is resolved." }),
+});
+
 const UpdateSchema = Type.Object({
   comment_id: Type.Integer({ minimum: 1 }),
   body: Type.String({ description: "Updated comment body" }),
@@ -408,22 +495,45 @@ function wrapSuggestion(suggestion: string, comment?: string): string {
   return `${prefix}\`\`\`suggestion\n${suggestion}\n\`\`\``;
 }
 
+function ensureBotMarker(body: string): string {
+  if (body.includes(BOT_COMMENT_MARKER)) return body;
+  const trimmed = body.trim();
+  if (!trimmed) return BOT_COMMENT_MARKER;
+  return `${body}\n\n${BOT_COMMENT_MARKER}`;
+}
+
+function isBotAuthor(author?: string, authorType?: string): boolean {
+  if (authorType?.toLowerCase() === "bot") return true;
+  return author?.toLowerCase().endsWith("[bot]") ?? false;
+}
+
+function isBotComment(comment: ExistingComment): boolean {
+  if (isBotAuthor(comment.author, comment.authorType)) return true;
+  if (!comment.authorType && comment.body?.includes(BOT_COMMENT_MARKER)) return true;
+  return false;
+}
+
 function buildLocationIndex(comments: ExistingComment[]): {
   existingByLocation: Map<string, ExistingComment[]>;
   threadActivityById: Map<number, string>;
   threadLastActorById: Map<number, string>;
-  threadLastCommentById: Map<number, { id: number; author?: string; updatedAt: string }>;
+  threadLastCommentById: Map<number, { id: number; author?: string; authorType?: string; updatedAt: string }>;
 } {
   const map = new Map<string, ExistingComment[]>();
   const activity = new Map<number, string>();
   const lastActorById = new Map<number, string>();
-  const lastCommentById = new Map<number, { id: number; author?: string; updatedAt: string }>();
+  const lastCommentById = new Map<number, { id: number; author?: string; authorType?: string; updatedAt: string }>();
   for (const comment of comments) {
     if (comment.type !== "review" || !comment.path || !comment.line) continue;
     const rootId = comment.inReplyToId ?? comment.id;
     const lastComment = lastCommentById.get(rootId);
     if (!lastComment || lastComment.updatedAt.localeCompare(comment.updatedAt) < 0) {
-      lastCommentById.set(rootId, { id: comment.id, author: comment.author, updatedAt: comment.updatedAt });
+      lastCommentById.set(rootId, {
+        id: comment.id,
+        author: comment.author,
+        authorType: comment.authorType,
+        updatedAt: comment.updatedAt,
+      });
     }
     const lastActivity = activity.get(rootId);
     if (!lastActivity || lastActivity.localeCompare(comment.updatedAt) < 0) {
@@ -599,34 +709,43 @@ function ensureSummaryFooter(
   const hasFooter = body.includes("Reviewed by shitty-reviewing-agent");
   const billingLine = `*Billing: input ${billing.input} • output ${billing.output} • total ${billing.total} • cost $${billing.cost.toFixed(6)}*`;
   const marker = `<!-- sri:last-reviewed-sha:${reviewSha} -->`;
-  const footer = `---\n*Reviewed by shitty-reviewing-agent • model: ${modelId}*\n${billingLine}\n${marker}`;
+  const footer = `---\n*Reviewed by shitty-reviewing-agent • model: ${modelId}*\n${billingLine}\n${BOT_COMMENT_MARKER}\n${marker}`;
   if (hasFooter) {
     if (body.includes("Billing: input")) {
-      return body.includes("sri:last-reviewed-sha") ? body : `${body}\n${marker}`;
+      let updated = body;
+      if (!updated.includes(BOT_COMMENT_MARKER)) {
+        updated = `${updated}\n${BOT_COMMENT_MARKER}`;
+      }
+      return updated.includes("sri:last-reviewed-sha") ? updated : `${updated}\n${marker}`;
     }
-    return `${body}\n${billingLine}\n${marker}`;
+    let updated = `${body}\n${billingLine}`;
+    if (!updated.includes(BOT_COMMENT_MARKER)) {
+      updated = `${updated}\n${BOT_COMMENT_MARKER}`;
+    }
+    return updated.includes("sri:last-reviewed-sha") ? updated : `${updated}\n${marker}`;
   }
   return `${body.trim()}\n\n${footer}`;
 }
 
-function shouldUpdateDuplicateBot(actor?: string, thread?: ReviewThreadInfo): boolean {
-  if (!actor) return false;
-  const isBot = actor.toLowerCase().endsWith("[bot]");
+function shouldUpdateDuplicateBot(actor?: string, thread?: ReviewThreadInfo, authorType?: string): boolean {
+  if (!actor && !authorType) return false;
+  const isBot = isBotAuthor(actor, authorType);
   const unresolved = thread?.resolved !== true;
   return isBot && unresolved;
 }
 
 function getLatestThreadComment(
   rootCommentId: number | null,
-  lastCommentById: Map<number, { id: number; author?: string; updatedAt: string }>,
-  fallbackAuthor?: string
-): { id: number; author?: string } | null {
+  lastCommentById: Map<number, { id: number; author?: string; authorType?: string; updatedAt: string }>,
+  fallbackAuthor?: string,
+  fallbackAuthorType?: string
+): { id: number; author?: string; authorType?: string } | null {
   if (!rootCommentId) return null;
   const latest = lastCommentById.get(rootCommentId);
   if (latest) {
-    return { id: latest.id, author: latest.author };
+    return { id: latest.id, author: latest.author, authorType: latest.authorType };
   }
-  return { id: rootCommentId, author: fallbackAuthor };
+  return { id: rootCommentId, author: fallbackAuthor, authorType: fallbackAuthorType };
 }
 
 function buildDuplicateUpdateResponse(

@@ -30,7 +30,7 @@
     {
       "id": 1,
       "author": "bot",
-      "body": "## Review Summary\n\n**Verdict:** Approve\n\n<!-- sri:last-reviewed-sha:abcdef1 -->",
+      "body": "## Review Summary\n\n**Verdict:** Approve\n\n<!-- sri:bot-comment -->\n<!-- sri:last-reviewed-sha:abcdef1 -->",
       "url": "https://example.com/comment/1",
       "type": "issue",
       "updatedAt": "2026-01-01T00:00:00Z"

@@ -17,9 +17,10 @@ export function buildSummaryMarkdown(content: SummaryContent): string {
   const billing = content.billing
     ? `\n*Billing: input ${content.billing.input} • output ${content.billing.output} • total ${content.billing.total} • cost $${content.billing.cost.toFixed(6)}*`
     : "";
+  const botMarker = "\n<!-- sri:bot-comment -->";
   const marker = content.reviewSha ? `\n<!-- sri:last-reviewed-sha:${content.reviewSha} -->` : "";
   const multiFile = renderOptionalSection("Multi-file Suggestions", content.multiFileSuggestions);
-  return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}${marker}`;
+  return `## Review Summary\n\n**Verdict:** ${content.verdict}\n\n### Issues Found\n\n${renderList(content.issues)}\n\n### Key Findings\n\n${renderList(content.keyFindings)}\n${multiFile}\n---\n*Reviewed by shitty-reviewing-agent • model: ${content.model}*${billing}${botMarker}${marker}`;
 }
 
 function renderList(items: string[]): string {

@@ -35,6 +35,7 @@ test("normalizeReviewThreadsGraphQL maps resolved state and root comment", () =>
   expect(result.length).toBe(1);
   expect(result[0].rootCommentId).toBe(101);
   expect(result[0].lastActor).toBe("bob");
+  expect(result[0].threadId).toBe("T1");
   expect(result[0].resolved).toBe(true);
   expect(result[0].isOutdated).toBe(false);
 });

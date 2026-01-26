@@ -3,7 +3,6 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import type { ChangedFile, ExistingComment, PullRequestInfo } from "../types.js";
 import { fetchReviewThreadsGraphQL } from "../github-api.js";
-import { buildThreadsFromReviewComments } from "../review-threads.js";
 
 export class RateLimitError extends Error {
   constructor(message: string) {
@@ -208,20 +207,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     parameters: ReviewContextSchema,
     execute: async () => {
       if (!deps.cache.reviewContext) {
-        const [comments, reviewComments] = await Promise.all([
+        const [comments] = await Promise.all([
           safeCall(() =>
             deps.octokit.paginate(deps.octokit.rest.issues.listComments, {
               owner: deps.owner,
               repo: deps.repo,
               issue_number: deps.pullNumber,
-              per_page: 100,
-            })
-          ),
-          safeCall(() =>
-            deps.octokit.paginate(deps.octokit.rest.pulls.listReviewComments, {
-              owner: deps.owner,
-              repo: deps.repo,
-              pull_number: deps.pullNumber,
               per_page: 100,
             })
           ),
@@ -244,88 +235,52 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         const lastReviewAt = summaries.length > 0 ? summaries[0].createdAt : null;
         const lastReviewTime = parseTimestamp(lastReviewAt) ?? null;
 
-        const normalizedReviewComments: ExistingComment[] = reviewComments.map((comment: any) => ({
-          id: comment.id,
-          author: comment.user?.login ?? "unknown",
-          body: comment.body ?? "",
-          url: comment.html_url ?? "",
-          type: "review" as const,
-          path: comment.path ?? undefined,
-          line: comment.line ?? undefined,
-          side: comment.side ?? undefined,
-          inReplyToId: comment.in_reply_to_id ?? undefined,
-          updatedAt: comment.updated_at ?? comment.created_at ?? "",
-        }));
-
-        const fallbackThreads = buildThreadsFromReviewComments(normalizedReviewComments);
-        const fallbackThreadsWithComments = fallbackThreads.map((thread) => {
-          const rootId = thread.rootCommentId ?? thread.id;
-          const threadComments = normalizedReviewComments
-            .filter((comment) => (comment.inReplyToId ?? comment.id) === rootId)
-            .map((comment) => ({
-              id: comment.id,
-              author: comment.author,
-              body: comment.body,
-              createdAt: "",
-              updatedAt: comment.updatedAt,
-              url: comment.url,
-              side: comment.side,
-            }));
-          const lastActivityTime = parseTimestamp(thread.lastUpdatedAt);
-          return {
-            ...thread,
-            hasNewActivitySinceLastReview:
-              lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
-            comments: threadComments,
-          };
-        });
-
-        const reviewThreads = await safeOptional(async () => {
-          const threads = await fetchReviewThreadsGraphQL(deps.octokit, {
+        const threads = await safeCall(() =>
+          fetchReviewThreadsGraphQL(deps.octokit, {
             owner: deps.owner,
             repo: deps.repo,
             pull_number: deps.pullNumber,
-          });
-          const normalized = threads.map((thread) => {
-            const comments = thread.comments?.nodes ?? [];
-            const normalizedComments = comments
-              .filter((comment) => comment.databaseId !== null && comment.databaseId !== undefined)
-              .map((comment) => ({
-                id: comment.databaseId as number,
-                author: comment.author?.login ?? "unknown",
-                body: comment.body ?? "",
-                createdAt: comment.createdAt ?? "",
-                updatedAt: comment.updatedAt ?? comment.createdAt ?? "",
-                url: comment.url ?? "",
-                side: undefined,
-              }))
-              .filter((comment) => comment.updatedAt);
-            if (normalizedComments.length === 0) return null;
-            const lastUpdatedAt =
-              [...normalizedComments]
-                .map((item) => item.updatedAt)
-                .sort((a, b) => b.localeCompare(a))[0] ?? "";
-            const lastComment = [...normalizedComments].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-            const lastActivityTime = parseTimestamp(lastUpdatedAt);
-            const rootComment = normalizedComments[0];
-            return {
-              id: rootComment.id,
-              path: thread.path ?? "",
-              line: thread.line ?? null,
+          })
+        );
+        const reviewThreads = threads.map((thread) => {
+          const comments = thread.comments?.nodes ?? [];
+          const normalizedComments = comments
+            .filter((comment) => comment.databaseId !== null && comment.databaseId !== undefined)
+            .map((comment) => ({
+              id: comment.databaseId as number,
+              author: comment.author?.login ?? "unknown",
+              body: comment.body ?? "",
+              createdAt: comment.createdAt ?? "",
+              updatedAt: comment.updatedAt ?? comment.createdAt ?? "",
+              url: comment.url ?? "",
               side: undefined,
-              isOutdated: thread.isOutdated ?? false,
-              resolved: thread.isResolved ?? false,
-              lastUpdatedAt,
-              lastActor: lastComment?.author ?? "unknown",
-              hasNewActivitySinceLastReview:
-                lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
-              rootCommentId: rootComment?.id ?? null,
-              url: rootComment?.url ?? lastComment?.url ?? "",
-              comments: normalizedComments,
-            };
-          }).filter((thread) => thread !== null) as ReviewContextPayload["reviewThreads"][number][];
-          return normalized.length > 0 ? normalized : fallbackThreadsWithComments;
-        });
+            }))
+            .filter((comment) => comment.updatedAt);
+          if (normalizedComments.length === 0) return null;
+          const lastUpdatedAt =
+            [...normalizedComments]
+              .map((item) => item.updatedAt)
+              .sort((a, b) => b.localeCompare(a))[0] ?? "";
+          const lastComment = [...normalizedComments].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+          const lastActivityTime = parseTimestamp(lastUpdatedAt);
+          const rootComment = normalizedComments[0];
+          return {
+            id: rootComment.id,
+            threadId: thread.id,
+            path: thread.path ?? "",
+            line: thread.line ?? null,
+            side: undefined,
+            isOutdated: thread.isOutdated ?? false,
+            resolved: thread.isResolved ?? false,
+            lastUpdatedAt,
+            lastActor: lastComment?.author ?? "unknown",
+            hasNewActivitySinceLastReview:
+              lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
+            rootCommentId: rootComment?.id ?? null,
+            url: rootComment?.url ?? lastComment?.url ?? "",
+            comments: normalizedComments,
+          };
+        }).filter((thread) => thread !== null) as ReviewContextPayload["reviewThreads"][number][];
 
         let commitsSinceLastReview: ReviewContextPayload["commitsSinceLastReview"] = [];
         if (lastReviewAt) {
@@ -356,7 +311,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         deps.cache.reviewContext = {
           lastReviewAt,
           previousSummaries: summaries,
-          reviewThreads: reviewThreads ?? fallbackThreadsWithComments,
+          reviewThreads,
           commitsSinceLastReview,
         };
       }
@@ -389,6 +344,7 @@ interface ReviewContextPayload {
   }>;
   reviewThreads: Array<{
     id: number;
+    threadId?: string;
     path: string;
     line: number | null;
     side?: "LEFT" | "RIGHT";
