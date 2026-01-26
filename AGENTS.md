@@ -38,3 +38,11 @@
 ## Security & Configuration Tips
 - API keys are provided via Action inputs (`api-key`) or ADC for Vertex; never commit secrets.
 - Release is tag-driven: push a tag like `v0.1.5` to trigger `.github/workflows/release.yml`.
+
+## Release Checklist
+- Decide the next version (use semver; patch for fixes, minor for new features, major for breaking changes).
+- Bump `package.json` and `package-lock.json` to the new version.
+- Commit the version bump (e.g., "Bump version to v0.2.1").
+- Create an annotated or lightweight tag `vX.Y.Z` on that commit.
+- Push the commit and tag: `git push origin main` and `git push origin vX.Y.Z`.
+- Create the GitHub release with a changelog (e.g., `gh release create vX.Y.Z --generate-notes`).
