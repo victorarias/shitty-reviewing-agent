@@ -331,6 +331,7 @@ test("comment tool asks to update when latest activity is from a bot", async () 
     {
       id: 20,
       author: "github-actions[bot]",
+      authorType: "Bot",
       body: "Original comment",
       url: "https://example.com/20",
       type: "review",
@@ -342,6 +343,7 @@ test("comment tool asks to update when latest activity is from a bot", async () 
     {
       id: 21,
       author: "github-actions[bot]",
+      authorType: "Bot",
       body: "Follow-up",
       url: "https://example.com/21",
       type: "review",
@@ -379,6 +381,63 @@ test("comment tool asks to update when latest activity is from a bot", async () 
   expect(calls.length).toBe(0);
   expect(result.details.id).toBe(-1);
   expect(result.content[0].text).toContain("update_comment");
+});
+
+test("comment tool replies when human quotes bot marker", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 30,
+      author: "github-actions[bot]",
+      authorType: "Bot",
+      body: "Original comment\n\n<!-- sri:bot-comment -->",
+      url: "https://example.com/30",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-02T00:00:00Z",
+    },
+    {
+      id: 31,
+      author: "alice",
+      authorType: "User",
+      body: "> Original comment\n>\n> <!-- sri:bot-comment -->\n\nLooks good now.",
+      url: "https://example.com/31",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      inReplyToId: 30,
+      updatedAt: "2026-01-03T00:00:00Z",
+    },
+  ];
+
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "New feedback",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("reply");
+  expect(calls[0].args.comment_id).toBe(30);
 });
 
 test("comment tool errors when threads exist and no side/thread_id specified", async () => {

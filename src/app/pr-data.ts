@@ -66,6 +66,8 @@ export async function fetchExistingComments(
   const normalizedIssue = issueComments.map((comment: any) => ({
     id: comment.id,
     author: comment.user?.login ?? "unknown",
+    authorType: comment.user?.type ?? undefined,
+    authorAssociation: comment.author_association ?? undefined,
     body: comment.body ?? "",
     url: comment.html_url ?? "",
     type: "issue" as const,
@@ -75,6 +77,8 @@ export async function fetchExistingComments(
   const normalizedReview = reviewComments.map((comment: any) => ({
     id: comment.id,
     author: comment.user?.login ?? "unknown",
+    authorType: comment.user?.type ?? undefined,
+    authorAssociation: comment.author_association ?? undefined,
     body: comment.body ?? "",
     url: comment.html_url ?? "",
     type: "review" as const,
