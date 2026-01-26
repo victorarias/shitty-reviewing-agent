@@ -1,0 +1,19 @@
+{
+  "prInfo": {
+    "number": 7,
+    "title": "Add notifications",
+    "body": "Adds notification queue and dispatcher.",
+    "author": "dev",
+    "baseRef": "main",
+    "headRef": "feature/notify",
+    "baseSha": "base",
+    "headSha": "head",
+    "url": "https://example.com/pr/7"
+  },
+  "changedFiles": [
+    { "filename": "src/notify/queue.ts", "status": "modified", "additions": 5, "deletions": 1, "changes": 6 },
+    { "filename": "src/notify/dispatcher.ts", "status": "modified", "additions": 5, "deletions": 1, "changes": 6 },
+    { "filename": "src/notify/handlers/email.ts", "status": "modified", "additions": 5, "deletions": 1, "changes": 6 },
+    { "filename": "src/notify/handlers/sms.ts", "status": "modified", "additions": 5, "deletions": 1, "changes": 6 }
+  ]
+}

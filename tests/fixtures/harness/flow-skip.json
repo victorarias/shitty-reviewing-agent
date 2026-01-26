@@ -1,0 +1,23 @@
+{
+  "prInfo": {
+    "number": 99,
+    "title": "Big PR",
+    "body": "Lots of files",
+    "author": "dev",
+    "baseRef": "main",
+    "headRef": "feature/big",
+    "baseSha": "base",
+    "headSha": "head",
+    "url": "https://example.com/pr/99"
+  },
+  "changedFiles": [
+    { "filename": "src/a.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/b.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/c.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/d.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/e.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/f.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/g.ts", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 },
+    { "filename": "src/ignored.snap", "status": "modified", "additions": 1, "deletions": 1, "changes": 2 }
+  ]
+}
