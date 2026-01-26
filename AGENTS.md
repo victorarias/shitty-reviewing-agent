@@ -45,3 +45,4 @@
 - Commit the version bump (e.g., "Bump version to v0.2.1").
 - Create an annotated or lightweight tag `vX.Y.Z` on that commit.
 - Push the commit and tag: `git push origin main` and `git push origin vX.Y.Z`.
+- Create the GitHub release with a changelog (e.g., `gh release create vX.Y.Z --generate-notes`).
