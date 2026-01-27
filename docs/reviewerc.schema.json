@@ -30,7 +30,7 @@
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/stringList" }
         },
-        "output": { "$ref": "#/$defs/scheduleOutput" },
+        "pr": { "$ref": "#/$defs/prConfig" },
         "limits": { "$ref": "#/$defs/limits" },
         "conditions": { "$ref": "#/$defs/repoConditions" },
         "writeScope": { "$ref": "#/$defs/includeExclude" }
@@ -158,38 +158,6 @@
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
       }
     },
-    "scheduleOutput": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["mode"],
-      "properties": {
-        "mode": { "type": "string", "enum": ["pr_create", "issue"] },
-        "pr": { "$ref": "#/$defs/prConfig" },
-        "issue": { "$ref": "#/$defs/issueConfig" }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": { "mode": { "const": "pr_create" } },
-            "required": ["mode"]
-          },
-          "then": {
-            "properties": { "pr": { "$ref": "#/$defs/prConfig" } },
-            "required": ["pr"]
-          }
-        },
-        {
-          "if": {
-            "properties": { "mode": { "const": "issue" } },
-            "required": ["mode"]
-          },
-          "then": {
-            "properties": { "issue": { "$ref": "#/$defs/issueConfig" } },
-            "required": ["issue"]
-          }
-        }
-      ]
-    },
     "commandDefinition": {
       "type": "object",
       "additionalProperties": false,
@@ -269,14 +237,7 @@
         "title": { "type": "string", "minLength": 1 },
         "body": { "type": "string" }
       }
-    },
-    "issueConfig": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "title": { "type": "string", "minLength": 1 },
-        "body": { "type": "string" }
-      }
     }
+
   }
 }

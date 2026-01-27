@@ -228,7 +228,7 @@ Execution flow:
 1) Scheduled workflow checks out the default branch.
 2) Look up `schedule.runs[GITHUB_JOB]`. If missing, do nothing.
 3) Run the command ids listed for that job.
-3) If output is `pr_create`, apply changes and open PR.
+4) Apply changes and open a PR (the only supported scheduled output).
 
 Config shape:
 ```yaml
@@ -246,12 +246,10 @@ schedule:
   enabled: true
   runs:
     nightly-docs: [docs-drift]
-  output:
-    mode: pr_create
-    pr:
-      base: main
-      title: "Docs: fix drift"
-      body: "Automated docs refresh"
+  pr:
+    base: main
+    title: "Docs: fix drift"
+    body: "Automated docs refresh"
   limits:
     maxFiles: 50
     maxDiffLines: 800
@@ -264,7 +262,7 @@ schedule:
 
 Key attributes and rationale:
 - `schedule.runs`: map of job id → list of command ids to run for that scheduled job.
-- `schedule.output`: shared output settings for scheduled runs.
+- `schedule.pr`: shared PR settings for scheduled runs (the only supported output).
 - `schedule.limits`: guardrails to avoid giant PRs.
 - `schedule.conditions`: repo-scoped filters (not PR-scoped).
 - `schedule.writeScope`: include/exclude globs limiting which paths can be modified.
@@ -277,7 +275,6 @@ PR creation behavior:
 Permissions (scheduled maintenance):
 - `contents: write`
 - `pull-requests: write`
-- `issues: write` (if opening issues)
 
 GITHUB_TOKEN limitation:
 - PRs created by `GITHUB_TOKEN` do not trigger other workflows by default.

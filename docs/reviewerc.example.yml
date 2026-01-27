@@ -35,12 +35,10 @@ schedule:
   enabled: true
   runs:
     nightly-docs: [docs-drift]
-  output:
-    mode: pr_create
-    pr:
-      base: main
-      title: "Docs: fix drift"
-      body: "Automated docs refresh"
+  pr:
+    base: main
+    title: "Docs: fix drift"
+    body: "Automated docs refresh"
   limits:
     maxFiles: 50
     maxDiffLines: 800
