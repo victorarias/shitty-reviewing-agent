@@ -26,7 +26,10 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
-        "run": { "$ref": "#/$defs/stringList" },
+        "runs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/stringList" }
+        },
         "output": { "$ref": "#/$defs/scheduleOutput" },
         "limits": { "$ref": "#/$defs/limits" },
         "conditions": { "$ref": "#/$defs/repoConditions" },

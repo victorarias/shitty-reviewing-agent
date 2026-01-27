@@ -76,7 +76,8 @@ commands:
       Apply the rules in company-rules/docs/api-rules.md to the changes in this repo.
 schedule:
   enabled: true
-  run: [rules-check]
+  runs:
+    nightly-rules: [rules-check]
 ```
 
 This keeps repo-specific setup flexible without pushing workflow logic into the core action.
@@ -148,7 +149,7 @@ Command definition fields:
 Use trigger lists to declare which commands run in each mode:
 
 - `review.run`: commands that run on every PR.
-- `schedule.run`: commands that run on scheduled workflows.
+- `schedule.runs`: map of workflow job id → commands that run in that scheduled job.
 
 Example:
 ```yaml
@@ -161,7 +162,8 @@ commands:
 review:
   run: [security]
 schedule:
-  run: [docs-drift]
+  runs:
+    nightly-docs: [docs-drift]
 ```
 
 Common output contract from subagents:
@@ -223,7 +225,8 @@ This is an intentional approximation and may miss or double-count changes if the
 
 Execution flow:
 1) Scheduled workflow checks out the default branch.
-2) For each `schedule.run` command id, run the command.
+2) Look up `schedule.runs[GITHUB_JOB]`. If missing, do nothing.
+3) Run the command ids listed for that job.
 3) If output is `pr_create`, apply changes and open PR.
 
 Config shape:
@@ -240,7 +243,8 @@ commands:
 
 schedule:
   enabled: true
-  run: [docs-drift]
+  runs:
+    nightly-docs: [docs-drift]
   output:
     mode: pr_create
     pr:
@@ -258,7 +262,7 @@ schedule:
 ```
 
 Key attributes and rationale:
-- `schedule.run`: list of command ids to run on schedule.
+- `schedule.runs`: map of job id → list of command ids to run for that scheduled job.
 - `schedule.output`: shared output settings for scheduled runs.
 - `schedule.limits`: guardrails to avoid giant PRs.
 - `schedule.conditions`: repo-scoped filters (not PR-scoped).

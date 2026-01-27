@@ -33,7 +33,8 @@ review:
 
 schedule:
   enabled: true
-  run: [docs-drift]
+  runs:
+    nightly-docs: [docs-drift]
   output:
     mode: pr_create
     pr:
