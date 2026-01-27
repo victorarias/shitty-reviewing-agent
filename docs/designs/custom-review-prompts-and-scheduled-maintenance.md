@@ -116,8 +116,9 @@ Output modes:
 Comment types:
 - `issue` comment: top-level PR timeline comment. Best for long, multi-file or repo-wide reports.
 - `review` comment: inline comment tied to a file/line. Best for pinpointed findings and suggestions.
+- `both`: post inline review comments for line-anchored findings and a top-level issue summary.
 
-Default: use `issue` comments unless the prompt explicitly targets lines. `review` comments only apply to PRs.
+Default: use `issue` comments unless the prompt explicitly targets lines. `review` and `both` only apply to PRs.
 
 Scheduled runs do not have PR context. PR-only tools (e.g., `get_pr_info`, `get_changed_files`, `get_diff`, review comments)
 are unavailable in scheduled jobs and should not be expected to work there.

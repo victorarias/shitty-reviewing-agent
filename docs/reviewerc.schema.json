@@ -70,7 +70,7 @@
     },
     "commentType": {
       "type": "string",
-      "enum": ["issue", "review"]
+      "enum": ["issue", "review", "both"]
     },
     "severity": {
       "type": "string",
