@@ -33,6 +33,99 @@ export interface ReviewConfig {
   temperature?: number;
 }
 
+export type ToolCategory =
+  | "filesystem"
+  | "git.read"
+  | "git.history"
+  | "github.read"
+  | "github.write"
+  | "repo.write";
+
+export type CommentType = "issue" | "review" | "both";
+
+export type Severity = "low" | "medium" | "high";
+
+export type OutputFormat = "findings" | "narrative" | "checklist";
+
+export interface IncludeExclude {
+  include?: string[];
+  exclude?: string[];
+}
+
+export interface LimitsConfig {
+  maxFiles?: number;
+  maxFindings?: number;
+  maxDiffLines?: number;
+}
+
+export interface ReviewDefaults {
+  provider?: string;
+  model?: string;
+  reasoning?: ReviewConfig["reasoning"];
+  temperature?: number;
+}
+
+export interface CommandDefinition {
+  id: string;
+  title?: string;
+  prompt: string;
+  tools?: {
+    allow?: ToolCategory[];
+  };
+  limits?: LimitsConfig;
+  output?: {
+    format?: OutputFormat;
+    severityFloor?: Severity;
+  };
+  comment?: {
+    type?: CommentType;
+  };
+  files?: IncludeExclude;
+}
+
+export interface SchedulePrConfig {
+  base: string;
+  title: string;
+  body?: string;
+}
+
+export interface ScheduleConfig {
+  enabled?: boolean;
+  runs?: Record<string, string[]>;
+  pr?: SchedulePrConfig;
+  limits?: LimitsConfig;
+  conditions?: {
+    paths?: IncludeExclude;
+    branch?: IncludeExclude;
+  };
+  writeScope?: IncludeExclude;
+}
+
+export interface ReviewercConfig {
+  version: 1;
+  review?: {
+    defaults?: ReviewDefaults;
+    run?: string[];
+  };
+  commands?: CommandDefinition[];
+  schedule?: ScheduleConfig;
+  tools?: {
+    allowlist?: ToolCategory[];
+  };
+  output?: {
+    commentType?: CommentType;
+  };
+}
+
+export interface ActionConfig {
+  review: ReviewConfig;
+  reviewRun: string[];
+  commands: CommandDefinition[];
+  schedule?: ScheduleConfig;
+  toolsAllowlist: ToolCategory[];
+  outputCommentType: CommentType;
+}
+
 export interface ReviewContext {
   owner: string;
   repo: string;

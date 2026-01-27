@@ -4,32 +4,28 @@ author: "shitty-reviewing-agent"
 inputs:
   provider:
     description: "LLM provider (openrouter, gemini, anthropic, openai, etc.). Aliases: gemini→google, vertex→google-vertex."
-    required: true
+    required: false
   api-key:
     description: "API key for the LLM provider"
     required: false
   model:
     description: "Model to use (e.g., anthropic/claude-sonnet-4)"
-    required: true
+    required: false
   compaction-model:
     description: "Optional model to use for context compaction summaries (defaults to gemini-3-flash-preview for Google, else same as model)"
     required: false
   max-files:
     description: "Max files to review (skips if exceeded)"
     required: false
-    default: "50"
   ignore-patterns:
     description: "Comma-separated glob patterns to skip"
     required: false
-    default: "*.lock,*.generated.*"
   debug:
     description: "Enable debug logging"
     required: false
-    default: "false"
   reasoning:
     description: "Thinking level (off, minimal, low, medium, high, xhigh)"
     required: false
-    default: "off"
   temperature:
     description: "Sampling temperature (0-2). Gemini 3 defaults to 1.0 and may behave unexpectedly at lower values."
     required: false

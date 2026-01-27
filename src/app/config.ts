@@ -1,55 +1,104 @@
 import * as core from "@actions/core";
 import fs from "node:fs";
 import path from "node:path";
-import type { ReviewConfig } from "../types.js";
+import { readReviewerc } from "./reviewerc.js";
+import type { ActionConfig, CommentType, ReviewConfig, ToolCategory } from "../types.js";
 
-export function readConfig(): ReviewConfig {
-  const providerRaw = core.getInput("provider", { required: true });
-  const provider = normalizeProvider(providerRaw);
-  const apiKey = core.getInput("api-key");
-  const modelId = core.getInput("model", { required: true });
-  const compactionModel = core.getInput("compaction-model") || "";
-  const maxFilesRaw = core.getInput("max-files") || "50";
-  const debugRaw = core.getInput("debug") || "false";
-  const reasoningRaw = core.getInput("reasoning") || "off";
-  const temperatureRaw = core.getInput("temperature") || "";
-  const debug = debugRaw.toLowerCase() === "true";
-  const maxFiles = Number.parseInt(maxFilesRaw, 10);
-  if (!Number.isFinite(maxFiles) || maxFiles <= 0) {
-    throw new Error(`Invalid max-files: ${maxFilesRaw}`);
-  }
-  const reasoning = parseReasoning(reasoningRaw);
-  const temperature = temperatureRaw ? Number.parseFloat(temperatureRaw) : undefined;
-  if (temperature !== undefined && (!Number.isFinite(temperature) || temperature < 0 || temperature > 2)) {
-    throw new Error(`Invalid temperature: ${temperatureRaw}`);
-  }
+const DEFAULT_IGNORE_PATTERNS = "*.lock,*.generated.*";
+const DEFAULT_MAX_FILES = 50;
+const DEFAULT_COMMENT_TYPE: CommentType = "both";
+const DEFAULT_TOOLS_ALLOWLIST: ToolCategory[] = [
+  "filesystem",
+  "git.read",
+  "git.history",
+  "github.read",
+  "github.write",
+  "repo.write",
+];
 
-  const ignorePatternsRaw = core.getInput("ignore-patterns") || "";
-  const ignorePatterns = ignorePatternsRaw
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
+function getOptionalInput(name: string): string | undefined {
+  const raw = core.getInput(name);
+  const trimmed = raw?.trim() ?? "";
+  return trimmed ? trimmed : undefined;
+}
 
+export function readConfig(): ActionConfig {
   const repoRoot = process.env.GITHUB_WORKSPACE || process.cwd();
   const gitDir = path.join(repoRoot, ".git");
   if (!fs.existsSync(gitDir)) {
     throw new Error("Checkout missing. Ensure actions/checkout ran before this action.");
   }
-  if (!apiKey && provider !== "google-vertex") {
+
+  const reviewerc = readReviewerc(repoRoot);
+  const reviewDefaults = reviewerc?.review?.defaults ?? {};
+
+  const providerInput = getOptionalInput("provider");
+  const modelInput = getOptionalInput("model");
+  const apiKeyInput = getOptionalInput("api-key") ?? "";
+  const compactionModelInput = getOptionalInput("compaction-model");
+  const maxFilesInput = getOptionalInput("max-files");
+  const ignorePatternsInput = getOptionalInput("ignore-patterns");
+  const debugInput = getOptionalInput("debug");
+  const reasoningInput = getOptionalInput("reasoning");
+  const temperatureInput = getOptionalInput("temperature");
+
+  const providerRaw = providerInput ?? reviewDefaults.provider ?? "";
+  if (!providerRaw) {
+    throw new Error("Missing provider. Set action input provider or review.defaults.provider in .reviewerc.");
+  }
+  const provider = normalizeProvider(providerRaw);
+
+  const modelId = modelInput ?? reviewDefaults.model ?? "";
+  if (!modelId) {
+    throw new Error("Missing model. Set action input model or review.defaults.model in .reviewerc.");
+  }
+
+  const maxFilesRaw = maxFilesInput ?? String(DEFAULT_MAX_FILES);
+  const maxFiles = Number.parseInt(maxFilesRaw, 10);
+  if (!Number.isFinite(maxFiles) || maxFiles <= 0) {
+    throw new Error(`Invalid max-files: ${maxFilesRaw}`);
+  }
+
+  const ignorePatternsRaw = ignorePatternsInput ?? DEFAULT_IGNORE_PATTERNS;
+  const ignorePatterns = ignorePatternsRaw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const debug = debugInput ? debugInput.toLowerCase() === "true" : false;
+  const reasoningValue = reasoningInput ?? reviewDefaults.reasoning ?? "off";
+  const reasoning = parseReasoning(reasoningValue);
+
+  const temperatureRaw = temperatureInput ?? (reviewDefaults.temperature !== undefined ? String(reviewDefaults.temperature) : "");
+  const temperature = temperatureRaw ? Number.parseFloat(temperatureRaw) : undefined;
+  if (temperature !== undefined && (!Number.isFinite(temperature) || temperature < 0 || temperature > 2)) {
+    throw new Error(`Invalid temperature: ${temperatureRaw}`);
+  }
+
+  if (!apiKeyInput && provider !== "google-vertex") {
     throw new Error("api-key is required for this provider. For Vertex AI, omit api-key and use ADC.");
   }
 
-  return {
+  const review: ReviewConfig = {
     provider,
-    apiKey: apiKey || "",
+    apiKey: apiKeyInput ?? "",
     modelId,
-    compactionModel: compactionModel.trim() ? compactionModel.trim() : undefined,
+    compactionModel: compactionModelInput ? compactionModelInput.trim() : undefined,
     maxFiles,
     ignorePatterns,
     repoRoot,
     debug,
     reasoning,
     temperature,
+  };
+
+  return {
+    review,
+    reviewRun: reviewerc?.review?.run ?? [],
+    commands: reviewerc?.commands ?? [],
+    schedule: reviewerc?.schedule,
+    toolsAllowlist: reviewerc?.tools?.allowlist ?? DEFAULT_TOOLS_ALLOWLIST,
+    outputCommentType: reviewerc?.output?.commentType ?? DEFAULT_COMMENT_TYPE,
   };
 }
 
