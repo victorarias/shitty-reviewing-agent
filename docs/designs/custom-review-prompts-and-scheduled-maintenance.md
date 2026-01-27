@@ -53,7 +53,7 @@ Teams can extend context in the workflow itself:
   Prompts can read those files by path (e.g., `company-rules/docs/api-rules.md`).
   Example prompt line: \"Apply the rules in company-rules/docs/api-rules.md to the changes in this repo.\"
 
-Example workflow snippet:
+Example workflow + `.reviewerc` snippet:
 ```yaml
 jobs:
   nightly-rules:
@@ -69,6 +69,17 @@ jobs:
           provider: openrouter
           api-key: ${{ secrets.OPENROUTER_KEY }}
           model: anthropic/claude-sonnet-4
+---
+# .reviewerc
+commands:
+  - id: rules-check
+    prompt: |
+      Apply the rules in company-rules/docs/api-rules.md to the changes in this repo.
+schedule:
+  enabled: true
+  jobs:
+    - id: nightly-rules
+      commandRef: rules-check
 ```
 
 This keeps repo-specific setup flexible without pushing workflow logic into the core action.
