@@ -1,0 +1,144 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { Type } from "@sinclair/typebox";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { IncludeExclude } from "../types.js";
+import { assertWriteAllowed, normalizePath } from "../app/write-scope.js";
+
+function ensureInsideRoot(root: string, target: string): string {
+  const resolved = path.resolve(root, target);
+  const normalizedRoot = path.resolve(root) + path.sep;
+  if (!resolved.startsWith(normalizedRoot)) {
+    throw new Error(`Path escapes repo root: ${target}`);
+  }
+  return resolved;
+}
+
+export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): AgentTool<any>[] {
+  const writeFileTool: AgentTool<typeof WriteFileSchema, { path: string }> = {
+    name: "write_file",
+    label: "Write file",
+    description: "Write a file to disk (overwrites).",
+    parameters: WriteFileSchema,
+    execute: async (_id, params) => {
+      const targetPath = normalizePath(params.path);
+      assertWriteAllowed(targetPath, scope);
+      const resolved = ensureInsideRoot(repoRoot, targetPath);
+      await fs.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.writeFile(resolved, params.content, "utf8");
+      return {
+        content: [{ type: "text", text: `Wrote ${params.path}` }],
+        details: { path: params.path },
+      };
+    },
+  };
+
+  const deleteFileTool: AgentTool<typeof DeleteFileSchema, { path: string }> = {
+    name: "delete_file",
+    label: "Delete file",
+    description: "Delete a file from disk.",
+    parameters: DeleteFileSchema,
+    execute: async (_id, params) => {
+      const targetPath = normalizePath(params.path);
+      assertWriteAllowed(targetPath, scope);
+      const resolved = ensureInsideRoot(repoRoot, targetPath);
+      await fs.unlink(resolved);
+      return {
+        content: [{ type: "text", text: `Deleted ${params.path}` }],
+        details: { path: params.path },
+      };
+    },
+  };
+
+  const mkdirTool: AgentTool<typeof MkdirSchema, { path: string }> = {
+    name: "mkdir",
+    label: "Create directory",
+    description: "Create a directory (and parents if needed).",
+    parameters: MkdirSchema,
+    execute: async (_id, params) => {
+      const targetPath = normalizePath(params.path);
+      assertWriteAllowed(targetPath, scope);
+      const resolved = ensureInsideRoot(repoRoot, targetPath);
+      await fs.mkdir(resolved, { recursive: true });
+      return {
+        content: [{ type: "text", text: `Created ${params.path}` }],
+        details: { path: params.path },
+      };
+    },
+  };
+
+  const applyPatchTool: AgentTool<typeof ApplyPatchSchema, { applied: boolean }> = {
+    name: "apply_patch",
+    label: "Apply patch",
+    description: "Apply a unified diff patch.",
+    parameters: ApplyPatchSchema,
+    execute: async (_id, params) => {
+      await runGitApply(repoRoot, params.patch, scope);
+      return {
+        content: [{ type: "text", text: "Patch applied." }],
+        details: { applied: true },
+      };
+    },
+  };
+
+  return [writeFileTool, deleteFileTool, mkdirTool, applyPatchTool];
+}
+
+async function runGitApply(repoRoot: string, patch: string, scope?: IncludeExclude): Promise<void> {
+  const touched = extractPatchPaths(patch);
+  for (const file of touched) {
+    assertWriteAllowed(file, scope);
+  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("git", ["apply", "--whitespace=nowarn"], { cwd: repoRoot });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(stderr || `git apply failed with code ${code}`));
+      }
+    });
+    child.stdin.write(patch);
+    child.stdin.end();
+  });
+}
+
+function extractPatchPaths(patch: string): string[] {
+  const files = new Set<string>();
+  const lines = patch.split(/\r?\n/);
+  for (const line of lines) {
+    if (line.startsWith("+++ b/")) {
+      files.add(normalizePath(line.replace("+++ b/", "").trim()));
+    }
+    if (line.startsWith("--- a/")) {
+      const file = line.replace("--- a/", "").trim();
+      if (file !== "/dev/null") {
+        files.add(normalizePath(file));
+      }
+    }
+  }
+  return [...files];
+}
+
+const WriteFileSchema = Type.Object({
+  path: Type.String({ description: "Path relative to repo root" }),
+  content: Type.String({ description: "File contents" }),
+});
+
+const DeleteFileSchema = Type.Object({
+  path: Type.String({ description: "Path relative to repo root" }),
+});
+
+const MkdirSchema = Type.Object({
+  path: Type.String({ description: "Directory path relative to repo root" }),
+});
+
+const ApplyPatchSchema = Type.Object({
+  patch: Type.String({ description: "Unified diff patch" }),
+});
