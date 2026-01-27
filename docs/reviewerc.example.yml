@@ -1,0 +1,55 @@
+version: 1
+commands:
+  - id: security
+    title: "Security scan"
+    prompt: |
+      Review for authz bypass, unsafe deserialization, secrets, and input validation gaps.
+    tools:
+      allow: [filesystem, git.read, github.read]
+    limits:
+      maxFiles: 200
+      maxFindings: 15
+    output:
+      format: findings
+      severityFloor: medium
+    comment:
+      type: issue
+
+  - id: docs-drift
+    title: "Docs drift check"
+    prompt: |
+      Compare README and docs against current code behavior for changes in the last 24 hours.
+      Use git history to identify recent changes and update docs if needed.
+    tools:
+      allow: [filesystem, git.history, repo.write, github.read]
+
+review:
+  defaults:
+    provider: openrouter
+    model: anthropic/claude-sonnet-4
+    reasoning: medium
+    temperature: 0.4
+  run: [security]
+
+schedule:
+  enabled: true
+  runs:
+    nightly-docs: [docs-drift]
+  pr:
+    base: main
+    title: "Docs: fix drift"
+    body: "Automated docs refresh"
+  limits:
+    maxFiles: 50
+    maxDiffLines: 800
+  conditions:
+    paths:
+      include: ["README.md", "docs/**"]
+  writeScope:
+    include: ["README.md", "docs/**"]
+
+tools:
+  allowlist: [filesystem, git.read, git.history, github.read, github.write, repo.write]
+
+output:
+  commentType: issue

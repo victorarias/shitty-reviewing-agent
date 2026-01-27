@@ -29,11 +29,17 @@
 - PRs should include: a concise summary, testing notes, and links to related issues if applicable.
 - For user-facing behavior changes, update `README.md` and/or Action inputs in `action.yml`.
 
+## Documentation Taxonomy
+- `docs/designs/`: Persistent designs that describe how the system should work long-term. Keep these updated as behavior evolves.
+- `docs/plans/`: Implementation plans for a specific change or milestone.
+- `docs/archived/`: Completed or invalidated designs/plans kept for reference.
+
 ## Agent Principles
 - This project experiments with a tools-first review philosophy for frontier models.
 - Prefer explicit choices over hard-coded heuristics; expose ambiguity and let the model choose.
 - Use model reasoning to avoid repeating resolved feedback; focus on new or unresolved issues.
 - When adding new functionality, prefer adding tools + instructions over fixed rules, unless required for safety or correctness.
+
 
 ## Security & Configuration Tips
 - API keys are provided via Action inputs (`api-key`) or ADC for Vertex; never commit secrets.

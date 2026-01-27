@@ -9,7 +9,8 @@
     "smoke": "node scripts/smoke.mjs",
     "start": "bun src/index.ts",
     "test": "bun test",
-    "test:harness": "bun test tests/flow*.test.ts tests/*prompt*.test.ts tests/summary-posts.test.ts tests/skip-summary.test.ts tests/run-review-*.test.ts tests/app-pr-data.test.ts tests/config.test.ts"
+    "test:harness": "bun test tests/flow*.test.ts tests/*prompt*.test.ts tests/summary-posts.test.ts tests/skip-summary.test.ts tests/run-review-*.test.ts tests/app-pr-data.test.ts tests/config.test.ts",
+    "validate:reviewerc": "bun scripts/validate-reviewerc.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -28,6 +29,8 @@
   "devDependencies": {
     "@octokit/types": "^16.0.0",
     "@types/node": "^24.3.0",
-    "typescript": "^5.7.3"
+    "ajv": "^8.17.1",
+    "typescript": "^5.7.3",
+    "yaml": "^2.8.2"
   }
 }

@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/victorarias/shitty-reviewing-agent/blob/main/docs/reviewerc.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaults": { "$ref": "#/$defs/reviewDefaults" },
+        "run": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/commandDefinition" }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "runs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/stringList" }
+        },
+        "pr": { "$ref": "#/$defs/prConfig" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "conditions": { "$ref": "#/$defs/repoConditions" },
+        "writeScope": { "$ref": "#/$defs/includeExclude" }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowlist": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/toolCategory" }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commentType": { "$ref": "#/$defs/commentType" }
+      }
+    }
+  },
+  "$defs": {
+    "toolCategory": {
+      "type": "string",
+      "enum": [
+        "filesystem",
+        "git.read",
+        "git.history",
+        "github.read",
+        "github.write",
+        "repo.write"
+      ]
+    },
+    "commentType": {
+      "type": "string",
+      "enum": ["issue", "review", "both"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "reasoning": {
+      "type": "string",
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh"]
+    },
+    "outputFormat": {
+      "type": "string",
+      "enum": ["findings", "narrative", "checklist"]
+    },
+    "stringList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "includeExclude": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": { "$ref": "#/$defs/stringList" },
+        "exclude": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "draft": { "type": "boolean" },
+        "labels": { "$ref": "#/$defs/includeExclude" },
+        "authors": { "$ref": "#/$defs/includeExclude" },
+        "paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "oneOf": [
+                { "type": "boolean" },
+                { "$ref": "#/$defs/stringList" }
+              ]
+            }
+          }
+        },
+        "branch": { "$ref": "#/$defs/includeExclude" }
+      }
+    },
+    "repoConditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": { "$ref": "#/$defs/includeExclude" },
+        "branch": { "$ref": "#/$defs/includeExclude" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxFiles": { "type": "integer", "minimum": 1 },
+        "maxFindings": { "type": "integer", "minimum": 1 },
+        "maxDiffLines": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "toolsAllow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/toolCategory" }
+        }
+      }
+    },
+    "reviewDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "reasoning": { "$ref": "#/$defs/reasoning" },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+      }
+    },
+    "commandDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "prompt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "tools": { "$ref": "#/$defs/toolsAllow" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": { "$ref": "#/$defs/outputFormat" },
+            "severityFloor": { "$ref": "#/$defs/severity" }
+          }
+        },
+        "comment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "$ref": "#/$defs/commentType" }
+          }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "include": { "$ref": "#/$defs/stringList" },
+            "exclude": { "$ref": "#/$defs/stringList" }
+          }
+        }
+      }
+    },
+    "commandDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "prompt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "tools": { "$ref": "#/$defs/toolsAllow" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": { "$ref": "#/$defs/outputFormat" },
+            "severityFloor": { "$ref": "#/$defs/severity" }
+          }
+        },
+        "comment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "$ref": "#/$defs/commentType" }
+          }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "include": { "$ref": "#/$defs/stringList" },
+            "exclude": { "$ref": "#/$defs/stringList" }
+          }
+        }
+      }
+    },
+    "prConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base", "title"],
+      "properties": {
+        "base": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "body": { "type": "string" }
+      }
+    }
+
+  }
+}
