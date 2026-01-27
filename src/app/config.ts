@@ -41,6 +41,7 @@ export function readConfig(): ActionConfig {
   const debugInput = getOptionalInput("debug");
   const reasoningInput = getOptionalInput("reasoning");
   const temperatureInput = getOptionalInput("temperature");
+  const botNameInput = getOptionalInput("bot-name");
 
   const providerRaw = providerInput ?? reviewDefaults.provider ?? "";
   if (!providerRaw) {
@@ -99,6 +100,7 @@ export function readConfig(): ActionConfig {
     schedule: reviewerc?.schedule,
     toolsAllowlist: reviewerc?.tools?.allowlist ?? DEFAULT_TOOLS_ALLOWLIST,
     outputCommentType: reviewerc?.output?.commentType ?? DEFAULT_COMMENT_TYPE,
+    botName: botNameInput,
   };
 }
 

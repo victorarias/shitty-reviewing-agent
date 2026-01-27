@@ -2,7 +2,8 @@ import * as github from "@actions/github";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import crypto from "node:crypto";
-import type { ActionConfig } from "../types.js";
+import { minimatch } from "minimatch";
+import type { ActionConfig, IncludeExclude } from "../types.js";
 import { CommandRegistry } from "../commands/registry.js";
 import { runCommand } from "../commands/run.js";
 import { listBlockedPaths } from "./write-scope.js";
@@ -16,6 +17,10 @@ export async function runScheduledFlow(params: {
   runCommandFn?: typeof runCommand;
   logInfo?: (message: string) => void;
   logDebug?: (message: string) => void;
+  listChangedFilesFn?: (repoRoot: string) => Promise<string[]>;
+  getCurrentBranchFn?: (repoRoot: string) => Promise<string>;
+  getDiffStatsFn?: (repoRoot: string) => Promise<DiffStats>;
+  runGitFn?: (repoRoot: string, args: string[]) => Promise<void>;
 }): Promise<void> {
   const logInfo = params.logInfo ?? console.info;
   const logDebug = params.logDebug ?? (() => {});
@@ -39,6 +44,16 @@ export async function runScheduledFlow(params: {
 
   const registry = params.commandRegistry ?? new CommandRegistry(params.config.commands);
   const runCommandImpl = params.runCommandFn ?? runCommand;
+  const listChangedFilesImpl = params.listChangedFilesFn ?? listChangedFiles;
+  const getCurrentBranchImpl = params.getCurrentBranchFn ?? getCurrentBranch;
+  const getDiffStatsImpl = params.getDiffStatsFn ?? getDiffStats;
+  const runGitImpl = params.runGitFn ?? runGit;
+
+  const currentBranch = await getCurrentBranchImpl(params.config.review.repoRoot);
+  if (!passesBranchConditions(currentBranch, schedule.conditions?.branch)) {
+    logInfo(`Schedule conditions blocked run on branch ${currentBranch}.`);
+    return;
+  }
 
   for (const commandId of commandIds) {
     const command = registry.get(commandId);
@@ -59,9 +74,26 @@ export async function runScheduledFlow(params: {
     });
   }
 
-  const changedFiles = await listChangedFiles(params.config.review.repoRoot);
+  const changedFiles = await listChangedFilesImpl(params.config.review.repoRoot);
   if (changedFiles.length === 0) {
     logInfo("No changes detected after scheduled commands.");
+    return;
+  }
+
+  if (!passesPathConditions(changedFiles, schedule.conditions?.paths)) {
+    logInfo("Schedule conditions blocked run due to path filters.");
+    return;
+  }
+
+  const diffStats = await getDiffStatsImpl(params.config.review.repoRoot);
+  if (schedule.limits?.maxFiles && changedFiles.length > schedule.limits.maxFiles) {
+    logInfo(`Scheduled run exceeded maxFiles (${changedFiles.length}/${schedule.limits.maxFiles}). Skipping PR.`);
+    return;
+  }
+  if (schedule.limits?.maxDiffLines && diffStats.totalLines > schedule.limits.maxDiffLines) {
+    logInfo(
+      `Scheduled run exceeded maxDiffLines (${diffStats.totalLines}/${schedule.limits.maxDiffLines}). Skipping PR.`
+    );
     return;
   }
 
@@ -79,12 +111,12 @@ export async function runScheduledFlow(params: {
   const repo = github.context.repo.repo;
   const branchName = buildScheduleBranchName(jobId, commandIds);
 
-  await runGit(params.config.review.repoRoot, ["checkout", "-B", branchName]);
-  await runGit(params.config.review.repoRoot, ["config", "user.name", "shitty-reviewing-agent"]);
-  await runGit(params.config.review.repoRoot, ["config", "user.email", "shitty-reviewing-agent@users.noreply.github.com"]);
-  await runGit(params.config.review.repoRoot, ["add", "-A"]);
-  await runGit(params.config.review.repoRoot, ["commit", "-m", prConfig.title]);
-  await runGit(params.config.review.repoRoot, ["push", "--force-with-lease", "origin", branchName]);
+  await runGitImpl(params.config.review.repoRoot, ["checkout", "-B", branchName]);
+  await runGitImpl(params.config.review.repoRoot, ["config", "user.name", "shitty-reviewing-agent"]);
+  await runGitImpl(params.config.review.repoRoot, ["config", "user.email", "shitty-reviewing-agent@users.noreply.github.com"]);
+  await runGitImpl(params.config.review.repoRoot, ["add", "-A"]);
+  await runGitImpl(params.config.review.repoRoot, ["commit", "-m", prConfig.title]);
+  await runGitImpl(params.config.review.repoRoot, ["push", "--force-with-lease", "origin", branchName]);
 
   const existing = await params.octokit.rest.pulls.list({
     owner,
@@ -135,6 +167,57 @@ async function listChangedFiles(repoRoot: string): Promise<string[]> {
   return files;
 }
 
+async function getCurrentBranch(repoRoot: string): Promise<string> {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot });
+  return stdout.toString().trim();
+}
+
+async function getDiffStats(repoRoot: string): Promise<DiffStats> {
+  const { stdout } = await execFileAsync("git", ["diff", "--numstat"], { cwd: repoRoot });
+  const lines = stdout.toString().trim().split(/\r?\n/).filter(Boolean);
+  let total = 0;
+  for (const line of lines) {
+    const [addedRaw, deletedRaw] = line.split(/\s+/);
+    const added = parseNumstatValue(addedRaw);
+    const deleted = parseNumstatValue(deletedRaw);
+    total += added + deleted;
+  }
+  return { totalLines: total };
+}
+
+function parseNumstatValue(value: string | undefined): number {
+  if (!value || value === "-") return 0;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function passesBranchConditions(branch: string, conditions?: IncludeExclude): boolean {
+  if (!conditions) return true;
+  const include = conditions.include ?? [];
+  const exclude = conditions.exclude ?? [];
+  if (include.length > 0 && !include.some((pattern) => minimatch(branch, pattern))) {
+    return false;
+  }
+  if (exclude.length > 0 && exclude.some((pattern) => minimatch(branch, pattern))) {
+    return false;
+  }
+  return true;
+}
+
+function passesPathConditions(paths: string[], conditions?: IncludeExclude): boolean {
+  if (!conditions) return true;
+  const include = conditions.include ?? [];
+  const exclude = conditions.exclude ?? [];
+  let filtered = paths;
+  if (include.length > 0) {
+    filtered = filtered.filter((file) => include.some((pattern) => minimatch(file, pattern)));
+  }
+  if (exclude.length > 0) {
+    filtered = filtered.filter((file) => !exclude.some((pattern) => minimatch(file, pattern)));
+  }
+  return filtered.length > 0;
+}
+
 export function buildScheduleBranchName(jobId: string, commandIds: string[]): string {
   const seed = commandIds.length === 1 ? commandIds[0] : `${jobId}-${commandIds.join(",")}`;
   const slug = seed
@@ -154,4 +237,8 @@ async function runGit(repoRoot: string, args: string[]): Promise<void> {
     const message = error?.stderr?.toString() || error?.message || String(error);
     throw new Error(`git ${args.join(" ")} failed: ${message}`);
   }
+}
+
+interface DiffStats {
+  totalLines: number;
 }

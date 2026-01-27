@@ -1,13 +1,13 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
+import { calculateCost, streamSimple, getModel } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
 import { buildSystemPrompt, buildUserPrompt } from "../prompt.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "../tools/index.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "../types.js";
-import { buildContextSummaryMessage, buildDeterministicSummary, estimateTokens, pruneMessages, summarizeForCompaction } from "./context-compaction.js";
+import { filterToolsByAllowlist } from "../tools/categories.js";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo, ToolCategory } from "../types.js";
+import { createAgentWithCompaction } from "./agent-setup.js";
 import { countDistinctDirectories, filterDiagramFiles, filterIgnoredFiles } from "./file-filters.js";
 import { maybeGenerateSequenceDiagram } from "./diagram.js";
-import { isGemini3, mapThinkingLevelForGemini3, resolveCompactionModel } from "./model.js";
+import { isGemini3 } from "./model.js";
 import { withRetries } from "./retries.js";
 import { deriveErrorReason, postFailureSummary, postFallbackSummary } from "./summary.js";
 
@@ -25,6 +25,7 @@ export interface ReviewRunInput {
   previousReviewUrl?: string | null;
   previousReviewAt?: string | null;
   previousReviewBody?: string | null;
+  toolAllowlist?: ToolCategory[];
   overrides?: {
     agentFactory?: (params: {
       initialState: {
@@ -51,8 +52,6 @@ type AgentLike = {
   abort: () => void;
 };
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
   const log = (...args: unknown[]) => {
@@ -73,11 +72,6 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
     return isGemini3(config.modelId) ? 1.0 : undefined;
   })();
-
-  // Map thinking levels for Gemini 3 (only supports low/high)
-  const effectiveThinkingLevel: ThinkingLevel = isGemini3(config.modelId)
-    ? mapThinkingLevelForGemini3(config.reasoning)
-    : config.reasoning;
   const summaryState = {
     posted: false,
     inlineComments: 0,
@@ -139,92 +133,20 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     enabled: config.provider === "google",
   });
 
-  const tools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
+  const tools = filterToolsByAllowlist(
+    [...readTools, ...githubTools, ...reviewTools, ...webSearchTools],
+    input.toolAllowlist
+  );
 
-  const streamFn = input.overrides?.streamFn ?? streamSimple;
-  const model = input.overrides?.model ?? getModel(config.provider as any, config.modelId as any);
-  const compactionModelId = resolveCompactionModel(config);
-  const compactionModel = input.overrides?.compactionModel ??
-    (compactionModelId ? getModel(config.provider as any, compactionModelId as any) : null);
-  const agent = input.overrides?.agentFactory
-    ? input.overrides.agentFactory({
-      initialState: {
-        systemPrompt: buildSystemPrompt(),
-        model,
-        tools,
-        messages: [],
-        thinkingLevel: effectiveThinkingLevel,
-      },
-      transformContext: async (messages) => {
-        const maxTokens = model.contextWindow || 120000;
-        const threshold = Math.floor(maxTokens * 0.8);
-        const estimated = estimateTokens(messages);
-        if (estimated < threshold) {
-          return messages;
-        }
-        const { kept, pruned, prunedCount } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
-        if (pruned.length === 0) return kept;
-        const summary = compactionModel
-          ? await summarizeForCompaction(pruned, compactionModel, config.apiKey)
-          : buildDeterministicSummary(pruned);
-        const contextSummary = buildContextSummaryMessage(contextState, prunedCount, summaryState);
-        const summaryText = summary || "Earlier context was compacted to fit within model limits.";
-        return [
-          contextSummary,
-          {
-            role: "user",
-            content: `Compacted context summary:\n${summaryText}`,
-            timestamp: Date.now(),
-          },
-          ...kept,
-        ];
-      },
-      getApiKey: () => config.apiKey,
-      streamFn: (modelArg, context, options) =>
-        streamFn(modelArg, context, {
-          ...options,
-          temperature: effectiveTemperature ?? options.temperature,
-        }),
-    })
-    : new Agent({
-      initialState: {
-        systemPrompt: buildSystemPrompt(),
-        model,
-        tools,
-        messages: [],
-        thinkingLevel: effectiveThinkingLevel,
-      },
-      transformContext: async (messages) => {
-        const maxTokens = model.contextWindow || 120000;
-        const threshold = Math.floor(maxTokens * 0.8);
-        const estimated = estimateTokens(messages);
-        if (estimated < threshold) {
-          return messages;
-        }
-        const { kept, pruned, prunedCount } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
-        if (pruned.length === 0) return kept;
-        const summary = compactionModel
-          ? await summarizeForCompaction(pruned, compactionModel, config.apiKey)
-          : buildDeterministicSummary(pruned);
-        const contextSummary = buildContextSummaryMessage(contextState, prunedCount, summaryState);
-        const summaryText = summary || "Earlier context was compacted to fit within model limits.";
-        return [
-          contextSummary,
-          {
-            role: "user",
-            content: `Compacted context summary:\n${summaryText}`,
-            timestamp: Date.now(),
-          },
-          ...kept,
-        ];
-      },
-      getApiKey: () => config.apiKey,
-      streamFn: (modelArg, context, options) =>
-        streamFn(modelArg, context, {
-          ...options,
-          temperature: effectiveTemperature ?? options.temperature,
-        }),
-    });
+  const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
+    config,
+    systemPrompt: buildSystemPrompt(),
+    tools,
+    contextState,
+    summaryState,
+    temperatureOverride: effectiveTemperature,
+    overrides: input.overrides,
+  });
 
   const maxIterations = 10 + config.maxFiles * 5;
   let toolExecutions = 0;

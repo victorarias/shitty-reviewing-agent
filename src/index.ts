@@ -7,7 +7,7 @@ import { resolveGithubAuth } from "./app/github-auth.js";
 import { runActionFlow } from "./app/flow.js";
 import { fetchExistingComments, fetchPrData } from "./app/pr-data.js";
 import { runScheduledFlow } from "./app/schedule.js";
-import { parseCommandInvocation } from "./commands/args.js";
+import { matchesBotMention, parseCommandInvocation } from "./commands/args.js";
 import { CommandRegistry } from "./commands/registry.js";
 import { runCommand } from "./commands/run.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
@@ -42,6 +42,16 @@ async function main(): Promise<void> {
       if (!shouldHandleIssueComment(mode, core.info)) return;
       const invocation = parseCommandInvocation(mode.commentBody);
       if (!invocation) return;
+      if (invocation.mention) {
+        if (!actionConfig.botName) {
+          core.info(`Ignoring @${invocation.mention} command because bot-name is not configured.`);
+          return;
+        }
+        if (!matchesBotMention(invocation.mention, actionConfig.botName)) {
+          core.info(`Ignoring @${invocation.mention} command (expected @${actionConfig.botName}).`);
+          return;
+        }
+      }
       const command = registry.get(invocation.command);
       if (!command) return;
       const context = readContext(mode.prNumber);

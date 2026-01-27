@@ -83,6 +83,7 @@ export async function runActionFlow(params: {
     previousReviewUrl: lastSummary?.url ?? null,
     previousReviewAt: lastSummary?.updatedAt ?? null,
     previousReviewBody: lastSummary?.body ?? null,
+    toolAllowlist: params.toolsAllowlist,
   });
 
   if (params.commandIds && params.commandIds.length > 0 && params.commandRegistry) {

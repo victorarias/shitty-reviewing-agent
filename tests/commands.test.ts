@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { CommandRegistry } from "../src/commands/registry.ts";
-import { parseCommandInvocation } from "../src/commands/args.ts";
+import { matchesBotMention, parseCommandInvocation } from "../src/commands/args.ts";
 import { runActionFlow } from "../src/app/flow.ts";
 import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
@@ -29,6 +29,13 @@ test("parseCommandInvocation handles @mention form", () => {
   expect(invocation?.command).toBe("security");
   expect(invocation?.mention).toBe("reviewer");
   expect(invocation?.argv).toEqual(["quick"]);
+});
+
+test("matchesBotMention normalizes bot suffix", () => {
+  expect(matchesBotMention("my-app", "my-app")).toBe(true);
+  expect(matchesBotMention("my-app", "my-app[bot]")).toBe(true);
+  expect(matchesBotMention("@My-App", "my-app")).toBe(true);
+  expect(matchesBotMention("other", "my-app")).toBe(false);
 });
 
 test("runActionFlow logs missing command id", async () => {

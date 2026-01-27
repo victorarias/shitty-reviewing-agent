@@ -1,0 +1,99 @@
+import { test, expect } from "bun:test";
+import { runCommand } from "../src/commands/run.ts";
+import type { ReviewConfig, ReviewContext, PullRequestInfo, ChangedFile, CommandDefinition } from "../src/types.ts";
+import { makeOctokitSpy } from "./helpers/fake-octokit.ts";
+
+const baseConfig: ReviewConfig = {
+  provider: "google",
+  apiKey: "test",
+  modelId: "model",
+  maxFiles: 10,
+  ignorePatterns: [],
+  repoRoot: process.cwd(),
+  debug: false,
+  reasoning: "off",
+};
+
+const baseContext: ReviewContext = { owner: "o", repo: "r", prNumber: 1 };
+const basePrInfo: PullRequestInfo = {
+  number: 1,
+  title: "PR",
+  body: "",
+  author: "author",
+  baseRef: "main",
+  headRef: "feature",
+  baseSha: "base",
+  headSha: "head",
+  url: "https://example.com/pr/1",
+};
+const baseFiles: ChangedFile[] = [
+  { filename: "src/a.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch: "@@ -1 +1 @@\n-const a=1;\n+const a=2;\n" },
+];
+
+const command: CommandDefinition = { id: "security", prompt: "Check" };
+
+test("runCommand filters review tools for issue-only", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+  await runCommand({
+    mode: "pr",
+    command,
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseFiles,
+    existingComments: [],
+    reviewThreads: [],
+    commentType: "issue",
+    allowlist: ["filesystem", "git.read", "github.read", "github.write"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory: ({ initialState }: any) => {
+        toolNames = initialState.tools.map((tool: any) => tool.name);
+        return {
+          state: { error: null, messages: [] },
+          subscribe() {},
+          async prompt() {},
+          abort() {},
+        };
+      },
+    },
+  });
+  expect(toolNames).toContain("post_summary");
+  expect(toolNames).not.toContain("comment");
+});
+
+test("runCommand filters review tools for review-only", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+  await runCommand({
+    mode: "pr",
+    command,
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseFiles,
+    existingComments: [],
+    reviewThreads: [],
+    commentType: "review",
+    allowlist: ["filesystem", "git.read", "github.read", "github.write"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory: ({ initialState }: any) => {
+        toolNames = initialState.tools.map((tool: any) => tool.name);
+        return {
+          state: { error: null, messages: [] },
+          subscribe() {},
+          async prompt() {},
+          abort() {},
+        };
+      },
+    },
+  });
+  expect(toolNames).toContain("comment");
+  expect(toolNames).not.toContain("post_summary");
+});
