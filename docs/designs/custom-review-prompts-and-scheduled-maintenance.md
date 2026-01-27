@@ -41,8 +41,7 @@ Unknown commands are ignored (silent no-op).
 Action mode requires a workflow listening on `issue_comment` events. App mode requires the GitHub App
 to receive issue comment events and run the action.
 
-Commands are the canonical prompt definitions. Both PR review prompts and scheduled jobs can reference
-commands instead of redefining the prompt content.
+Commands are the canonical prompt definitions. Triggers reference commands by id.
 
 ## Workflow-provided context (extra checkouts)
 
@@ -77,9 +76,7 @@ commands:
       Apply the rules in company-rules/docs/api-rules.md to the changes in this repo.
 schedule:
   enabled: true
-  jobs:
-    - id: nightly-rules
-      commandRef: rules-check
+  run: [rules-check]
 ```
 
 This keeps repo-specific setup flexible without pushing workflow logic into the core action.
@@ -130,8 +127,7 @@ are unavailable in scheduled jobs and should not be expected to work there.
 
 ## Shared prompt module model
 
-Commands define reusable prompt modules. Review prompts and scheduled jobs reference them.
-Review prompts and scheduled jobs can override defaults as needed.
+Commands define reusable prompt modules. Triggers reference them by id.
 
 Command definition fields:
 - `id` (required): command name used in `@app-name command` or `!command`.
@@ -147,17 +143,26 @@ Command definition fields:
   - `${command.argv}`: list of tokens split on whitespace, with quotes preserved as a single token
   - Example: `!docs-drift "last 48 hours" --scope docs/` → `argv = ["last 48 hours", "--scope", "docs/"]`
 
-PR review prompts and scheduled jobs reference a command via `commandRef` and can override
-`tools`, `limits`, `output`, `files`, and `comment.type` when needed.
-`commandRef` and inline `prompt` are mutually exclusive.
+## Trigger lists (simplified)
 
-All prompts (PR review or scheduled) follow the same module model with overrides:
+Use trigger lists to declare which commands run in each mode:
 
-- `id` (required): stable identifier for tracking/caching.
-- `title`: human-readable label for comments.
-- `prompt` (required): task description for the subagent.
-- `tools.allow`: subset of allowlist categories.
-- `limits`: guardrails to bound cost/noise.
+- `review.run`: commands that run on every PR.
+- `schedule.run`: commands that run on scheduled workflows.
+
+Example:
+```yaml
+commands:
+  - id: security
+    prompt: "Review for authz bypass, unsafe deserialization, secrets, and input validation gaps."
+  - id: docs-drift
+    prompt: "Check docs drift for the last 24 hours."
+
+review:
+  run: [security]
+schedule:
+  run: [docs-drift]
+```
 
 Common output contract from subagents:
 - `summary`: short overview
@@ -169,8 +174,7 @@ Common output contract from subagents:
 
 Execution flow:
 1) Main reviewer gathers PR context.
-2) For each `review.prompts[]`, evaluate conditions and spawn subagent.
-3) Route output by `mode`.
+2) For each `review.run` command id, run the command.
 
 Config shape:
 ```yaml
@@ -192,58 +196,17 @@ commands:
       type: issue
 
 review:
+  run: [security]
   defaults:
     provider: openrouter
     model: anthropic/claude-sonnet-4
     reasoning: medium
     temperature: 0.4
-  prompts:
-    - id: security
-      commandRef: security
-      mode: separate_comment
-      comment:
-        type: issue
-      files:
-        include: ["**/*.ts", "**/*.go"]
-        exclude: ["**/*.test.*"]
-      # Omitting conditions runs on every PR. Add conditions to filter when needed.
-
-    - id: security-labeled
-      commandRef: security
-      mode: separate_comment
-      comment:
-        type: issue
-      files:
-        include: ["**/*.ts", "**/*.go"]
-        exclude: ["**/*.test.*"]
-      conditions:
-        labels:
-          include: ["security"]
 ```
 
 Key attributes and rationale:
-- `commandRef` (recommended): reference to a command defined under `commands`.
-- `prompt` (inline): only for one-off prompts; use `commandRef` to reuse logic across triggers.
-- `mode`: `feed_main` | `separate_comment` | `both`
-  - Controls output routing.
-- `comment.type`: `issue` | `review`
-  - Controls where the output lands on the PR.
-- `files.include` / `files.exclude`: glob filters for scope.
-- `tools.allow`: limit tool usage per prompt for safety/cost.
-- `limits.maxFiles`: avoid expensive repo-wide scans.
-- `limits.maxFindings`: avoid noisy output.
-- `output.format`: `findings` | `narrative` | `checklist`
-  - Standardizes presentation.
-- `output.severityFloor`: `low` | `medium` | `high`
-  - Filters trivial findings.
-- `conditions`:
-  - `draft` (bool)
-  - `labels.include` / `labels.exclude`
-  - `authors.include` / `authors.exclude`
-  - `paths.changed` (bool or list)
-
-Notes:
-- If `conditions` are omitted, the prompt runs on every PR.
+- `review.run`: list of command ids to run on every PR.
+- `review.defaults`: default model settings for PR runs.
 
 Permissions (PR review):
 - `contents: read`
@@ -260,7 +223,7 @@ This is an intentional approximation and may miss or double-count changes if the
 
 Execution flow:
 1) Scheduled workflow checks out the default branch.
-2) For each `schedule.jobs[]`, evaluate conditions and spawn subagent.
+2) For each `schedule.run` command id, run the command.
 3) If output is `pr_create`, apply changes and open PR.
 
 Config shape:
@@ -277,46 +240,32 @@ commands:
 
 schedule:
   enabled: true
-  jobs:
-    - id: docs-drift
-      title: "Docs drift check"
-      commandRef: docs-drift
-      tools:
-        allow: [filesystem, git.history, repo.write, github.read]
-      output:
-        mode: pr_create
-        pr:
-          base: main
-          title: "Docs: fix drift"
-          body: "Automated docs refresh"
-      limits:
-        maxFiles: 50
-        maxDiffLines: 800
-      conditions:
-        paths:
-          include: ["README.md", "docs/**"]
-      writeScope:
-        include: ["**/*.md"]
+  run: [docs-drift]
+  output:
+    mode: pr_create
+    pr:
+      base: main
+      title: "Docs: fix drift"
+      body: "Automated docs refresh"
+  limits:
+    maxFiles: 50
+    maxDiffLines: 800
+  conditions:
+    paths:
+      include: ["README.md", "docs/**"]
+  writeScope:
+    include: ["**/*.md"]
 ```
 
 Key attributes and rationale:
-- `output.mode`: `pr_create` | `issue`
-  - `pr_create`: write changes and open PR.
-  - `issue`: open an issue with a description-only report.
-- `commandRef` (recommended): reference to a command defined under `commands`.
-- `prompt` (inline): only for one-off jobs; use `commandRef` to reuse logic across triggers.
-- `output.pr` (required for `pr_create`): base branch, title/body.
-- `output.issue` (required for `issue`): title/body are optional; if title is omitted it defaults to the job `title`.
-  - If body is omitted, use the subagent summary + findings in a short report.
-- `limits.maxDiffLines`: guardrail to avoid giant PRs.
-- `conditions`: repo-scoped filters (not PR-scoped):
-  - `paths.include` / `paths.exclude` (glob match against repo contents)
-  - `branch.include` / `branch.exclude` (target branch filter)
-- `writeScope`: include/exclude globs limiting which paths can be modified (recommended when `repo.write` is allowed).
-  - Example: allow any Markdown file with `**/*.md`.
+- `schedule.run`: list of command ids to run on schedule.
+- `schedule.output`: shared output settings for scheduled runs.
+- `schedule.limits`: guardrails to avoid giant PRs.
+- `schedule.conditions`: repo-scoped filters (not PR-scoped).
+- `schedule.writeScope`: include/exclude globs limiting which paths can be modified.
 
 PR creation behavior:
-- Bot branch name is deterministic from the job id (internal strategy).
+- Bot branch name is deterministic from the command id (internal strategy).
 - If an existing bot PR is already open for that branch, update it instead of creating a new one.
 - If no changes are needed, skip creating a PR.
 

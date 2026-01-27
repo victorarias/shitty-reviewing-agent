@@ -14,10 +14,7 @@
       "additionalProperties": false,
       "properties": {
         "defaults": { "$ref": "#/$defs/reviewDefaults" },
-        "prompts": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/reviewPrompt" }
-        }
+        "run": { "$ref": "#/$defs/stringList" }
       }
     },
     "commands": {
@@ -29,10 +26,11 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
-        "jobs": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/scheduleJob" }
-        }
+        "run": { "$ref": "#/$defs/stringList" },
+        "output": { "$ref": "#/$defs/scheduleOutput" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "conditions": { "$ref": "#/$defs/repoConditions" },
+        "writeScope": { "$ref": "#/$defs/includeExclude" }
       }
     },
     "tools": {
@@ -157,115 +155,35 @@
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
       }
     },
-    "reviewPrompt": {
+    "scheduleOutput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id"],
+      "required": ["mode"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "title": { "type": "string" },
-        "commandRef": { "type": "string", "minLength": 1 },
-        "prompt": { "type": "string", "minLength": 1 },
-        "mode": {
-          "type": "string",
-          "enum": ["feed_main", "separate_comment", "both"]
-        },
-        "comment": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "type": { "$ref": "#/$defs/commentType" }
-          }
-        },
-        "files": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "include": { "$ref": "#/$defs/stringList" },
-            "exclude": { "$ref": "#/$defs/stringList" }
-          }
-        },
-        "tools": { "$ref": "#/$defs/toolsAllow" },
-        "limits": { "$ref": "#/$defs/limits" },
-        "output": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": { "$ref": "#/$defs/outputFormat" },
-            "severityFloor": { "$ref": "#/$defs/severity" }
-          }
-        },
-        "conditions": { "$ref": "#/$defs/conditions" },
-        "provider": { "type": "string", "minLength": 1 },
-        "model": { "type": "string", "minLength": 1 },
-        "reasoning": { "$ref": "#/$defs/reasoning" },
-        "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+        "mode": { "type": "string", "enum": ["pr_create", "issue"] },
+        "pr": { "$ref": "#/$defs/prConfig" },
+        "issue": { "$ref": "#/$defs/issueConfig" }
       },
-      "oneOf": [
+      "allOf": [
         {
-          "properties": { "prompt": { "type": "string", "minLength": 1 } },
-          "required": ["prompt"]
-        },
-        {
-          "properties": { "commandRef": { "type": "string", "minLength": 1 } },
-          "required": ["commandRef"]
-        }
-      ]
-    },
-    "scheduleJob": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "output"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "title": { "type": "string" },
-        "commandRef": { "type": "string", "minLength": 1 },
-        "prompt": { "type": "string", "minLength": 1 },
-        "tools": { "$ref": "#/$defs/toolsAllow" },
-        "limits": { "$ref": "#/$defs/limits" },
-        "conditions": { "$ref": "#/$defs/repoConditions" },
-        "writeScope": { "$ref": "#/$defs/includeExclude" },
-        "output": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["mode"],
-          "properties": {
-            "mode": { "type": "string", "enum": ["pr_create", "issue"] },
-            "pr": { "$ref": "#/$defs/prConfig" },
-            "issue": { "$ref": "#/$defs/issueConfig" }
+          "if": {
+            "properties": { "mode": { "const": "pr_create" } },
+            "required": ["mode"]
           },
-          "allOf": [
-            {
-              "if": {
-                "properties": { "mode": { "const": "pr_create" } },
-                "required": ["mode"]
-              },
-              "then": {
-                "properties": { "pr": { "$ref": "#/$defs/prConfig" } },
-                "required": ["pr"]
-              }
-            },
-            {
-              "if": {
-                "properties": { "mode": { "const": "issue" } },
-                "required": ["mode"]
-              },
-              "then": {
-                "properties": { "issue": { "$ref": "#/$defs/issueConfig" } },
-                "required": ["issue"]
-              }
-            }
-          ]
-        }
-      },
-      "oneOf": [
-        {
-          "properties": { "prompt": { "type": "string", "minLength": 1 } },
-          "required": ["prompt"]
+          "then": {
+            "properties": { "pr": { "$ref": "#/$defs/prConfig" } },
+            "required": ["pr"]
+          }
         },
         {
-          "properties": { "commandRef": { "type": "string", "minLength": 1 } },
-          "required": ["commandRef"]
+          "if": {
+            "properties": { "mode": { "const": "issue" } },
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": { "issue": { "$ref": "#/$defs/issueConfig" } },
+            "required": ["issue"]
+          }
         }
       ]
     },
