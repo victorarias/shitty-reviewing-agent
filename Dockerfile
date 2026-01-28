@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package.json tsconfig.json ./
 COPY src ./src
-COPY docs ./docs
+COPY schemas ./schemas
 
 RUN bun install --production
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/victorarias/shitty-reviewing-agent/blob/main/docs/reviewerc.schema.json",
+  "$id": "https://github.com/victorarias/shitty-reviewing-agent/blob/main/schemas/reviewerc.schema.json",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],

@@ -59,7 +59,7 @@ review:
   run: [security]
 ```
 
-See `docs/reviewerc.example.yml` for a full example and `docs/reviewerc.schema.json` for the full schema.
+See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schema.json` for the full schema.
 
 ## Notes
 

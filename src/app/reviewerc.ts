@@ -18,7 +18,7 @@ let cachedSchemaErrors: ((data: unknown) => string[]) | null = null;
 
 function getSchemaPath(): string {
   const current = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(current, "../../docs/reviewerc.schema.json");
+  return path.resolve(current, "../../schemas/reviewerc.schema.json");
 }
 
 function loadSchema(): unknown {
