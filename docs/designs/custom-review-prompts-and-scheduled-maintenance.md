@@ -118,7 +118,8 @@ Comment types:
 - `review` comment: inline comment tied to a file/line. Best for pinpointed findings and suggestions.
 - `both`: post inline review comments for line-anchored findings and a top-level issue summary.
 
-Default: use `issue` comments unless the prompt explicitly targets lines. `review` and `both` only apply to PRs.
+Default: `both` for command-triggered runs unless overridden by `command.comment.type` or `output.commentType`.
+`review` and `both` only apply to PRs.
 
 Scheduled runs do not have PR context. PR-only tools (e.g., `get_pr_info`, `get_changed_files`, `get_diff`, review comments)
 are unavailable in scheduled jobs and should not be expected to work there.
@@ -144,6 +145,9 @@ Command definition fields:
   - `${command.args}`: raw trailing text after the command
   - `${command.argv}`: list of tokens split on whitespace, with quotes preserved as a single token
   - Example: `!docs-drift "last 48 hours" --scope docs/` → `argv = ["last 48 hours", "--scope", "docs/"]`
+
+Trigger parsing example:
+- `!docs-drift "last 48 hours" --scope docs/`
 
 ## Trigger lists (simplified)
 
@@ -178,6 +182,11 @@ Common output contract from subagents:
 Execution flow:
 1) Main reviewer gathers PR context.
 2) For each `review.run` command id, run the command.
+
+Event routing (Action mode):
+- `pull_request` → run main review + `review.run`
+- `issue_comment` → parse `!command` / `@bot command` and run only that command (PR comments only)
+- `schedule` → read `schedule.runs[GITHUB_JOB]` and run those commands
 
 Config shape:
 ```yaml
@@ -226,7 +235,7 @@ This is an intentional approximation and may miss or double-count changes if the
 
 Execution flow:
 1) Scheduled workflow checks out the default branch.
-2) Look up `schedule.runs[GITHUB_JOB]`. If missing, do nothing.
+2) Look up `schedule.runs[GITHUB_JOB]` (job id → command list). If missing, do nothing.
 3) Run the command ids listed for that job.
 4) Apply changes and open a PR (the only supported scheduled output).
 

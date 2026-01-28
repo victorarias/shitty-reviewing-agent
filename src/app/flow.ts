@@ -1,11 +1,13 @@
 import type {
   ActionConfig,
   ChangedFile,
+  CommentType,
   ExistingComment,
   PullRequestInfo,
   ReviewConfig,
   ReviewContext,
   ReviewThreadInfo,
+  ToolCategory,
 } from "../types.js";
 import type * as github from "@actions/github";
 import { fetchChangesSinceReview, fetchExistingComments, fetchPrData } from "./pr-data.js";
@@ -13,6 +15,8 @@ import { findLastReviewedSha, findLastSummary } from "./last-review.js";
 import { applyIgnorePatterns } from "./ignore.js";
 import { postSkipSummary } from "./summary.js";
 import { runReview } from "../agent.js";
+import type { CommandRegistry } from "../commands/registry.js";
+import { runCommand } from "../commands/run.js";
 
 export async function runActionFlow(params: {
   config: ActionConfig;
@@ -24,6 +28,12 @@ export async function runActionFlow(params: {
   fetchChangesSinceReviewFn?: typeof fetchChangesSinceReview;
   runReviewFn?: typeof runReview;
   postSkipSummaryFn?: typeof postSkipSummary;
+  commandIds?: string[];
+  commandRegistry?: CommandRegistry;
+  runCommandFn?: typeof runCommand;
+  toolsAllowlist?: ToolCategory[];
+  defaultCommentType?: CommentType;
+  logInfo?: (message: string) => void;
 }): Promise<void> {
   const { config, context, octokit } = params;
   const reviewConfig: ReviewConfig = config.review;
@@ -32,6 +42,8 @@ export async function runActionFlow(params: {
   const fetchChangesSinceReviewImpl = params.fetchChangesSinceReviewFn ?? fetchChangesSinceReview;
   const runReviewImpl = params.runReviewFn ?? runReview;
   const postSkipSummaryImpl = params.postSkipSummaryFn ?? postSkipSummary;
+  const runCommandImpl = params.runCommandFn ?? runCommand;
+  const logInfo = params.logInfo ?? console.info;
 
   const { prInfo, changedFiles } = await fetchPrDataImpl(octokit, context);
   const { existingComments, reviewThreads } = await fetchExistingCommentsImpl(octokit, context);
@@ -72,6 +84,30 @@ export async function runActionFlow(params: {
     previousReviewAt: lastSummary?.updatedAt ?? null,
     previousReviewBody: lastSummary?.body ?? null,
   });
+
+  if (params.commandIds && params.commandIds.length > 0 && params.commandRegistry) {
+    for (const commandId of params.commandIds) {
+      const command = params.commandRegistry.get(commandId);
+      if (!command) {
+        logInfo(`[warn] Unknown command id in review.run: ${commandId}`);
+        continue;
+      }
+      const commentType = command.comment?.type ?? params.defaultCommentType ?? "both";
+      await runCommandImpl({
+        mode: "pr",
+        command,
+        config: reviewConfig,
+        context,
+        octokit,
+        prInfo,
+        changedFiles: filtered,
+        existingComments,
+        reviewThreads,
+        commentType,
+        allowlist: params.toolsAllowlist ?? [],
+      });
+    }
+  }
 }
 
 export type { ChangedFile, ExistingComment, PullRequestInfo, ReviewThreadInfo };
