@@ -69,3 +69,9 @@
 - [ ] config-core: manual run with `.reviewerc` on a sample PR; verify logs show merged config + command ids.
 - [ ] triggers: manual `!command "quoted args"` on a PR comment; verify correct command executed.
 - [ ] scheduled-run: manual workflow dispatch with `GITHUB_JOB` mapped in `schedule.runs`; verify PR created.
+
+## Follow-up Ideas (Learnings from other agents)
+- [ ] Add read-before-write guard for repo write tools (track reads in filesystem tools and enforce before write/apply_patch).
+- [ ] Add patch-only mode / model-based gating (disable `write` + `edit`, allow `apply_patch`).
+- [ ] Centralize tool registry and global gating (single place to enable/disable tool categories).
+- [ ] Add post-write diagnostics (e.g., diff summary or lightweight lint) to tool results.

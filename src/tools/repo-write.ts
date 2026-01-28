@@ -15,6 +15,12 @@ function ensureInsideRoot(root: string, target: string): string {
   return resolved;
 }
 
+function assertRelativePath(target: string): void {
+  if (path.isAbsolute(target) || target.startsWith("~/") || target.startsWith("~\\")) {
+    throw new Error(`Absolute paths are not allowed: ${target}`);
+  }
+}
+
 export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): AgentTool<any>[] {
   const writeFileTool: AgentTool<typeof WriteFileSchema, { path: string }> = {
     name: "write_file",
@@ -22,7 +28,9 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
     description: "Write a file to disk (overwrites).",
     parameters: WriteFileSchema,
     execute: async (_id, params) => {
-      const targetPath = normalizePath(params.path);
+      const rawPath = params.path;
+      assertRelativePath(rawPath);
+      const targetPath = normalizePath(rawPath);
       assertWriteAllowed(targetPath, scope);
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.mkdir(path.dirname(resolved), { recursive: true });
@@ -40,7 +48,9 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
     description: "Delete a file from disk.",
     parameters: DeleteFileSchema,
     execute: async (_id, params) => {
-      const targetPath = normalizePath(params.path);
+      const rawPath = params.path;
+      assertRelativePath(rawPath);
+      const targetPath = normalizePath(rawPath);
       assertWriteAllowed(targetPath, scope);
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.unlink(resolved);
@@ -57,7 +67,9 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
     description: "Create a directory (and parents if needed).",
     parameters: MkdirSchema,
     execute: async (_id, params) => {
-      const targetPath = normalizePath(params.path);
+      const rawPath = params.path;
+      assertRelativePath(rawPath);
+      const targetPath = normalizePath(rawPath);
       assertWriteAllowed(targetPath, scope);
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.mkdir(resolved, { recursive: true });
@@ -88,7 +100,10 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
 async function runGitApply(repoRoot: string, patch: string, scope?: IncludeExclude): Promise<void> {
   const touched = extractPatchPaths(patch);
   for (const file of touched) {
-    assertWriteAllowed(file, scope);
+    assertRelativePath(file);
+    const normalized = normalizePath(file);
+    assertWriteAllowed(normalized, scope);
+    ensureInsideRoot(repoRoot, normalized);
   }
   await new Promise<void>((resolve, reject) => {
     const child = spawn("git", ["apply", "--whitespace=nowarn"], { cwd: repoRoot });
