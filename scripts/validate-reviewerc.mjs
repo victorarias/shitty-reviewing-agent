@@ -5,7 +5,7 @@ import Ajv from "ajv/dist/2020.js";
 import YAML from "yaml";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const schemaPath = path.join(repoRoot, "docs", "reviewerc.schema.json");
+const schemaPath = path.join(repoRoot, "schemas", "reviewerc.schema.json");
 const examplePath = path.join(repoRoot, "docs", "reviewerc.example.yml");
 
 function readJson(filePath) {

@@ -1,4 +1,12 @@
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "../types.js";
+import type {
+  ActionConfig,
+  ChangedFile,
+  ExistingComment,
+  PullRequestInfo,
+  ReviewConfig,
+  ReviewContext,
+  ReviewThreadInfo,
+} from "../types.js";
 import type * as github from "@actions/github";
 import { fetchChangesSinceReview, fetchExistingComments, fetchPrData } from "./pr-data.js";
 import { findLastReviewedSha, findLastSummary } from "./last-review.js";
@@ -7,7 +15,7 @@ import { postSkipSummary } from "./summary.js";
 import { runReview } from "../agent.js";
 
 export async function runActionFlow(params: {
-  config: ReviewConfig;
+  config: ActionConfig;
   context: ReviewContext;
   octokit: ReturnType<typeof github.getOctokit>;
   logDebug?: (message: string) => void;
@@ -18,6 +26,7 @@ export async function runActionFlow(params: {
   postSkipSummaryFn?: typeof postSkipSummary;
 }): Promise<void> {
   const { config, context, octokit } = params;
+  const reviewConfig: ReviewConfig = config.review;
   const fetchPrDataImpl = params.fetchPrDataFn ?? fetchPrData;
   const fetchExistingCommentsImpl = params.fetchExistingCommentsFn ?? fetchExistingComments;
   const fetchChangesSinceReviewImpl = params.fetchChangesSinceReviewFn ?? fetchChangesSinceReview;
@@ -32,7 +41,7 @@ export async function runActionFlow(params: {
     ? await fetchChangesSinceReviewImpl(octokit, context, lastReviewedSha, prInfo.headSha, changedFiles)
     : { files: changedFiles, warning: null };
 
-  if (config.debug && params.logDebug) {
+  if (reviewConfig.debug && params.logDebug) {
     params.logDebug(`[debug] PR #${prInfo.number} ${prInfo.title}`);
     params.logDebug(`[debug] Files in PR: ${changedFiles.length}`);
     if (lastReviewedSha) {
@@ -42,14 +51,14 @@ export async function runActionFlow(params: {
     params.logDebug(`[debug] Existing comments: ${existingComments.length}`);
   }
 
-  const filtered = applyIgnorePatterns(scopedResult.files, config.ignorePatterns);
-  if (filtered.length > config.maxFiles) {
-    await postSkipSummaryImpl(octokit, context, config.modelId, filtered.length, config.maxFiles);
+  const filtered = applyIgnorePatterns(scopedResult.files, reviewConfig.ignorePatterns);
+  if (filtered.length > reviewConfig.maxFiles) {
+    await postSkipSummaryImpl(octokit, context, reviewConfig.modelId, filtered.length, reviewConfig.maxFiles);
     return;
   }
 
   await runReviewImpl({
-    config,
+    config: reviewConfig,
     context,
     octokit,
     prInfo,

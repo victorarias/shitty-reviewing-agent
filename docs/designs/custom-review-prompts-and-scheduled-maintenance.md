@@ -26,7 +26,7 @@
 - Format: YAML
 - Merge precedence: `action.yml` inputs > `.reviewerc` values > built-in defaults
   - Rationale: runtime inputs should override repo config (like env vars).
-- Schema: `docs/reviewerc.schema.json` (authoritative structure + allowed values, strict `additionalProperties: false`)
+- Schema: `schemas/reviewerc.schema.json` (authoritative structure + allowed values, strict `additionalProperties: false`)
 
 ## Comment-triggered commands (App or Action)
 

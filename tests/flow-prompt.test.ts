@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { runActionFlow } from "../src/app/flow.ts";
 import { buildUserPrompt } from "../src/prompt.ts";
-import type { ReviewConfig, ReviewContext } from "../src/types.ts";
+import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
 const config: ReviewConfig = {
   provider: "google",
@@ -12,6 +12,14 @@ const config: ReviewConfig = {
   repoRoot: process.cwd(),
   debug: false,
   reasoning: "off",
+};
+
+const actionConfig: ActionConfig = {
+  review: config,
+  reviewRun: [],
+  commands: [],
+  toolsAllowlist: [],
+  outputCommentType: "both",
 };
 
 const context: ReviewContext = {
@@ -25,7 +33,7 @@ test("runActionFlow prompt snapshot matches fixture", async () => {
 
   let captured: any = null;
   await runActionFlow({
-    config,
+    config: actionConfig,
     context,
     octokit: {} as any,
     fetchPrDataFn: async () => ({ prInfo: fixture.prInfo, changedFiles: fixture.changedFiles }),
@@ -43,8 +51,8 @@ test("runActionFlow prompt snapshot matches fixture", async () => {
     prBody: captured.prInfo.body,
     changedFiles: captured.changedFiles.map((file: any) => file.filename),
     directoryCount,
-    maxFiles: config.maxFiles,
-    ignorePatterns: config.ignorePatterns,
+    maxFiles: actionConfig.review.maxFiles,
+    ignorePatterns: actionConfig.review.ignorePatterns,
     existingComments: captured.existingComments.length,
     lastReviewedSha: captured.lastReviewedSha,
     headSha: captured.prInfo.headSha,

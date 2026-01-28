@@ -30,9 +30,9 @@ jobs:
 
 ## Inputs
 
-- `provider` (required): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
+- `provider` (required unless set in `.reviewerc`): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
 - `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
-- `model` (required): Model name
+- `model` (required unless set in `.reviewerc`): Model name
 - `compaction-model` (optional): Model used for context compaction summaries. Defaults to `gemini-3-flash-preview` when provider is `google`, otherwise uses `model`.
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
 - `ignore-patterns` (optional, default `*.lock,*.generated.*`): Comma-separated globs to skip
@@ -41,6 +41,25 @@ jobs:
 - `app-id` (optional): GitHub App ID (use instead of GITHUB_TOKEN)
 - `app-installation-id` (optional): GitHub App installation ID
 - `app-private-key` (optional): GitHub App private key PEM
+
+## .reviewerc configuration
+
+Place a `.reviewerc` file at the repo root to define custom commands and scheduled runs. Action inputs override `.reviewerc` values; `.reviewerc` overrides built-in defaults.
+
+Example:
+```yaml
+version: 1
+commands:
+  - id: security
+    prompt: "Review for authz bypass, unsafe deserialization, secrets, and input validation gaps."
+review:
+  defaults:
+    provider: openrouter
+    model: anthropic/claude-sonnet-4
+  run: [security]
+```
+
+See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schema.json` for the full schema.
 
 ## Notes
 
