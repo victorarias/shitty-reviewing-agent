@@ -12,10 +12,10 @@ async function main(): Promise<void> {
     const context = readContext();
     const { token, authType } = await resolveGithubAuth();
     const octokit = github.getOctokit(token);
-    if (config.debug) {
+    if (config.review.debug) {
       core.info(`[debug] GitHub auth: ${authType}`);
     }
-    await runActionFlow({ config, context, octokit, logDebug: core.info });
+    await runActionFlow({ config: config.review, context, octokit, logDebug: core.info });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
   }

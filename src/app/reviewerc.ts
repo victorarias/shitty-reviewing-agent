@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Ajv from "ajv/dist/2020.js";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import YAML from "yaml";
 import type { ReviewercConfig } from "../types.js";
 
@@ -30,7 +30,7 @@ function loadSchema(): unknown {
 function ensureValidator(): void {
   if (cachedValidator) return;
   const schema = loadSchema();
-  const ajv = new Ajv({ allErrors: true, strict: true });
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validate = ajv.compile(schema);
   cachedValidator = (data: unknown) => validate(data);
   cachedSchemaErrors = (_data: unknown) =>
