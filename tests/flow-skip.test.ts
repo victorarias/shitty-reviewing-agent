@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { runActionFlow } from "../src/app/flow.ts";
-import type { ReviewConfig, ReviewContext } from "../src/types.ts";
+import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
 const baseConfig: ReviewConfig = {
   provider: "google",
@@ -13,6 +13,14 @@ const baseConfig: ReviewConfig = {
   reasoning: "off",
 };
 
+const actionConfig: ActionConfig = {
+  review: baseConfig,
+  reviewRun: [],
+  commands: [],
+  toolsAllowlist: [],
+  outputCommentType: "both",
+};
+
 const context: ReviewContext = {
   owner: "owner",
   repo: "repo",
@@ -23,7 +31,7 @@ test("runActionFlow skips large PR after ignore filtering", async () => {
   const fixture = await Bun.file("tests/fixtures/harness/flow-skip.json").json();
   let skipped = false;
   await runActionFlow({
-    config: baseConfig,
+    config: actionConfig,
     context,
     octokit: {} as any,
     fetchPrDataFn: async () => ({ prInfo: fixture.prInfo, changedFiles: fixture.changedFiles }),

@@ -15,7 +15,7 @@ async function main(): Promise<void> {
     if (config.review.debug) {
       core.info(`[debug] GitHub auth: ${authType}`);
     }
-    await runActionFlow({ config: config.review, context, octokit, logDebug: core.info });
+    await runActionFlow({ config, context, octokit, logDebug: core.info });
   } catch (error: any) {
     core.setFailed(error instanceof Error ? error.message : String(error));
   }

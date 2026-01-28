@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { runActionFlow } from "../src/app/flow.ts";
-import type { ReviewConfig, ReviewContext, ChangedFile, PullRequestInfo, ExistingComment } from "../src/types.ts";
+import type { ActionConfig, ReviewConfig, ReviewContext, ChangedFile, PullRequestInfo, ExistingComment } from "../src/types.ts";
 
 const config: ReviewConfig = {
   provider: "google",
@@ -11,6 +11,14 @@ const config: ReviewConfig = {
   repoRoot: process.cwd(),
   debug: false,
   reasoning: "off",
+};
+
+const actionConfig: ActionConfig = {
+  review: config,
+  reviewRun: [],
+  commands: [],
+  toolsAllowlist: [],
+  outputCommentType: "both",
 };
 
 const context: ReviewContext = {
@@ -39,7 +47,7 @@ const files: ChangedFile[] = [
 test("runActionFlow posts skip summary when file count exceeds max", async () => {
   let skipCalled = false;
   await runActionFlow({
-    config,
+    config: actionConfig,
     context,
     octokit: {} as any,
     fetchPrDataFn: async () => ({ prInfo, changedFiles: files }),
@@ -74,7 +82,10 @@ test("runActionFlow passes scope warning and previous summary into runReview", a
 
   let captured: any = null;
   await runActionFlow({
-    config: { ...config, maxFiles: 5 },
+    config: {
+      ...actionConfig,
+      review: { ...config, maxFiles: 5 },
+    },
     context,
     octokit: {} as any,
     fetchPrDataFn: async () => ({ prInfo, changedFiles: files }),
