@@ -18,8 +18,6 @@ import { applyIgnorePatterns } from "../app/ignore.js";
 import { createReadOnlyTools } from "../tools/fs.js";
 import { createGithubTools } from "../tools/github.js";
 import { createReviewTools } from "../tools/review.js";
-import { createGitHistoryTools } from "../tools/git-history.js";
-import { createRepoWriteTools } from "../tools/repo-write.js";
 import {
   buildContextSummaryMessage,
   buildDeterministicSummary,
@@ -79,12 +77,6 @@ const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
   reply_to_comment: "github.write",
   resolve_thread: "github.write",
   post_summary: "github.write",
-  git_log: "git.history",
-  git_diff_range: "git.history",
-  write_file: "repo.write",
-  apply_patch: "repo.write",
-  delete_file: "repo.write",
-  mkdir: "repo.write",
 };
 
 export async function runCommand(input: CommandRunInput): Promise<void> {
@@ -263,10 +255,6 @@ function buildTools(
     allTools.push(...createReadOnlyTools(input.config.repoRoot));
   }
 
-  if (allowedSet.has("git.history")) {
-    allTools.push(...createGitHistoryTools(input.config.repoRoot));
-  }
-
   if (input.mode === "pr") {
     const prInput = input as Extract<CommandRunInput, { mode: "pr" }>;
     if (allowedSet.has("git.read") || allowedSet.has("github.read")) {
@@ -309,11 +297,6 @@ function buildTools(
       });
       allTools.push(...filterReviewToolsByCommentType(reviewTools, prInput.commentType));
     }
-  }
-
-  if (input.mode === "schedule" && allowedSet.has("repo.write")) {
-    const scheduleInput = input as Extract<CommandRunInput, { mode: "schedule" }>;
-    allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
   }
 
   return allTools.filter((tool) => {

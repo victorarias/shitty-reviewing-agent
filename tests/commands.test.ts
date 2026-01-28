@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { CommandRegistry } from "../src/commands/registry.ts";
 import { parseCommandInvocation } from "../src/commands/args.ts";
 import { runActionFlow } from "../src/app/flow.ts";
-import type { ReviewConfig, ReviewContext } from "../src/types.ts";
+import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
 const commandDef = { id: "security", prompt: "Check auth" } as const;
 
@@ -42,10 +42,17 @@ test("runActionFlow logs missing command id", async () => {
     debug: false,
     reasoning: "off",
   };
+  const actionConfig: ActionConfig = {
+    review: config,
+    reviewRun: [],
+    commands: [],
+    toolsAllowlist: [],
+    outputCommentType: "both",
+  };
   const context: ReviewContext = { owner: "o", repo: "r", prNumber: 1 };
   let message = "";
   await runActionFlow({
-    config,
+    config: actionConfig,
     context,
     octokit: {} as any,
     fetchPrDataFn: async () => ({

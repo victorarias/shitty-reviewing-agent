@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import type {
   ActionConfig,
   ChangedFile,
@@ -97,7 +96,7 @@ export async function runActionFlow(params: {
       await runCommandImpl({
         mode: "pr",
         command,
-        config,
+        config: reviewConfig,
         context,
         octokit,
         prInfo,

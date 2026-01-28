@@ -6,7 +6,6 @@ import { resolveRunMode, shouldHandleIssueComment } from "./app/mode.js";
 import { resolveGithubAuth } from "./app/github-auth.js";
 import { runActionFlow } from "./app/flow.js";
 import { fetchExistingComments, fetchPrData } from "./app/pr-data.js";
-import { runScheduledFlow } from "./app/schedule.js";
 import { parseCommandInvocation } from "./commands/args.js";
 import { CommandRegistry } from "./commands/registry.js";
 import { runCommand } from "./commands/run.js";
@@ -65,12 +64,7 @@ async function main(): Promise<void> {
       return;
     }
     if (mode.mode === "schedule") {
-      await runScheduledFlow({
-        config: actionConfig,
-        octokit,
-        logInfo: core.info,
-        logDebug: core.info,
-      });
+      core.info("Scheduled runs are not enabled in this version.");
       return;
     }
     core.info(`Unsupported event ${mode.eventName}. Nothing to do.`);
