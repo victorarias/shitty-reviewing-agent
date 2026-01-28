@@ -35,9 +35,10 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.mkdir(path.dirname(resolved), { recursive: true });
       await fs.writeFile(resolved, params.content, "utf8");
+      const summary = await getRepoSummary(repoRoot);
       return {
         content: [{ type: "text", text: `Wrote ${params.path}` }],
-        details: { path: params.path },
+        details: { path: params.path, ...summary },
       };
     },
   };
@@ -54,9 +55,10 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
       assertWriteAllowed(targetPath, scope);
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.unlink(resolved);
+      const summary = await getRepoSummary(repoRoot);
       return {
         content: [{ type: "text", text: `Deleted ${params.path}` }],
-        details: { path: params.path },
+        details: { path: params.path, ...summary },
       };
     },
   };
@@ -73,9 +75,10 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
       assertWriteAllowed(targetPath, scope);
       const resolved = ensureInsideRoot(repoRoot, targetPath);
       await fs.mkdir(resolved, { recursive: true });
+      const summary = await getRepoSummary(repoRoot);
       return {
         content: [{ type: "text", text: `Created ${params.path}` }],
-        details: { path: params.path },
+        details: { path: params.path, ...summary },
       };
     },
   };
@@ -87,9 +90,10 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
     parameters: ApplyPatchSchema,
     execute: async (_id, params) => {
       await runGitApply(repoRoot, params.patch, scope);
+      const summary = await getRepoSummary(repoRoot);
       return {
         content: [{ type: "text", text: "Patch applied." }],
-        details: { applied: true },
+        details: { applied: true, ...summary },
       };
     },
   };
@@ -121,6 +125,35 @@ async function runGitApply(repoRoot: string, patch: string, scope?: IncludeExclu
     });
     child.stdin.write(patch);
     child.stdin.end();
+  });
+}
+
+async function getRepoSummary(repoRoot: string): Promise<{ status: string[]; diffStat: string }> {
+  const [status, diffStat] = await Promise.all([
+    runGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]),
+    runGit(repoRoot, ["diff", "--stat"]),
+  ]);
+  return {
+    status: status.split(/\r?\n/).filter(Boolean),
+    diffStat: diffStat.trim(),
+  };
+}
+
+async function runGit(repoRoot: string, args: string[]): Promise<string> {
+  return await new Promise((resolve) => {
+    const child = spawn("git", args, { cwd: repoRoot });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.on("error", () => resolve(""));
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        resolve("");
+      }
+    });
   });
 }
 

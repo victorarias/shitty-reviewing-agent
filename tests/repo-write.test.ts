@@ -2,11 +2,12 @@ import { test, expect } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { createRepoWriteTools } from "../src/tools/repo-write.ts";
 
 function makeRepo(): string {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sra-write-"));
-  fs.mkdirSync(path.join(repoRoot, ".git"), { recursive: true });
+  execSync("git init", { cwd: repoRoot, stdio: "ignore" });
   return repoRoot;
 }
 
@@ -16,11 +17,13 @@ test("repo write tools write and delete files", async () => {
   const writeTool = tools.find((tool) => tool.name === "write_file") as any;
   const deleteTool = tools.find((tool) => tool.name === "delete_file") as any;
 
-  await writeTool.execute("", { path: "docs/readme.md", content: "hello" });
+  const writeResult = await writeTool.execute("", { path: "docs/readme.md", content: "hello" });
   expect(fs.readFileSync(path.join(repoRoot, "docs/readme.md"), "utf8")).toBe("hello");
+  expect(writeResult.details.status.join("\n")).toContain("docs/readme.md");
 
-  await deleteTool.execute("", { path: "docs/readme.md" });
+  const deleteResult = await deleteTool.execute("", { path: "docs/readme.md" });
   expect(fs.existsSync(path.join(repoRoot, "docs/readme.md"))).toBe(false);
+  expect(Array.isArray(deleteResult.details.status)).toBe(true);
 });
 
 test("repo write tools enforce scope", async () => {
@@ -65,6 +68,7 @@ test("repo write tools apply patch", async () => {
     "",
   ].join("\n");
 
-  await patchTool.execute("", { patch });
+  const patchResult = await patchTool.execute("", { patch });
   expect(fs.readFileSync(filePath, "utf8")).toBe("hello world\n");
+  expect(typeof patchResult.details.diffStat).toBe("string");
 });
