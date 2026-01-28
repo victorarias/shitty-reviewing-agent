@@ -124,6 +124,7 @@ export interface ActionConfig {
   schedule?: ScheduleConfig;
   toolsAllowlist: ToolCategory[];
   outputCommentType: CommentType;
+  botName?: string;
 }
 
 export interface ReviewContext {

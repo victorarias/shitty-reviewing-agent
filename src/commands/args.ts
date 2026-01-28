@@ -29,6 +29,12 @@ export function parseCommandInvocation(body: string): CommandInvocation | null {
   return null;
 }
 
+export function matchesBotMention(mention: string, botName: string): boolean {
+  const normalizedMention = normalizeMention(mention);
+  const normalizedBot = normalizeMention(botName);
+  return normalizedMention === normalizedBot;
+}
+
 export function splitArgs(input: string): string[] {
   if (!input) return [];
   const args: string[] = [];
@@ -71,4 +77,12 @@ export function splitArgs(input: string): string[] {
     args.push(current);
   }
   return args;
+}
+
+function normalizeMention(value: string): string {
+  return value
+    .trim()
+    .replace(/^@/g, "")
+    .replace(/\[bot\]$/i, "")
+    .toLowerCase();
 }

@@ -1,5 +1,4 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { calculateCost, getModel, streamSimple } from "@mariozechner/pi-ai";
+import { calculateCost } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
 import { minimatch } from "minimatch";
 import type {
@@ -14,18 +13,14 @@ import type {
   ToolCategory,
   IncludeExclude,
 } from "../types.js";
+import { filterToolsByAllowlist } from "../tools/categories.js";
 import { applyIgnorePatterns } from "../app/ignore.js";
 import { createReadOnlyTools } from "../tools/fs.js";
 import { createGithubTools } from "../tools/github.js";
 import { createReviewTools } from "../tools/review.js";
-import {
-  buildContextSummaryMessage,
-  buildDeterministicSummary,
-  estimateTokens,
-  pruneMessages,
-  summarizeForCompaction,
-} from "../agent/context-compaction.js";
-import { isGemini3, mapThinkingLevelForGemini3, resolveCompactionModel } from "../agent/model.js";
+import { createGitHistoryTools } from "../tools/git-history.js";
+import { createRepoWriteTools } from "../tools/repo-write.js";
+import { createAgentWithCompaction, AgentSetupOverrides } from "../agent/agent-setup.js";
 
 export interface CommandArgs {
   args: string;
@@ -47,6 +42,7 @@ export type CommandRunInput =
       commentType: CommentType;
       allowlist: ToolCategory[];
       logDebug?: (message: string) => void;
+      overrides?: AgentSetupOverrides;
     }
   | {
       mode: "schedule";
@@ -57,27 +53,8 @@ export type CommandRunInput =
       allowlist: ToolCategory[];
       logDebug?: (message: string) => void;
       writeScope?: IncludeExclude;
+      overrides?: AgentSetupOverrides;
     };
-
-const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
-  read: "filesystem",
-  grep: "filesystem",
-  find: "filesystem",
-  ls: "filesystem",
-  get_pr_info: "github.read",
-  get_review_context: "github.read",
-  get_changed_files: "git.read",
-  get_full_changed_files: "git.read",
-  get_diff: "git.read",
-  get_full_diff: "git.read",
-  list_threads_for_location: "github.read",
-  comment: "github.write",
-  suggest: "github.write",
-  update_comment: "github.write",
-  reply_to_comment: "github.write",
-  resolve_thread: "github.write",
-  post_summary: "github.write",
-};
 
 export async function runCommand(input: CommandRunInput): Promise<void> {
   const log = (...args: unknown[]) => {
@@ -109,13 +86,14 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
     partialReads: new Set<string>(),
   };
 
-  const filteredFiles = input.mode === "pr"
-    ? filterCommandFiles(
-        (input as Extract<CommandRunInput, { mode: "pr" }>).changedFiles,
-        input.command,
-        input.config.ignorePatterns
-      )
-    : null;
+  const filteredFiles =
+    input.mode === "pr"
+      ? filterCommandFiles(
+          (input as Extract<CommandRunInput, { mode: "pr" }>).changedFiles,
+          input.command,
+          input.config.ignorePatterns
+        )
+      : null;
   if (input.mode === "pr") {
     const maxFiles = input.command.limits?.maxFiles;
     if (maxFiles && filteredFiles && filteredFiles.length > maxFiles) {
@@ -123,59 +101,18 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
       return;
     }
   }
-  const toolInput = input.mode === "pr" && filteredFiles
-    ? { ...(input as Extract<CommandRunInput, { mode: "pr" }>), changedFiles: filteredFiles }
-    : input;
+  const toolInput =
+    input.mode === "pr" && filteredFiles
+      ? { ...(input as Extract<CommandRunInput, { mode: "pr" }>), changedFiles: filteredFiles }
+      : input;
   const tools = buildTools(toolInput as CommandRunInput, allowedCategories, summaryState);
-  const model = getModel(input.config.provider as any, input.config.modelId as any);
-  const compactionModelId = resolveCompactionModel(input.config);
-  const compactionModel = compactionModelId ? getModel(input.config.provider as any, compactionModelId as any) : null;
-
-  const effectiveThinkingLevel = isGemini3(input.config.modelId)
-    ? mapThinkingLevelForGemini3(input.config.reasoning)
-    : input.config.reasoning;
-  const effectiveTemperature = isGemini3(input.config.modelId)
-    ? input.config.temperature ?? 1.0
-    : input.config.temperature;
-
-  const agent = new Agent({
-    initialState: {
-      systemPrompt: buildSystemPrompt(input, promptText),
-      model,
-      tools,
-      messages: [],
-      thinkingLevel: effectiveThinkingLevel,
-    },
-    transformContext: async (messages) => {
-      const maxTokens = model.contextWindow || 120000;
-      const threshold = Math.floor(maxTokens * 0.8);
-      const estimated = estimateTokens(messages);
-      if (estimated < threshold) {
-        return messages;
-      }
-      const { kept, pruned, prunedCount } = pruneMessages(messages, Math.floor(maxTokens * 0.3));
-      if (pruned.length === 0) return kept;
-      const summary = compactionModel
-        ? await summarizeForCompaction(pruned, compactionModel, input.config.apiKey)
-        : buildDeterministicSummary(pruned);
-      const contextSummary = buildContextSummaryMessage(contextState, prunedCount, summaryState);
-      const summaryText = summary || "Earlier context was compacted to fit within model limits.";
-      return [
-        contextSummary,
-        {
-          role: "user",
-          content: `Compacted context summary:\n${summaryText}`,
-          timestamp: Date.now(),
-        },
-        ...kept,
-      ];
-    },
-    getApiKey: () => input.config.apiKey,
-    streamFn: (modelArg, context, options) =>
-      streamSimple(modelArg, context, {
-        ...options,
-        temperature: effectiveTemperature ?? options.temperature,
-      }),
+  const { agent, model } = createAgentWithCompaction({
+    config: input.config,
+    systemPrompt: buildSystemPrompt(input, promptText),
+    tools,
+    contextState,
+    summaryState,
+    overrides: input.overrides,
   });
 
   const maxIterations = 10 + input.config.maxFiles * 5;
@@ -255,6 +192,10 @@ function buildTools(
     allTools.push(...createReadOnlyTools(input.config.repoRoot));
   }
 
+  if (allowedSet.has("git.history")) {
+    allTools.push(...createGitHistoryTools(input.config.repoRoot));
+  }
+
   if (input.mode === "pr") {
     const prInput = input as Extract<CommandRunInput, { mode: "pr" }>;
     if (allowedSet.has("git.read") || allowedSet.has("github.read")) {
@@ -299,11 +240,12 @@ function buildTools(
     }
   }
 
-  return allTools.filter((tool) => {
-    const category = TOOL_CATEGORY_BY_NAME[tool.name];
-    if (!category) return false;
-    return allowedSet.has(category);
-  });
+  if (input.mode === "schedule" && allowedSet.has("repo.write")) {
+    const scheduleInput = input as Extract<CommandRunInput, { mode: "schedule" }>;
+    allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
+  }
+
+  return filterToolsByAllowlist(allTools, [...allowedSet]);
 }
 
 function filterReviewToolsByCommentType(tools: any[], commentType: CommentType): any[] {
@@ -329,9 +271,10 @@ Execute the command described in the user prompt. The command prompt is authorit
 - If you can post a summary (post_summary tool), call it exactly once as your final action.
 - If no summary tool is available, complete the task and stop when finished.`;
 
-  const modeNote = input.mode === "schedule"
-    ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools."
-    : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
+  const modeNote =
+    input.mode === "schedule"
+      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools."
+      : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
 
   return `${base}${modeNote}\n\n# Command Prompt\n${commandPrompt}`;
 }
@@ -348,9 +291,10 @@ function buildUserPrompt(
     return `${commandMeta}\n${argsSection}\n# Prompt\n${commandPrompt}`;
   }
   const prInput = input as Extract<CommandRunInput, { mode: "pr" }>;
-  const fileList = filteredFiles && filteredFiles.length > 0
-    ? filteredFiles.map((file) => `- ${file.filename}`).join("\n")
-    : "(none)";
+  const fileList =
+    filteredFiles && filteredFiles.length > 0
+      ? filteredFiles.map((file) => `- ${file.filename}`).join("\n")
+      : "(none)";
   return `${commandMeta}\n${argsSection}\n# Prompt\n${commandPrompt}\n\n# PR Context\nPR title: ${prInput.prInfo.title}\nPR description: ${prInput.prInfo.body?.trim() || "(no description)"}\nHead SHA: ${prInput.prInfo.headSha}\nChanged files (after filters):\n${fileList}`;
 }
 
@@ -358,9 +302,8 @@ function filterCommandFiles(files: ChangedFile[], command: CommandDefinition, ig
   const ignored = applyIgnorePatterns(files, ignorePatterns);
   const include = command.files?.include ?? [];
   const exclude = command.files?.exclude ?? [];
-  const filtered = include.length > 0
-    ? ignored.filter((file) => include.some((pattern) => minimatch(file.filename, pattern)))
-    : ignored;
+  const filtered =
+    include.length > 0 ? ignored.filter((file) => include.some((pattern) => minimatch(file.filename, pattern))) : ignored;
   if (exclude.length === 0) return filtered;
   return filtered.filter((file) => !exclude.some((pattern) => minimatch(file.filename, pattern)));
 }
