@@ -72,6 +72,7 @@ See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schem
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).
+- Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc` and open/update a PR with changes.
 
 Minimal workflow (implicit token):
 
