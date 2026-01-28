@@ -1,3 +1,4 @@
+import path from "node:path";
 import { minimatch } from "minimatch";
 import type { IncludeExclude } from "../types.js";
 
@@ -27,7 +28,9 @@ export function checkWriteAllowed(targetPath: string, scope?: IncludeExclude): {
 }
 
 export function normalizePath(value: string): string {
-  return value.replace(/\\/g, "/");
+  const posix = value.replace(/\\/g, "/");
+  const normalized = path.posix.normalize(posix);
+  return normalized.replace(/^(\.\/)+/, "").replace(/^\/+/, "");
 }
 
 export function listBlockedPaths(paths: string[], scope?: IncludeExclude): string[] {

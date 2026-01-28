@@ -4,6 +4,8 @@ import { checkWriteAllowed, listBlockedPaths } from "../src/app/write-scope.ts";
 test("write scope blocks workflows and reviewerc", () => {
   expect(checkWriteAllowed(".github/workflows/ci.yml").allowed).toBe(false);
   expect(checkWriteAllowed(".reviewerc").allowed).toBe(false);
+  expect(checkWriteAllowed("./.reviewerc").allowed).toBe(false);
+  expect(checkWriteAllowed("docs/../.github/workflows/ci.yml").allowed).toBe(false);
 });
 
 test("write scope respects include/exclude", () => {
