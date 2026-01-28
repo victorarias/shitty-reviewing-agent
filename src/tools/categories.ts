@@ -16,7 +16,7 @@ export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
   comment: "github.write",
   suggest: "github.write",
   update_comment: "github.write",
-  reply_to_comment: "github.write",
+  reply_comment: "github.write",
   resolve_thread: "github.write",
   post_summary: "github.write",
   git_log: "git.history",

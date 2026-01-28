@@ -1,5 +1,7 @@
 import * as github from "@actions/github";
 import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import crypto from "node:crypto";
 import { minimatch } from "minimatch";
@@ -168,8 +170,20 @@ async function listChangedFiles(repoRoot: string): Promise<string[]> {
 }
 
 async function getCurrentBranch(repoRoot: string): Promise<string> {
+  const envRefName = process.env.GITHUB_REF_NAME;
+  if (envRefName) return envRefName;
+  const envRef = process.env.GITHUB_REF;
+  if (envRef && envRef.startsWith("refs/heads/")) {
+    return envRef.slice("refs/heads/".length);
+  }
+  const ctxRef = github.context.ref;
+  if (ctxRef && ctxRef.startsWith("refs/heads/")) {
+    return ctxRef.slice("refs/heads/".length);
+  }
   const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot });
-  return stdout.toString().trim();
+  const branch = stdout.toString().trim();
+  if (branch && branch !== "HEAD") return branch;
+  return branch || "HEAD";
 }
 
 async function getDiffStats(repoRoot: string): Promise<DiffStats> {
@@ -182,6 +196,11 @@ async function getDiffStats(repoRoot: string): Promise<DiffStats> {
     const deleted = parseNumstatValue(deletedRaw);
     total += added + deleted;
   }
+  const untracked = await listUntrackedFiles(repoRoot);
+  for (const file of untracked) {
+    const abs = path.join(repoRoot, file);
+    total += await countFileLines(abs);
+  }
   return { totalLines: total };
 }
 
@@ -189,6 +208,28 @@ function parseNumstatValue(value: string | undefined): number {
   if (!value || value === "-") return 0;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function listUntrackedFiles(repoRoot: string): Promise<string[]> {
+  const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: repoRoot });
+  return stdout.toString().trim().split(/\r?\n/).filter(Boolean);
+}
+
+async function countFileLines(filePath: string): Promise<number> {
+  try {
+    const data = await fs.readFile(filePath);
+    if (data.length === 0) return 0;
+    let lines = 0;
+    for (const byte of data) {
+      if (byte === 0x0a) lines += 1;
+    }
+    if (data[data.length - 1] !== 0x0a) {
+      lines += 1;
+    }
+    return lines;
+  } catch {
+    return 0;
+  }
 }
 
 function passesBranchConditions(branch: string, conditions?: IncludeExclude): boolean {

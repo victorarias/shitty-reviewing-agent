@@ -1,4 +1,8 @@
 import { test, expect } from "bun:test";
+import { execSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { runScheduledFlow, buildScheduleBranchName } from "../src/app/schedule.ts";
 import type { ActionConfig, ReviewConfig } from "../src/types.ts";
 
@@ -264,6 +268,91 @@ test("runScheduledFlow updates existing PR", async () => {
   });
 
   expect(calls).toEqual(["update"]);
+  restoreEnv(prevJob, prevRepo);
+});
+
+test("runScheduledFlow uses ref name when HEAD is detached", async () => {
+  const prevJob = process.env.GITHUB_JOB;
+  const prevRepo = process.env.GITHUB_REPOSITORY;
+  const prevRefName = process.env.GITHUB_REF_NAME;
+  process.env.GITHUB_JOB = "nightly";
+  process.env.GITHUB_REPOSITORY = "owner/repo";
+  process.env.GITHUB_REF_NAME = "main";
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sra-schedule-"));
+  execSync("git init", { cwd: repoRoot, stdio: "ignore" });
+  execSync("git checkout -b main", { cwd: repoRoot, stdio: "ignore" });
+  execSync("git -c user.name=test -c user.email=test@example.com commit --allow-empty -m init", {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  execSync("git checkout --detach", { cwd: repoRoot, stdio: "ignore" });
+
+  const messages: string[] = [];
+  await runScheduledFlow({
+    config: {
+      ...baseConfig,
+      review: { ...baseReview, repoRoot },
+      schedule: {
+        enabled: true,
+        runs: { nightly: ["cmd"] },
+        conditions: { branch: { include: ["main"] } },
+        pr: { base: "main", title: "Test" },
+      },
+      commands: [{ id: "cmd", prompt: "Do work" }],
+    },
+    octokit: fakeOctokit(),
+    runCommandFn: async () => {},
+    listChangedFilesFn: async () => [],
+    logInfo: (msg) => {
+      messages.push(msg);
+    },
+  });
+
+  expect(messages.join("\n")).not.toContain("blocked run on branch");
+  restoreEnv(prevJob, prevRepo);
+  if (prevRefName === undefined) {
+    delete process.env.GITHUB_REF_NAME;
+  } else {
+    process.env.GITHUB_REF_NAME = prevRefName;
+  }
+});
+
+test("runScheduledFlow counts untracked lines in diff stats", async () => {
+  const prevJob = process.env.GITHUB_JOB;
+  const prevRepo = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_JOB = "nightly";
+  process.env.GITHUB_REPOSITORY = "owner/repo";
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sra-schedule-"));
+  execSync("git init", { cwd: repoRoot, stdio: "ignore" });
+  fs.mkdirSync(path.join(repoRoot, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "docs/new.md"), "line1\nline2\nline3\n", "utf8");
+
+  let message = "";
+  await runScheduledFlow({
+    config: {
+      ...baseConfig,
+      review: { ...baseReview, repoRoot },
+      schedule: {
+        enabled: true,
+        runs: { nightly: ["cmd"] },
+        limits: { maxDiffLines: 1 },
+        pr: { base: "main", title: "Test" },
+      },
+      commands: [{ id: "cmd", prompt: "Do work" }],
+    },
+    octokit: fakeOctokit(),
+    runCommandFn: async () => {},
+    getCurrentBranchFn: async () => "main",
+    listChangedFilesFn: async () => ["docs/new.md"],
+    logInfo: (msg) => {
+      message = msg;
+    },
+    runGitFn: async () => {
+      throw new Error("runGit should not be called");
+    },
+  });
+
+  expect(message).toContain("exceeded maxDiffLines");
   restoreEnv(prevJob, prevRepo);
 });
 
