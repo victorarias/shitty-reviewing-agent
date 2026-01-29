@@ -260,6 +260,125 @@ test("resolve_thread replies with explanation and resolves bot thread", async ()
   expect(calls.find((call) => call.type === "graphql")?.args.threadId).toBe("T123");
 });
 
+test("resolve_thread resolves even when thread has no line", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 5,
+      author: "github-actions[bot]",
+      body: "Original issue\n\n<!-- sri:bot-comment -->",
+      url: "https://example.com/5",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [
+      {
+        id: 5,
+        threadId: "T123",
+        path: "src/index.ts",
+        line: null,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-02T00:00:00Z",
+        lastActor: "github-actions[bot]",
+        rootCommentId: 5,
+        url: "https://example.com/thread/5",
+      },
+    ],
+  });
+
+  const resolveTool = getTool(tools, "resolve_thread");
+  await resolveTool.execute("", {
+    thread_id: 5,
+    body: "Fixed by validating input upstream.",
+  });
+
+  expect(calls.find((call) => call.type === "reply")).toBeTruthy();
+  expect(calls.find((call) => call.type === "graphql")?.args.threadId).toBe("T123");
+});
+
+test("resolve_thread handles integration permission errors gracefully", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 9,
+      author: "github-actions[bot]",
+      body: "Original issue\n\n<!-- sri:bot-comment -->",
+      url: "https://example.com/9",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const calls: Array<{ type: string; args: any }> = [];
+  const octokit = {
+    rest: {
+      pulls: {
+        createReplyForReviewComment: async (args: any) => {
+          calls.push({ type: "reply", args });
+          return { data: { id: 101 } };
+        },
+      },
+    },
+    graphql: async () => {
+      throw new Error("Resource not accessible by integration");
+    },
+  };
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [
+      {
+        id: 9,
+        threadId: "T999",
+        path: "src/index.ts",
+        line: 1,
+        side: "RIGHT",
+        isOutdated: false,
+        resolved: false,
+        lastUpdatedAt: "2026-01-02T00:00:00Z",
+        lastActor: "github-actions[bot]",
+        rootCommentId: 9,
+        url: "https://example.com/thread/9",
+      },
+    ],
+  });
+
+  const resolveTool = getTool(tools, "resolve_thread");
+  const result = await resolveTool.execute("", {
+    thread_id: 9,
+    body: "Fixed by validating input upstream.",
+  });
+
+  expect(calls.find((call) => call.type === "reply")).toBeTruthy();
+  expect(result.content[0].text).toContain("Unable to resolve thread");
+});
+
 test("comment tool prefers most recent activity when no threads exist", async () => {
   const existingComments: ExistingComment[] = [
     {

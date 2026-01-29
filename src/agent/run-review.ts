@@ -77,6 +77,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     inlineComments: 0,
     suggestions: 0,
     abortedByLimit: false,
+    abortedByCancellation: false,
     billing: {
       input: 0,
       output: 0,
@@ -181,6 +182,9 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
+      if (event.toolName === "terminate") {
+        agent.abort();
+      }
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
       const text = event.message.content
@@ -262,10 +266,15 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         await agent.prompt(userPrompt);
       },
       3,
-      () => !summaryState.abortedByLimit
+      (error) => !summaryState.abortedByLimit && !isCancellationError(error)
     );
     log("prompt done");
   } catch (error) {
+    if (isCancellationError(error)) {
+      summaryState.abortedByCancellation = true;
+      log("run canceled; skipping summary");
+      return;
+    }
     if (summaryState.abortedByLimit) {
       abortedByLimit = true;
     } else {
@@ -291,6 +300,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log(`agent error: ${agent.state.error}`);
   }
 
+  if (isCancellationError(agent.state.error)) {
+    summaryState.abortedByCancellation = true;
+    log("run canceled; skipping summary");
+    return;
+  }
+
   if (!summaryState.posted && agent.state.error) {
     const reason = deriveErrorReason(agent.state.error);
     await postFailureSummary({
@@ -303,6 +318,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       billing: summaryState.billing,
       reviewSha: input.prInfo.headSha,
     });
+    return;
+  }
+
+  if (summaryState.abortedByCancellation) {
     return;
   }
 
@@ -331,4 +350,12 @@ function safeStringify(value: unknown): string {
   } catch (error) {
     return `[unserializable]: ${String(error)}`;
   }
+}
+
+function isCancellationError(error: unknown): boolean {
+  if (!error) return false;
+  const message = typeof error === "string"
+    ? error
+    : String((error as { message?: unknown })?.message ?? error);
+  return /operation was canceled|cancell?ed|abort(ed)?/i.test(message);
 }
