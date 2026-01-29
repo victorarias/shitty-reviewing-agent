@@ -125,7 +125,7 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
   const tools = buildTools(toolInput as CommandRunInput, allowedCategories, summaryState);
   const { agent, model } = createAgentWithCompaction({
     config: input.config,
-    systemPrompt: buildSystemPrompt(input, promptText),
+    systemPrompt: buildSystemPrompt(input, promptText, tools.map((tool) => tool.name)),
     tools,
     contextState,
     summaryState,
@@ -324,7 +324,8 @@ function filterReviewToolsByCommentType(tools: any[], commentType: CommentType):
   return tools;
 }
 
-function buildSystemPrompt(input: CommandRunInput, commandPrompt: string): string {
+function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNames: string[]): string {
+  const toolSet = new Set(toolNames);
   const base = `# Role
 You are a command runner inside a GitHub Action.
 
@@ -337,9 +338,17 @@ Execute the command described in the user prompt. The command prompt is authorit
 - If no summary tool is available, complete the task and stop when finished.
 - You may delegate focused work to the subagent tool; include all context it needs in the task.`;
 
+  const scheduleLines = [
+    "- This is a scheduled run with no PR context. Do not expect PR-only tools.",
+    "- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.",
+    toolSet.has("commit_changes") && toolSet.has("push_pr")
+      ? "- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
+      : null,
+  ].filter(Boolean);
+
   const modeNote =
     input.mode === "schedule"
-      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools.\n- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.\n- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
+      ? `\n${scheduleLines.join("\n")}`
       : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
 
   return `${base}${modeNote}\n\n# Command Prompt\n${commandPrompt}`;
