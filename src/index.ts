@@ -75,6 +75,9 @@ async function main(): Promise<void> {
       return;
     }
     if (mode.mode === "schedule") {
+      if (mode.trigger === "workflow_dispatch") {
+        core.info("workflow_dispatch triggered; running schedule flow.");
+      }
       await runScheduledFlow({
         config: actionConfig,
         octokit,
