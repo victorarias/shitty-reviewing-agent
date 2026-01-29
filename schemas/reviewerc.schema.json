@@ -60,6 +60,7 @@
     "toolCategory": {
       "type": "string",
       "enum": [
+        "agent.subagent",
         "filesystem",
         "git.read",
         "git.history",

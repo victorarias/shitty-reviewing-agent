@@ -68,6 +68,7 @@ Use `review.allowPrToolsInReview: true` to enable PR-creation tools in PR review
 
 Tools are grouped by allowlist categories. Commands can further restrict via `tools.allow`.
 
+- `agent.subagent` (in-process delegation): `subagent`
 - `filesystem` (read-only): `read`, `grep`, `find`, `ls`
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
 - `git.history` (repo history): `git_log`, `git_diff_range`
@@ -108,7 +109,7 @@ schedule:
     include: ["README.md", "docs/**"]
 
 tools:
-  allowlist: [filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
+  allowlist: [agent.subagent, filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
 ```
 
 Workflow (weekly, Monday 08:00 Stockholm time / 07:00 UTC):

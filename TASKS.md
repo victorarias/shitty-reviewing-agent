@@ -75,6 +75,7 @@
 - [ ] Add patch-only mode / model-based gating (disable `write` + `edit`, allow `apply_patch`).
 - [ ] Centralize tool registry and global gating (single place to enable/disable tool categories).
 - [ ] Add post-write diagnostics (e.g., diff summary or lightweight lint) to tool results.
+- [ ] Add subagent chaining and parallel execution modes (single tool call supports sequential `{previous}` and concurrent tasks).
 
 ## Testing Harness (Live LLM Snapshots)
 - [x] Update config/docs to allow `api-key` for `google-vertex`.

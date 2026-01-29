@@ -46,7 +46,7 @@ schedule:
     include: ["README.md", "docs/**"]
 
 tools:
-  allowlist: [filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
+  allowlist: [agent.subagent, filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
 
 output:
   commentType: issue

@@ -84,3 +84,43 @@ test("runReview filters tools by allowlist", async () => {
   expect(toolNames).toContain("post_summary");
   expect(toolNames).not.toContain("get_diff");
 });
+
+test("runReview includes subagent tool when allowlisted", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+
+  const agentFactory = ({ initialState }: any) => {
+    toolNames = initialState.tools.map((tool: any) => tool.name);
+    const summaryTool = initialState.tools.find((tool: any) => tool.name === "post_summary");
+    return {
+      state: { error: null, messages: [] },
+      subscribe() {},
+      async prompt() {
+        if (summaryTool) {
+          await summaryTool.execute("", {
+            body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          });
+        }
+      },
+      abort() {},
+    };
+  };
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem", "github.pr.feedback", "agent.subagent"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(toolNames).toContain("subagent");
+});
