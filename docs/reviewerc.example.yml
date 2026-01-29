@@ -20,7 +20,7 @@ commands:
     prompt: |
       Compare README and docs against current code behavior for changes in the last 24 hours.
       Use git history to identify recent changes and update docs if needed.
-      If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
+      If you make changes that should be reviewed, use git add <paths>, git commit -m <message>, then open a PR with push_pr.
     tools:
       allow: [filesystem, git.history, repo.write, github.pr.manage]
 

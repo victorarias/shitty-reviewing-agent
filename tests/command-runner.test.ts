@@ -127,7 +127,6 @@ test("runCommand exposes PR tools when allowPrToolsInReview is true", async () =
       },
     },
   });
-  expect(toolNames).toContain("commit_changes");
   expect(toolNames).toContain("push_pr");
 });
 

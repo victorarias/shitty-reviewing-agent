@@ -9,7 +9,7 @@ const REVIEWERC_FILENAME = ".reviewerc";
 const REMOVED_KEYS: Array<{ path: string[]; message: string }> = [
   {
     path: ["schedule", "output"],
-    message: "Removed key schedule.output found. Scheduled PRs are now agent-driven via commit_changes/push_pr tools.",
+    message: "Removed key schedule.output found. Scheduled PRs are now agent-driven via git add/commit and push_pr.",
   },
 ];
 

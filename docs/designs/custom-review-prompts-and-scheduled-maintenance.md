@@ -98,7 +98,7 @@ Supported categories (proposed):
   - Why: PR metadata and context.
 - `github.pr.feedback`: `comment`, `suggest`, `post_summary`
   - Why: PR feedback output.
-- `github.pr.manage`: `commit_changes`, `push_pr`
+- `github.pr.manage`: `push_pr` (use git add/commit for staging)
   - Why: agent-driven scheduled PR creation.
 - `repo.write`: write local files (scheduled jobs only)
   - Why: enables maintenance edits prior to committing.
@@ -254,7 +254,7 @@ commands:
     prompt: |
       Compare README and docs against current code behavior for changes in the last 24 hours.
       Use git history to identify recent changes and update docs if needed.
-      If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
+      If you make changes that should be reviewed, use git add <paths>, git commit -m <message>, then open a PR with push_pr.
     tools:
       allow: [filesystem, git.history, repo.write, github.pr.manage]
 
@@ -279,7 +279,7 @@ Key attributes and rationale:
 - `schedule.writeScope`: include/exclude globs limiting which paths can be modified.
 
 PR creation behavior:
-- PRs are agent-driven: the scheduled command must call commit_changes and push_pr.
+- PRs are agent-driven: the scheduled command must use git add/commit and push_pr.
 - The PR targets the repo default branch (not configurable).
 - Bot branch name is deterministic from the scheduled job + command ids (internal strategy).
 - If an existing bot PR is already open for that branch, push_pr updates it instead of creating a new one.
