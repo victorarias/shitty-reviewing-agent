@@ -124,3 +124,64 @@ test("runReview includes subagent tool when allowlisted", async () => {
 
   expect(toolNames).toContain("subagent");
 });
+
+test("runReview subagent uses allowlisted tools only", async () => {
+  const { octokit } = makeOctokitSpy();
+  let subagentTools: string[] = [];
+
+  const agentFactory = ({ initialState }: any) => {
+    const systemPrompt = initialState.systemPrompt as string;
+    if (systemPrompt.includes("subagent invoked by another agent")) {
+      subagentTools = initialState.tools.map((tool: any) => tool.name);
+      let subscriber: (event: any) => void = () => {};
+      return {
+        state: { error: null, messages: [] },
+        subscribe(fn: (event: any) => void) {
+          subscriber = fn;
+        },
+        async prompt() {
+          subscriber({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Subagent ok" }],
+            },
+          });
+        },
+        abort() {},
+      };
+    }
+
+    const subagentTool = initialState.tools.find((tool: any) => tool.name === "subagent");
+    return {
+      state: { error: null, messages: [] },
+      subscribe() {},
+      async prompt() {
+        if (subagentTool) {
+          await subagentTool.execute("tool-call-id", { task: "Check tools" });
+        }
+      },
+      abort() {},
+    };
+  };
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem", "agent.subagent"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(subagentTools).toContain("read");
+  expect(subagentTools).not.toContain("get_pr_info");
+  expect(subagentTools).not.toContain("comment");
+});

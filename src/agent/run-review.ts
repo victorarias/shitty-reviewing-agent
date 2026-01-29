@@ -136,13 +136,14 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   });
 
   const baseTools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
+  const allowlistedBaseTools = filterToolsByAllowlist(baseTools, input.toolAllowlist);
   const subagentTool = createSubagentTool({
     config,
-    buildTools: () => baseTools,
+    buildTools: () => allowlistedBaseTools,
     overrides: input.overrides,
   });
 
-  const tools = filterToolsByAllowlist([...baseTools, subagentTool], input.toolAllowlist);
+  const tools = filterToolsByAllowlist([...allowlistedBaseTools, subagentTool], input.toolAllowlist);
 
   const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
     config,
