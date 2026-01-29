@@ -58,6 +58,7 @@ export function createAgentWithCompaction(params: {
   effectiveThinkingLevel: ReviewConfig["reasoning"];
   effectiveTemperature: number | undefined;
 } {
+  const shouldLogToolCalls = process.env.LOG_TOOL_CALLS === "1";
   const streamFn = params.overrides?.streamFn ?? streamSimple;
   const model = params.overrides?.model ?? getModel(params.config.provider as any, params.config.modelId as any);
   const compactionModelId = resolveCompactionModel(params.config);
@@ -73,6 +74,29 @@ export function createAgentWithCompaction(params: {
     (isGemini3(params.config.modelId)
       ? params.config.temperature ?? 1.0
       : params.config.temperature);
+
+  const tools = shouldLogToolCalls
+    ? params.tools.map((tool) => {
+      const execute = tool.execute;
+      return {
+        ...tool,
+        execute: async (...args: Parameters<typeof execute>) => {
+          const startedAt = Date.now();
+          console.log(`[tool] start ${tool.name}`);
+          try {
+            const result = await execute(...args);
+            const durationMs = Date.now() - startedAt;
+            console.log(`[tool] end ${tool.name} ${durationMs}ms`);
+            return result;
+          } catch (error) {
+            const durationMs = Date.now() - startedAt;
+            console.log(`[tool] error ${tool.name} ${durationMs}ms`);
+            throw error;
+          }
+        },
+      } as AgentTool<any>;
+    })
+    : params.tools;
 
   const transformContext = async (messages: any[]) => {
     const maxTokens = model.contextWindow || 120000;
@@ -102,7 +126,7 @@ export function createAgentWithCompaction(params: {
   const initialState = {
     systemPrompt: params.systemPrompt,
     model,
-    tools: params.tools,
+    tools,
     messages: [],
     thinkingLevel: effectiveThinkingLevel,
   };
