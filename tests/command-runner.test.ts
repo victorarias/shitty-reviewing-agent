@@ -184,3 +184,53 @@ test("runCommand logs assistant thinking when debug is enabled", async () => {
   expect(logs.some((line) => line.includes("assistant thinking: debug-thoughts"))).toBe(true);
   expect(logs.some((line) => line.includes("assistant: done"))).toBe(true);
 });
+
+test("runCommand logs assistant text when content is a string", async () => {
+  const { octokit } = makeOctokitSpy();
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args) => {
+    logs.push(args.map(String).join(" "));
+  };
+  try {
+    let subscriber: ((event: any) => void) | null = null;
+    await runCommand({
+      mode: "schedule",
+      command,
+      config: { ...baseConfig, debug: true },
+      schedule: { enabled: true },
+      scheduleContext: {
+        jobId: "nightly",
+        commandIds: ["security"],
+        owner: "o",
+        repo: "r",
+        octokit: octokit as any,
+      },
+      commentType: "issue",
+      allowlist: [],
+      overrides: {
+        model: { contextWindow: 1000 } as any,
+        compactionModel: null,
+        agentFactory: () => ({
+          state: { error: null, messages: [] },
+          subscribe(fn: (event: any) => void) {
+            subscriber = fn;
+          },
+          async prompt() {
+            subscriber?.({
+              type: "message_end",
+              message: {
+                role: "assistant",
+                content: "plain output",
+              },
+            });
+          },
+          abort() {},
+        }),
+      },
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  expect(logs.some((line) => line.includes("assistant: plain output"))).toBe(true);
+});
