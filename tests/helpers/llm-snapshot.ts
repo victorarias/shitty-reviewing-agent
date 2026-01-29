@@ -143,6 +143,14 @@ export interface RunScenarioOptions {
   debug?: boolean;
 }
 
+function formatTimeoutInfo(pairs: Array<[string, string | number | boolean | undefined]>): string {
+  const formatted = pairs
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  return formatted;
+}
+
 export async function runScenario(
   scenario: Scenario,
   apiKey: string,
@@ -156,6 +164,9 @@ export async function runScenario(
   const debug = options.debug ?? false;
   const timeoutMs = options.timeoutMs ?? 120000;
   let lastEvent = "no agent events yet";
+  const toolCalls: string[] = [];
+  const assistantMessages: string[] = [];
+  let lastAgent: any = null;
   const debugLog = (message: string) => {
     if (debug) {
       console.log(`[llm-snapshot:${scenario.id}] ${message}`);
@@ -209,8 +220,10 @@ export async function runScenario(
       getApiKey,
       streamFn,
     });
+    lastAgent = agent;
     agent.subscribe((event: any) => {
       if (event.type === "tool_execution_start") {
+        toolCalls.push(event.toolName);
         lastEvent = `tool:${event.toolName}`;
         debugLog(`tool ${event.toolName}`);
       }
@@ -229,6 +242,7 @@ export async function runScenario(
           .join("")
           .trim();
         if (text) {
+          assistantMessages.push(text);
           lastEvent = `assistant:${text.slice(0, 120)}`;
           debugLog(`assistant ${text.slice(0, 120)}`);
         }
@@ -253,7 +267,18 @@ export async function runScenario(
       },
     }),
     timeoutMs,
-    () => `lastEvent=${lastEvent}`
+    () => {
+      const toolTail = toolCalls.slice(-5).join(",");
+      const assistantTail = assistantMessages.slice(-2).map((msg) => msg.slice(0, 120)).join(" | ");
+      const messageCount = Array.isArray(lastAgent?.state?.messages) ? lastAgent.state.messages.length : 0;
+      return formatTimeoutInfo([
+        ["lastEvent", lastEvent],
+        ["toolTail", toolTail],
+        ["assistantTail", assistantTail],
+        ["messages", messageCount || undefined],
+        ["octokitCalls", calls.length],
+      ]);
+    }
   );
 
   const snapshot = buildSnapshot(scenario, calls, compactionTriggered);
@@ -648,10 +673,21 @@ async function runScheduleScenario(
         getCurrentBranchFn: async () => "main",
         listChangedFilesFn,
         logInfo: () => {},
-      }),
-      timeoutMs,
-      () => `lastEvent=${lastEvent}`
-    );
+    }),
+    timeoutMs,
+    () => {
+      const toolTail = toolCalls.slice(-5).join(",");
+      const gitTail = gitCalls.slice(-5).join(" | ");
+      const assistantTail = assistantMessages.slice(-2).map((msg) => msg.slice(0, 120)).join(" | ");
+      return formatTimeoutInfo([
+        ["lastEvent", lastEvent],
+        ["toolTail", toolTail],
+        ["gitTail", gitTail],
+        ["assistantTail", assistantTail],
+        ["commandRan", commandRan ? "yes" : undefined],
+      ]);
+    }
+  );
   } finally {
     restoreEnv(prevJob, prevRepo);
   }
@@ -740,6 +776,9 @@ async function withTimeout<T>(
   const timeoutPromise = new Promise<T>((_resolve, reject) => {
     timeoutId = setTimeout(() => {
       const info = getDebugInfo ? getDebugInfo() : "";
+      if (info) {
+        console.error(`[llm-snapshot-timeout] ${label} ${info}`);
+      }
       reject(new Error(`${label} timed out after ${timeoutMs}ms${info ? ` (${info})` : ""}.`));
     }, timeoutMs);
   });
