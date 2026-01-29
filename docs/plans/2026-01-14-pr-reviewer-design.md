@@ -290,7 +290,8 @@ shitty-reviewing-agent/
 ├── src/
 │   ├── index.ts            # Entry point
 │   ├── agent.ts            # Agent loop setup with pi-ai
-│   ├── prompt.ts           # System prompt
+│   ├── prompts/
+│   │   └── review.ts       # Review system prompt
 │   ├── tools/
 │   │   ├── index.ts        # Export all tools
 │   │   ├── github.ts       # get_pr_info, get_changed_files, get_diff

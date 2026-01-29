@@ -348,6 +348,23 @@ function filterReviewToolsByCommentType(tools: any[], commentType: CommentType):
 
 function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNames: string[]): string {
   const toolSet = new Set(toolNames);
+  const hasTool = (name: string) => toolSet.has(name);
+  const constraintLines = [
+    "- Use only the tools provided.",
+    hasTool("post_summary")
+      ? "- If you can post a summary (post_summary tool), call it exactly once as your final action."
+      : null,
+    "- If no summary tool is available, complete the task and stop when finished.",
+    hasTool("subagent")
+      ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
+      : null,
+    hasTool("git")
+      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const base = `# Role
 You are a command runner inside a GitHub Action.
 
@@ -355,10 +372,7 @@ You are a command runner inside a GitHub Action.
 Execute the command described in the user prompt. The command prompt is authoritative.
 
 # Constraints
-- Use only the tools provided.
-- If you can post a summary (post_summary tool), call it exactly once as your final action.
-- If no summary tool is available, complete the task and stop when finished.
-- You may delegate focused work to the subagent tool; include all context it needs in the task.`;
+${constraintLines}`;
 
   const scheduleLines = [
     "- This is a scheduled run with no PR context. Do not expect PR-only tools.",

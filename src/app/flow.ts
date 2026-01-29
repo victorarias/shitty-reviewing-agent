@@ -16,7 +16,7 @@ import { applyIgnorePatterns } from "./ignore.js";
 import { postSkipSummary } from "./summary.js";
 import { runReview } from "../agent.js";
 import type { CommandRegistry } from "../commands/registry.js";
-import { runCommand } from "../commands/run.js";
+import { runCommand } from "../commands/command-runner.js";
 
 export async function runActionFlow(params: {
   config: ActionConfig;

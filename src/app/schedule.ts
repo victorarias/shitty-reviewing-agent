@@ -2,7 +2,7 @@ import * as github from "@actions/github";
 import { minimatch } from "minimatch";
 import type { ActionConfig, IncludeExclude } from "../types.js";
 import { CommandRegistry } from "../commands/registry.js";
-import { runCommand } from "../commands/run.js";
+import { runCommand } from "../commands/command-runner.js";
 import { getCurrentBranch } from "./schedule-utils.js";
 
 export async function runScheduledFlow(params: {

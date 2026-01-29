@@ -24,10 +24,14 @@ test("git history tools return commits and diffs", async () => {
   const tools = createGitHistoryTools(repoRoot);
   const logTool = tools.find((tool) => tool.name === "git_log") as any;
   const diffTool = tools.find((tool) => tool.name === "git_diff_range") as any;
+  const gitTool = tools.find((tool) => tool.name === "git") as any;
 
   const logResult = await logTool.execute("", { sinceHours: 24 });
   expect(logResult.details.commits.length).toBeGreaterThan(0);
 
   const diffResult = await diffTool.execute("", { from: "HEAD~1", to: "HEAD" });
   expect(diffResult.details.diff).toContain("+two");
+
+  const showResult = await gitTool.execute("", { args: ["show", "--name-only", "-n", "1", "HEAD"] });
+  expect(showResult.details.stdout).toContain("file.txt");
 });

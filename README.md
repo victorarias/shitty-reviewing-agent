@@ -71,13 +71,14 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 - `agent.subagent` (in-process delegation): `subagent`
 - `filesystem` (read-only): `read`, `grep`, `find`, `ls`
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
-- `git.history` (repo history): `git_log`, `git_diff_range`
+- `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only)
 - `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google/Vertex only; Vertex requires `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`)
 - `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
 - `github.pr.manage` (PR creation): `commit_changes`, `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
 - `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
 
 Note: scheduled runs do not have PR context; PR-only tools (`git.read`, `github.pr.read`, `github.pr.feedback`) are not available there.
+
 
 ### Scheduled maintenance example
 

@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/`: TypeScript source. Core logic in `src/agent.ts`, prompts in `src/prompt.ts`, tool implementations under `src/tools/`.
+- `src/`: TypeScript source. Core logic in `src/agent.ts`, review prompts in `src/prompts/review.ts`, tool implementations under `src/tools/`.
 - `tests/`: Test files (Bun test runner).
 - `scripts/`: Utility scripts (e.g., `scripts/smoke.mjs`).
 - `dist/`: Build output (ignored by git).
@@ -17,7 +17,7 @@
 - Language: TypeScript (ESM). Use 2-space indentation.
 - File names: lower-kebab or lower-camel (existing pattern in `src/`).
 - Types and interfaces in `src/types.ts`; prefer explicit types for tool inputs/outputs.
-- Keep prompt strings in `src/prompt.ts` and review summary formatting in `src/summary.ts`.
+- Keep review prompt strings in `src/prompts/review.ts` and review summary formatting in `src/summary.ts`. Command prompts live in `src/commands/command-runner.ts`.
 
 ## Testing Guidelines
 - Framework: Bun test (`npm test`).
@@ -28,6 +28,7 @@
 - Commit messages: short, imperative, and scoped (e.g., "Adjust Gemini 3 defaults").
 - PRs should include: a concise summary, testing notes, and links to related issues if applicable.
 - For user-facing behavior changes, update `README.md` and/or Action inputs in `action.yml`.
+- For tool changes, update the tool inventory in `README.md` and document the tool schema for the LLM in `src/prompts/review.ts` and `src/commands/command-runner.ts`, plus add targeted tests when feasible.
 
 ## Documentation Taxonomy
 - `docs/designs/`: Persistent designs that describe how the system should work long-term. Keep these updated as behavior evolves.

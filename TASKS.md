@@ -6,7 +6,7 @@
 - `src/app/reviewerc.ts`: load/parse `.reviewerc`, merge with action inputs, expose validated config.
 - `src/commands/registry.ts`: command registry + lookup by id.
 - `src/commands/args.ts`: parse `!command` / `@bot command` with quoted args.
-- `src/commands/run.ts`: execute a command against a review context (PR or scheduled).
+- `src/commands/command-runner.ts`: execute a command against a review context (PR or scheduled).
 - `src/app/mode.ts`: determine run mode from GitHub event + route to command lists.
 - `src/tools/git-history.ts`: `git_log` / `git_diff_range` repo-history tools.
 - `src/app/schedule.ts`: scheduled runner (job id → command list) + PR creation flow.

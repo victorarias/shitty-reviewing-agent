@@ -52,7 +52,24 @@ export function createGitHistoryTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  return [gitLogTool, gitDiffRangeTool];
+  const gitTool: AgentTool<typeof GitCommandSchema, { stdout: string; args: string[] }> = {
+    name: "git",
+    label: "Git",
+    description: "Run read-only git subcommands (log/show/diff/etc). Args must start with the subcommand.",
+    parameters: GitCommandSchema,
+    execute: async (_id, params) => {
+      validateGitArgs(params.args);
+      const args = ["--no-pager", ...params.args];
+      const stdout = await runGit(repoRoot, args);
+      const text = stdout || "(no output)";
+      return {
+        content: [{ type: "text", text }],
+        details: { stdout, args: params.args },
+      };
+    },
+  };
+
+  return [gitLogTool, gitDiffRangeTool, gitTool];
 }
 
 async function runGit(cwd: string, args: string[]): Promise<string> {
@@ -94,9 +111,82 @@ const GitDiffRangeSchema = Type.Object({
   paths: Type.Optional(Type.Array(Type.String({ description: "Optional file paths or globs" }))),
 });
 
+const GitCommandSchema = Type.Object({
+  args: Type.Array(Type.String({ description: "Git arguments starting with the subcommand" }), {
+    minItems: 1,
+  }),
+});
+
 interface GitCommit {
   sha: string;
   author: string;
   date: string;
   message: string;
+}
+
+const READ_ONLY_SUBCOMMANDS = new Set([
+  "log",
+  "show",
+  "diff",
+  "diff-tree",
+  "diff-index",
+  "diff-files",
+  "status",
+  "rev-parse",
+  "rev-list",
+  "cat-file",
+  "ls-tree",
+  "ls-files",
+  "blame",
+  "grep",
+  "shortlog",
+  "show-ref",
+  "for-each-ref",
+  "name-rev",
+  "describe",
+  "merge-base",
+  "range-diff",
+  "whatchanged",
+]);
+
+const DISALLOWED_ARG_PREFIXES = [
+  "--git-dir=",
+  "--work-tree=",
+  "--exec-path=",
+  "-C",
+  "--output=",
+  "--config=",
+  "--config-env=",
+  "--no-index=",
+];
+const DISALLOWED_ARGS = new Set([
+  "--git-dir",
+  "--work-tree",
+  "--exec-path",
+  "-C",
+  "--output",
+  "-c",
+  "--config",
+  "--config-env",
+  "--no-index",
+]);
+
+function validateGitArgs(args: string[]): void {
+  if (args.length === 0) {
+    throw new Error("git args must include a subcommand");
+  }
+  const subcommand = args[0];
+  if (!READ_ONLY_SUBCOMMANDS.has(subcommand)) {
+    throw new Error(`Unsupported git subcommand: ${subcommand}`);
+  }
+  for (const arg of args) {
+    if (DISALLOWED_ARGS.has(arg)) {
+      throw new Error(`Disallowed git argument: ${arg}`);
+    }
+    for (const prefix of DISALLOWED_ARG_PREFIXES) {
+      if (arg.startsWith(prefix)) {
+        throw new Error(`Disallowed git argument: ${arg}`);
+      }
+    }
+  }
 }

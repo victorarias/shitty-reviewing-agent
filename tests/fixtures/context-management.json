@@ -9,7 +9,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Please review the changes in src/agent.ts and src/prompt.ts."
+          "text": "Please review the changes in src/agent.ts and src/prompts/review.ts."
         }
       ]
     },
@@ -33,7 +33,7 @@
         "result": {
           "files": [
             "src/agent.ts",
-            "src/prompt.ts",
+            "src/prompts/review.ts",
             "tests/summary.test.ts"
           ]
         }
@@ -53,7 +53,7 @@
   "contextState": {
     "filesRead": [
       "src/agent.ts",
-      "src/prompt.ts"
+      "src/prompts/review.ts"
     ],
     "filesDiffed": [
       "src/agent.ts",

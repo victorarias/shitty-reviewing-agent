@@ -1,6 +1,6 @@
 import { calculateCost, streamSimple, getModel } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
-import { buildSystemPrompt, buildUserPrompt } from "../prompt.js";
+import { buildSystemPrompt, buildUserPrompt } from "../prompts/review.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createSubagentTool, createWebSearchTool, RateLimitError } from "../tools/index.js";
 import { filterToolsByAllowlist } from "../tools/categories.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo, ToolCategory } from "../types.js";
@@ -147,7 +147,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
 
   const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
     config,
-    systemPrompt: buildSystemPrompt(),
+    systemPrompt: buildSystemPrompt(tools.map((tool) => tool.name)),
     tools,
     contextState,
     summaryState,
