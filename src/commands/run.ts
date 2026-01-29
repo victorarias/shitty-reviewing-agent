@@ -186,12 +186,8 @@ function resolveAllowedCategories(
   mode: "pr" | "schedule",
   allowPrToolsInReview: boolean
 ): ToolCategory[] {
-  const normalizedGlobal = normalizeToolCategoryList(globalAllowlist);
-  const base = new Set(normalizedGlobal);
-  let allowed =
-    commandAllow && commandAllow.length > 0
-      ? normalizeToolCategoryList(commandAllow).filter((item) => base.has(item))
-      : [...base];
+  const base = new Set(globalAllowlist);
+  let allowed = commandAllow && commandAllow.length > 0 ? commandAllow.filter((item) => base.has(item)) : [...base];
   if (mode === "pr") {
     allowed = allowed.filter((item) => item !== "repo.write");
     if (!allowPrToolsInReview) {
@@ -202,23 +198,6 @@ function resolveAllowedCategories(
     allowed = allowed.filter((item) => !["git.read", "github.pr.read", "github.pr.feedback"].includes(item));
   }
   return allowed;
-}
-
-function normalizeToolCategoryList(categories: ToolCategory[]): ToolCategory[] {
-  return categories.map((item) => normalizeToolCategory(item));
-}
-
-function normalizeToolCategory(category: ToolCategory): ToolCategory {
-  switch (category) {
-    case "github.read":
-      return "github.pr.read";
-    case "github.write":
-      return "github.pr.feedback";
-    case "github.pr":
-      return "github.pr.manage";
-    default:
-      return category;
-  }
 }
 
 function buildTools(
