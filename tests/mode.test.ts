@@ -57,4 +57,15 @@ test("shouldHandleIssueComment returns true for PR comments", () => {
 test("resolveRunModeFromEvent handles schedule", () => {
   const mode = resolveRunModeFromEvent("schedule", {});
   expect(mode.mode).toBe("schedule");
+  if (mode.mode === "schedule") {
+    expect(mode.trigger).toBe("schedule");
+  }
+});
+
+test("resolveRunModeFromEvent handles workflow_dispatch", () => {
+  const mode = resolveRunModeFromEvent("workflow_dispatch", {});
+  expect(mode.mode).toBe("schedule");
+  if (mode.mode === "schedule") {
+    expect(mode.trigger).toBe("workflow_dispatch");
+  }
 });

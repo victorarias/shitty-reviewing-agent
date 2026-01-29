@@ -3,7 +3,7 @@ import * as github from "@actions/github";
 export type RunMode =
   | { mode: "pull_request"; prNumber: number }
   | { mode: "issue_comment"; prNumber: number | null; isPullRequest: boolean; commentBody: string }
-  | { mode: "schedule" }
+  | { mode: "schedule"; trigger: "schedule" | "workflow_dispatch" }
   | { mode: "unknown"; eventName: string };
 
 export function resolveRunMode(): RunMode {
@@ -37,7 +37,11 @@ export function resolveRunModeFromEvent(eventName: string, payload: any): RunMod
   }
 
   if (eventName === "schedule") {
-    return { mode: "schedule" };
+    return { mode: "schedule", trigger: "schedule" };
+  }
+
+  if (eventName === "workflow_dispatch") {
+    return { mode: "schedule", trigger: "workflow_dispatch" };
   }
 
   return { mode: "unknown", eventName };
