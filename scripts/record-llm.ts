@@ -29,16 +29,11 @@ if (scenarios.length === 0) {
 
 const needsVertex = scenarios.some((scenario) => (scenario.config.provider ?? "google-vertex") === "google-vertex");
 const needsGemini = scenarios.some((scenario) => (scenario.config.provider ?? "google-vertex") === "google");
-if (needsVertex && !vertexKey) {
-  console.error("Missing VERTEX_AI_API_KEY for google-vertex snapshot scenarios.");
-  process.exit(1);
-}
-if (needsVertex && !project) {
-  console.error("Missing GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT) for google-vertex snapshot scenarios.");
-  process.exit(1);
-}
-if (needsVertex && !location) {
-  console.error("Missing GOOGLE_CLOUD_LOCATION for google-vertex snapshot scenarios.");
+const hasVertexAuth = Boolean(vertexKey) || (Boolean(project) && Boolean(location));
+if (needsVertex && !hasVertexAuth) {
+  console.error(
+    "Missing VERTEX_AI_API_KEY or GOOGLE_CLOUD_PROJECT/GOOGLE_CLOUD_LOCATION for google-vertex snapshot scenarios."
+  );
   process.exit(1);
 }
 if (needsGemini && !geminiKey) {

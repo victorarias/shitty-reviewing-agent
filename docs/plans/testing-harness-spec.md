@@ -170,7 +170,9 @@ if: github.event.pull_request.head.repo.fork == false
 
 ### Secrets
 - `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) when snapshot scenarios use provider `google`.
-- `VERTEX_AI_API_KEY` plus `GOOGLE_CLOUD_PROJECT`/`GCLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` when snapshot scenarios use provider `google-vertex`.
+- For `google-vertex`, either:
+  - `VERTEX_AI_API_KEY` (Vertex Express), or
+  - ADC via `GOOGLE_CLOUD_PROJECT`/`GCLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` (no API key).
 
 Note: Fork PRs do not have access to secrets; they will skip live LLM snapshot tests.
 
@@ -183,7 +185,7 @@ Note: Fork PRs do not have access to secrets; they will skip live LLM snapshot t
 npm test
 ```
 
-2) Run live LLM snapshot tests (requires `VERTEX_AI_API_KEY`):
+2) Run live LLM snapshot tests (requires `VERTEX_AI_API_KEY` or ADC):
 
 ```
 export VERTEX_AI_API_KEY=... 

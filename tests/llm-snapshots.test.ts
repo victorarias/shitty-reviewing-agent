@@ -15,14 +15,11 @@ if (!shouldRun) {
   const scenarios = loadScenarios();
   const needsVertex = scenarios.some((scenario) => (scenario.config.provider ?? "google-vertex") === "google-vertex");
   const needsGemini = scenarios.some((scenario) => (scenario.config.provider ?? "google-vertex") === "google");
-  if (needsVertex && !vertexKey) {
-    throw new Error("VERTEX_AI_API_KEY is required for google-vertex snapshot scenarios.");
-  }
-  if (needsVertex && !project) {
-    throw new Error("GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT) is required for google-vertex snapshot scenarios.");
-  }
-  if (needsVertex && !location) {
-    throw new Error("GOOGLE_CLOUD_LOCATION is required for google-vertex snapshot scenarios.");
+  const hasVertexAuth = Boolean(vertexKey) || (Boolean(project) && Boolean(location));
+  if (needsVertex && !hasVertexAuth) {
+    throw new Error(
+      "google-vertex snapshot scenarios require VERTEX_AI_API_KEY or GOOGLE_CLOUD_PROJECT/GOOGLE_CLOUD_LOCATION for ADC."
+    );
   }
   if (needsGemini && !geminiKey) {
     throw new Error("GEMINI_API_KEY (or GOOGLE_API_KEY) is required for google snapshot scenarios.");
