@@ -11,6 +11,7 @@
     "postinstall": "patch-package",
     "test": "bun test",
     "test:llm": "RUN_LLM_SNAPSHOTS=1 bun test tests/llm-snapshots.test.ts",
+    "test:llm:replay": "LLM_SNAPSHOT_REPLAY=1 bun test tests/llm-snapshots.test.ts",
     "record:llm": "RUN_LLM_SNAPSHOTS=1 bun scripts/record-llm.ts",
     "test:harness": "bun test tests/flow*.test.ts tests/*prompt*.test.ts tests/summary-posts.test.ts tests/skip-summary.test.ts tests/run-review-*.test.ts tests/app-pr-data.test.ts tests/config.test.ts",
     "validate:reviewerc": "bun scripts/validate-reviewerc.mjs"
