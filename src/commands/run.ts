@@ -264,6 +264,8 @@ function buildTools(
         ...createSchedulePrTools({
           repoRoot: input.config.repoRoot,
           schedule: undefined,
+          modelId: prInput.config.modelId,
+          getBilling: () => summaryState.billing,
           jobId: `pr-${prInput.context.prNumber}`,
           commandIds: [input.command.id],
           owner: prInput.context.owner,
@@ -285,6 +287,8 @@ function buildTools(
           repoRoot: input.config.repoRoot,
           schedule: scheduleInput.schedule,
           writeScope: scheduleInput.writeScope,
+          modelId: scheduleInput.config.modelId,
+          getBilling: () => summaryState.billing,
           jobId: scheduleInput.scheduleContext.jobId,
           commandIds: scheduleInput.scheduleContext.commandIds,
           owner: scheduleInput.scheduleContext.owner,

@@ -16,6 +16,8 @@ interface SchedulePrDeps {
   repoRoot: string;
   schedule?: ScheduleConfig;
   writeScope?: IncludeExclude;
+  modelId?: string;
+  getBilling?: () => { input: number; output: number; total: number; cost: number };
   jobId: string;
   commandIds: string[];
   owner: string;
@@ -110,7 +112,7 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
         base: baseBranch,
       });
 
-      const body = params.body ?? "";
+      const body = ensureSchedulePrFooter(params.body ?? "", deps.modelId, deps.getBilling?.());
       if (existing.data.length > 0) {
         const pr = existing.data[0];
         await deps.octokit.rest.pulls.update({
@@ -144,6 +146,26 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
   };
 
   return [commitTool, pushTool];
+}
+
+const SCHEDULE_BILLING_MARKER = "<!-- sri:schedule-billing -->";
+
+export function ensureSchedulePrFooter(
+  body: string,
+  modelId: string | undefined,
+  billing: { input: number; output: number; total: number; cost: number } | undefined
+): string {
+  if (!billing || !modelId) return body;
+  let base = body.trimEnd();
+  const markerIndex = base.indexOf(SCHEDULE_BILLING_MARKER);
+  if (markerIndex !== -1) {
+    const footerStart = base.lastIndexOf("\n---", markerIndex);
+    base = base.slice(0, footerStart === -1 ? markerIndex : footerStart).trimEnd();
+  }
+  const billingLine = `*Billing: input ${billing.input} • output ${billing.output} • total ${billing.total} • cost $${billing.cost.toFixed(6)}*`;
+  const footer = `---\n*Automated by shitty-reviewing-agent • model: ${modelId}*\n${billingLine}\n${SCHEDULE_BILLING_MARKER}`;
+  if (!base) return footer;
+  return `${base}\n\n${footer}`;
 }
 
 async function runGit(deps: SchedulePrDeps, args: string[]): Promise<void> {
