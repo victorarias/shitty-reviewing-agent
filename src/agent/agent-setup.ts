@@ -75,6 +75,12 @@ export function createAgentWithCompaction(params: {
       ? params.config.temperature ?? 1.0
       : params.config.temperature);
 
+  const logDebug = (...args: unknown[]) => {
+    if (params.config.debug) {
+      console.log("[debug]", ...args);
+    }
+  };
+
   const tools = shouldLogToolCalls
     ? params.tools.map((tool) => {
       const execute = tool.execute;
@@ -112,6 +118,9 @@ export function createAgentWithCompaction(params: {
       : buildDeterministicSummary(pruned);
     const contextSummary = buildContextSummaryMessage(params.contextState, prunedCount, params.summaryState);
     const summaryText = summary || "Earlier context was compacted to fit within model limits.";
+    logDebug(
+      `context compaction: estimated=${estimated} threshold=${threshold} pruned=${prunedCount} kept=${kept.length} summaryChars=${summaryText.length}`
+    );
     return [
       contextSummary,
       {
