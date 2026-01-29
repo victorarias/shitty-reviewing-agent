@@ -69,11 +69,12 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
       await assertBranchExists(deps.repoRoot, branch);
 
       const baseBranch = await getDefaultBranch(deps.octokit, deps.owner, deps.repo);
+      const baseRef = await resolveBaseRef(deps.repoRoot, baseBranch);
       if (branch === baseBranch) {
         throw new Error(`Refusing to push PR from base branch (${baseBranch}).`);
       }
 
-      const changedFiles = await listDiffFiles(deps.repoRoot, baseBranch);
+      const changedFiles = await listDiffFiles(deps.repoRoot, baseRef);
       if (changedFiles.length === 0) {
         throw new Error("No committed changes found to submit.");
       }
@@ -82,7 +83,7 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
         throw new Error("Schedule conditions blocked PR creation due to path filters.");
       }
 
-      const diffStats = await getDiffStats(deps.repoRoot, baseBranch);
+      const diffStats = await getDiffStats(deps.repoRoot, baseRef);
       if (schedule.limits?.maxFiles && changedFiles.length > schedule.limits.maxFiles) {
         throw new Error(
           `Scheduled run exceeded maxFiles (${changedFiles.length}/${schedule.limits.maxFiles}).`
@@ -192,6 +193,29 @@ async function assertBranchExists(repoRoot: string, branch: string): Promise<voi
     await execFileAsync("git", ["rev-parse", "--verify", branch], { cwd: repoRoot });
   } catch {
     throw new Error(`Branch ${branch} does not exist. Commit changes first.`);
+  }
+}
+
+async function resolveBaseRef(repoRoot: string, baseBranch: string): Promise<string> {
+  if (await refExists(repoRoot, baseBranch)) return baseBranch;
+  const remoteRef = `refs/remotes/origin/${baseBranch}`;
+  if (await refExists(repoRoot, remoteRef)) return remoteRef;
+  try {
+    await execFileAsync("git", ["fetch", "origin", `${baseBranch}:${remoteRef}`], { cwd: repoRoot });
+  } catch {
+    // Ignore fetch failures; we'll fall through to ref checks.
+  }
+  if (await refExists(repoRoot, remoteRef)) return remoteRef;
+  if (await refExists(repoRoot, baseBranch)) return baseBranch;
+  throw new Error(`Base branch ${baseBranch} not found locally; ensure the branch is fetched.`);
+}
+
+async function refExists(repoRoot: string, ref: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["rev-parse", "--verify", ref], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
   }
 }
 
