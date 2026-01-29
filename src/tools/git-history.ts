@@ -157,6 +157,7 @@ const DISALLOWED_ARG_PREFIXES = [
   "--output=",
   "--config=",
   "--config-env=",
+  "--no-index=",
 ];
 const DISALLOWED_ARGS = new Set([
   "--git-dir",
@@ -167,6 +168,7 @@ const DISALLOWED_ARGS = new Set([
   "-c",
   "--config",
   "--config-env",
+  "--no-index",
 ]);
 
 function validateGitArgs(args: string[]): void {

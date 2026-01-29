@@ -13,7 +13,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
       : null,
     "- If a \"Review scope note\" is present in the user prompt, acknowledge it in the summary.",
     hasTool("git")
-      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, and any --output/--config*/--git-dir*/--work-tree*/--exec-path* prefixes. Output is raw stdout."
+      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
       : null,
     hasTool("web_search")
       ? "- When you need external validation (model names, API versions, public behavior), use web_search. Do not speculate or cast doubt without checking. If web_search isn't available, state uncertainty briefly and move on without recommending changes based on it."

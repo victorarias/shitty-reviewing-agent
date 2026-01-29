@@ -359,7 +359,7 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
       : null,
     hasTool("git")
-      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, and any --output/--config*/--git-dir*/--work-tree*/--exec-path* prefixes. Output is raw stdout."
+      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
       : null,
   ]
     .filter(Boolean)
