@@ -84,3 +84,104 @@ test("runReview filters tools by allowlist", async () => {
   expect(toolNames).toContain("post_summary");
   expect(toolNames).not.toContain("get_diff");
 });
+
+test("runReview includes subagent tool when allowlisted", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+
+  const agentFactory = ({ initialState }: any) => {
+    toolNames = initialState.tools.map((tool: any) => tool.name);
+    const summaryTool = initialState.tools.find((tool: any) => tool.name === "post_summary");
+    return {
+      state: { error: null, messages: [] },
+      subscribe() {},
+      async prompt() {
+        if (summaryTool) {
+          await summaryTool.execute("", {
+            body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          });
+        }
+      },
+      abort() {},
+    };
+  };
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem", "github.pr.feedback", "agent.subagent"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(toolNames).toContain("subagent");
+});
+
+test("runReview subagent uses allowlisted tools only", async () => {
+  const { octokit } = makeOctokitSpy();
+  let subagentTools: string[] = [];
+
+  const agentFactory = ({ initialState }: any) => {
+    const systemPrompt = initialState.systemPrompt as string;
+    if (systemPrompt.includes("subagent invoked by another agent")) {
+      subagentTools = initialState.tools.map((tool: any) => tool.name);
+      let subscriber: (event: any) => void = () => {};
+      return {
+        state: { error: null, messages: [] },
+        subscribe(fn: (event: any) => void) {
+          subscriber = fn;
+        },
+        async prompt() {
+          subscriber({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Subagent ok" }],
+            },
+          });
+        },
+        abort() {},
+      };
+    }
+
+    const subagentTool = initialState.tools.find((tool: any) => tool.name === "subagent");
+    return {
+      state: { error: null, messages: [] },
+      subscribe() {},
+      async prompt() {
+        if (subagentTool) {
+          await subagentTool.execute("tool-call-id", { task: "Check tools" });
+        }
+      },
+      abort() {},
+    };
+  };
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem", "agent.subagent"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(subagentTools).toContain("read");
+  expect(subagentTools).not.toContain("get_pr_info");
+  expect(subagentTools).not.toContain("comment");
+});

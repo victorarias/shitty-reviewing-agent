@@ -35,6 +35,7 @@ export interface ReviewConfig {
 }
 
 export type ToolCategory =
+  | "agent.subagent"
   | "filesystem"
   | "git.read"
   | "git.history"

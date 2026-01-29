@@ -2,6 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { ToolCategory } from "../types.js";
 
 export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
+  subagent: "agent.subagent",
   read: "filesystem",
   grep: "filesystem",
   find: "filesystem",

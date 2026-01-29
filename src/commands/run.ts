@@ -22,6 +22,7 @@ import { createReviewTools } from "../tools/review.js";
 import { createGitHistoryTools } from "../tools/git-history.js";
 import { createRepoWriteTools } from "../tools/repo-write.js";
 import { createSchedulePrTools } from "../tools/schedule-pr.js";
+import { createSubagentTool } from "../tools/subagent.js";
 import { createAgentWithCompaction, AgentSetupOverrides } from "../agent/agent-setup.js";
 
 export interface CommandArgs {
@@ -122,10 +123,9 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
       ? { ...(input as Extract<CommandRunInput, { mode: "pr" }>), changedFiles: filteredFiles }
       : input;
   const tools = buildTools(toolInput as CommandRunInput, allowedCategories, summaryState);
-  const toolNames = tools.map((tool) => tool.name);
   const { agent, model } = createAgentWithCompaction({
     config: input.config,
-    systemPrompt: buildSystemPrompt(input, promptText, toolNames),
+    systemPrompt: buildSystemPrompt(input, promptText, tools.map((tool) => tool.name)),
     tools,
     contextState,
     summaryState,
@@ -210,14 +210,14 @@ function buildTools(
   summaryState: { posted: boolean; inlineComments: number; suggestions: number; billing: any }
 ) {
   const allowedSet = new Set(allowed);
-  const allTools = [] as any[];
+  const baseTools = [] as any[];
 
   if (allowedSet.has("filesystem")) {
-    allTools.push(...createReadOnlyTools(input.config.repoRoot));
+    baseTools.push(...createReadOnlyTools(input.config.repoRoot));
   }
 
   if (allowedSet.has("git.history")) {
-    allTools.push(...createGitHistoryTools(input.config.repoRoot));
+    baseTools.push(...createGitHistoryTools(input.config.repoRoot));
   }
 
   if (input.mode === "pr") {
@@ -233,7 +233,7 @@ function buildTools(
           changedFiles: prInput.changedFiles,
         },
       });
-      allTools.push(...githubTools);
+      baseTools.push(...githubTools);
     }
 
     if (allowedSet.has("github.pr.feedback")) {
@@ -260,11 +260,11 @@ function buildTools(
           summaryState.suggestions += 1;
         },
       });
-      allTools.push(...filterReviewToolsByCommentType(reviewTools, prInput.commentType));
+      baseTools.push(...filterReviewToolsByCommentType(reviewTools, prInput.commentType));
     }
 
     if (allowedSet.has("github.pr.manage")) {
-      allTools.push(
+      baseTools.push(
         ...createSchedulePrTools({
           repoRoot: input.config.repoRoot,
           schedule: undefined,
@@ -283,10 +283,10 @@ function buildTools(
   if (input.mode === "schedule") {
     const scheduleInput = input as Extract<CommandRunInput, { mode: "schedule" }>;
     if (allowedSet.has("repo.write")) {
-      allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
+      baseTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
     }
     if (allowedSet.has("github.pr.manage")) {
-      allTools.push(
+      baseTools.push(
         ...createSchedulePrTools({
           repoRoot: input.config.repoRoot,
           schedule: scheduleInput.schedule,
@@ -304,7 +304,13 @@ function buildTools(
     }
   }
 
-  return filterToolsByAllowlist(allTools, [...allowedSet]);
+  const subagentTool = createSubagentTool({
+    config: input.config,
+    buildTools: () => baseTools,
+    overrides: input.overrides,
+  });
+
+  return filterToolsByAllowlist([...baseTools, subagentTool], [...allowedSet]);
 }
 
 function filterReviewToolsByCommentType(tools: any[], commentType: CommentType): any[] {
@@ -320,11 +326,6 @@ function filterReviewToolsByCommentType(tools: any[], commentType: CommentType):
 
 function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNames: string[]): string {
   const toolSet = new Set(toolNames);
-  const constraints = ["- Use only the tools provided."];
-  if (toolSet.has("post_summary")) {
-    constraints.push("- Call post_summary exactly once as your final action, then stop.");
-  }
-
   const base = `# Role
 You are a command runner inside a GitHub Action.
 
@@ -332,19 +333,25 @@ You are a command runner inside a GitHub Action.
 Execute the command described in the user prompt. The command prompt is authoritative.
 
 # Constraints
-${constraints.join("\n")}`;
+- Use only the tools provided.
+- If you can post a summary (post_summary tool), call it exactly once as your final action.
+- If no summary tool is available, complete the task and stop when finished.
+- You may delegate focused work to the subagent tool; include all context it needs in the task.`;
 
-  const modeNotes = input.mode === "schedule"
-    ? [
-        "- This is a scheduled run with no PR context. Do not expect PR-only tools.",
-        "- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.",
-        toolSet.has("commit_changes") && toolSet.has("push_pr")
-          ? "- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
-          : null,
-      ].filter(Boolean).join("\n")
-    : "- This is a PR-scoped run. You may use PR tools to gather context.";
+  const scheduleLines = [
+    "- This is a scheduled run with no PR context. Do not expect PR-only tools.",
+    "- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.",
+    toolSet.has("commit_changes") && toolSet.has("push_pr")
+      ? "- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
+      : null,
+  ].filter(Boolean);
 
-  return `${base}\n${modeNotes ? `\n${modeNotes}` : ""}\n\n# Command Prompt\n${commandPrompt}`;
+  const modeNote =
+    input.mode === "schedule"
+      ? `\n${scheduleLines.join("\n")}`
+      : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
+
+  return `${base}${modeNote}\n\n# Command Prompt\n${commandPrompt}`;
 }
 
 function buildUserPrompt(

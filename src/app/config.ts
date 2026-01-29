@@ -8,6 +8,7 @@ const DEFAULT_IGNORE_PATTERNS = "*.lock,*.generated.*";
 const DEFAULT_MAX_FILES = 50;
 const DEFAULT_COMMENT_TYPE: CommentType = "both";
 const DEFAULT_TOOLS_ALLOWLIST: ToolCategory[] = [
+  "agent.subagent",
   "filesystem",
   "git.read",
   "git.history",

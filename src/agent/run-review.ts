@@ -1,7 +1,7 @@
 import { calculateCost, streamSimple, getModel } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
 import { buildSystemPrompt, buildUserPrompt } from "../prompt.js";
-import { createGithubTools, createReadOnlyTools, createReviewTools, createWebSearchTool, RateLimitError } from "../tools/index.js";
+import { createGithubTools, createReadOnlyTools, createReviewTools, createSubagentTool, createWebSearchTool, RateLimitError } from "../tools/index.js";
 import { filterToolsByAllowlist } from "../tools/categories.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo, ToolCategory } from "../types.js";
 import { createAgentWithCompaction } from "./agent-setup.js";
@@ -135,10 +135,15 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     provider: config.provider,
   });
 
-  const tools = filterToolsByAllowlist(
-    [...readTools, ...githubTools, ...reviewTools, ...webSearchTools],
-    input.toolAllowlist
-  );
+  const baseTools = [...readTools, ...githubTools, ...reviewTools, ...webSearchTools];
+  const allowlistedBaseTools = filterToolsByAllowlist(baseTools, input.toolAllowlist);
+  const subagentTool = createSubagentTool({
+    config,
+    buildTools: () => allowlistedBaseTools,
+    overrides: input.overrides,
+  });
+
+  const tools = filterToolsByAllowlist([...allowlistedBaseTools, subagentTool], input.toolAllowlist);
 
   const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
     config,
