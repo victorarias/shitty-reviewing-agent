@@ -143,6 +143,69 @@ export interface RunScenarioOptions {
   debug?: boolean;
 }
 
+const WATCHED_TOOLS = new Set(["get_review_context", "write_file"]);
+
+function formatTimeoutInfo(pairs: Array<[string, string | number | boolean | undefined]>): string {
+  return pairs
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+}
+
+function pushTimeline(timeline: string[], entry: string, limit = 12) {
+  timeline.push(entry);
+  if (timeline.length > limit) {
+    timeline.splice(0, timeline.length - limit);
+  }
+}
+
+function summarizeToolArgs(toolName: string, args: any): string {
+  if (!args || typeof args !== "object") return "";
+  if (toolName === "write_file") {
+    const bytes = typeof args.content === "string" ? args.content.length : undefined;
+    return formatTimeoutInfo([
+      ["path", args.path],
+      ["bytes", bytes],
+    ]);
+  }
+  if (toolName === "get_review_context") {
+    return "";
+  }
+  const keys = Object.keys(args).slice(0, 5).join(",");
+  return keys ? `keys=${keys}` : "";
+}
+
+function logWatchedTool(
+  scenarioId: string,
+  phase: "start" | "end",
+  toolName: string,
+  summary: string,
+  durationMs?: number
+) {
+  if (!WATCHED_TOOLS.has(toolName)) return;
+  const duration = durationMs !== undefined ? ` ${durationMs}ms` : "";
+  const suffix = summary ? ` ${summary}` : "";
+  console.log(`[llm-snapshot:${scenarioId}] tool ${phase} ${toolName}${duration}${suffix}`);
+}
+
+function recordToolStart(toolName: string, startTimes: Map<string, number[]>): number {
+  const now = Date.now();
+  const queue = startTimes.get(toolName) ?? [];
+  queue.push(now);
+  startTimes.set(toolName, queue);
+  return now;
+}
+
+function recordToolEnd(toolName: string, startTimes: Map<string, number[]>): number | undefined {
+  const queue = startTimes.get(toolName);
+  if (!queue || queue.length === 0) return undefined;
+  const start = queue.shift();
+  if (queue.length === 0) {
+    startTimes.delete(toolName);
+  }
+  return start;
+}
+
 export async function runScenario(
   scenario: Scenario,
   apiKey: string,
@@ -156,6 +219,8 @@ export async function runScenario(
   const debug = options.debug ?? false;
   const timeoutMs = options.timeoutMs ?? 120000;
   let lastEvent = "no agent events yet";
+  const toolTimeline: string[] = [];
+  const toolStartTimes = new Map<string, number[]>();
   const debugLog = (message: string) => {
     if (debug) {
       console.log(`[llm-snapshot:${scenario.id}] ${message}`);
@@ -211,10 +276,22 @@ export async function runScenario(
     });
     agent.subscribe((event: any) => {
       if (event.type === "tool_execution_start") {
+        recordToolStart(event.toolName, toolStartTimes);
+        const summary = summarizeToolArgs(event.toolName, event.args);
+        pushTimeline(toolTimeline, `start:${event.toolName}${summary ? ` ${summary}` : ""}`);
+        logWatchedTool(scenario.id, "start", event.toolName, summary);
         lastEvent = `tool:${event.toolName}`;
         debugLog(`tool ${event.toolName}`);
       }
       if (event.type === "tool_execution_end") {
+        const startedAt = recordToolEnd(event.toolName, toolStartTimes);
+        const durationMs = startedAt ? Date.now() - startedAt : undefined;
+        const summary = summarizeToolArgs(event.toolName, event.args);
+        pushTimeline(
+          toolTimeline,
+          `end:${event.toolName}${durationMs ? `:${durationMs}ms` : ""}${summary ? ` ${summary}` : ""}`
+        );
+        logWatchedTool(scenario.id, "end", event.toolName, summary, durationMs);
         lastEvent = `tool_end:${event.toolName}`;
         debugLog(`tool end ${event.toolName}`);
       }
@@ -253,7 +330,11 @@ export async function runScenario(
       },
     }),
     timeoutMs,
-    () => `lastEvent=${lastEvent}`
+    () =>
+      formatTimeoutInfo([
+        ["lastEvent", lastEvent],
+        ["toolTimelineTail", toolTimeline.join(" | ")],
+      ])
   );
 
   const snapshot = buildSnapshot(scenario, calls, compactionTriggered);
@@ -539,6 +620,8 @@ async function runScheduleScenario(
 
   const gitCalls: string[] = [];
   const toolCalls: string[] = [];
+  const toolTimeline: string[] = [];
+  const toolStartTimes = new Map<string, number[]>();
   const assistantMessages: string[] = [];
   let llmChanges = false;
   let commandRan = false;
@@ -585,10 +668,22 @@ async function runScheduleScenario(
           agent.subscribe((event: any) => {
             if (event.type === "tool_execution_start") {
               toolCalls.push(event.toolName);
+              recordToolStart(event.toolName, toolStartTimes);
+              const summary = summarizeToolArgs(event.toolName, event.args);
+              pushTimeline(toolTimeline, `start:${event.toolName}${summary ? ` ${summary}` : ""}`);
+              logWatchedTool(scenario.id, "start", event.toolName, summary);
               lastEvent = `tool:${event.toolName}`;
               debugLog(`tool ${event.toolName}`);
             }
             if (event.type === "tool_execution_end") {
+              const startedAt = recordToolEnd(event.toolName, toolStartTimes);
+              const durationMs = startedAt ? Date.now() - startedAt : undefined;
+              const summary = summarizeToolArgs(event.toolName, event.args);
+              pushTimeline(
+                toolTimeline,
+                `end:${event.toolName}${durationMs ? `:${durationMs}ms` : ""}${summary ? ` ${summary}` : ""}`
+              );
+              logWatchedTool(scenario.id, "end", event.toolName, summary, durationMs);
               lastEvent = `tool_end:${event.toolName}`;
               debugLog(`tool end ${event.toolName}`);
             }
@@ -648,10 +743,14 @@ async function runScheduleScenario(
         getCurrentBranchFn: async () => "main",
         listChangedFilesFn,
         logInfo: () => {},
-      }),
-      timeoutMs,
-      () => `lastEvent=${lastEvent}`
-    );
+    }),
+    timeoutMs,
+    () =>
+      formatTimeoutInfo([
+        ["lastEvent", lastEvent],
+        ["toolTimelineTail", toolTimeline.join(" | ")],
+      ])
+  );
   } finally {
     restoreEnv(prevJob, prevRepo);
   }
