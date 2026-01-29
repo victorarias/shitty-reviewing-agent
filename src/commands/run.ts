@@ -163,6 +163,21 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
       }
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
+      const content = Array.isArray(event.message.content) ? event.message.content : [];
+      const text = content
+        .filter((c) => c.type === "text")
+        .map((c) => c.text)
+        .join("");
+      const thinking = content
+        .filter((c) => c.type === "thinking")
+        .map((c) => c.thinking)
+        .join("");
+      if (text.trim()) {
+        log(`assistant: ${text}`);
+      }
+      if (thinking.trim()) {
+        log(`assistant thinking: ${thinking}`);
+      }
       const usage = event.message.usage;
       if (usage) {
         const cost = calculateCost(model, usage as Usage);
