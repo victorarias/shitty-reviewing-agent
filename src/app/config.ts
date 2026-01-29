@@ -77,7 +77,7 @@ export function readConfig(): ActionConfig {
   }
 
   if (!apiKeyInput && provider !== "google-vertex") {
-    throw new Error("api-key is required for this provider. For Vertex AI, omit api-key and use ADC.");
+    throw new Error("api-key is required for non-Vertex providers. For Vertex AI, api-key is optional (ADC or key).");
   }
 
   const review: ReviewConfig = {

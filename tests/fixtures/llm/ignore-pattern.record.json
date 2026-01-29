@@ -1,0 +1,36 @@
+{
+  "recordedAt": "2026-01-28T23:21:59.935Z",
+  "snapshot": {
+    "id": "ignore-pattern",
+    "description": "Ignore patterns exclude lockfile-only changes.",
+    "mode": "review",
+    "config": {
+      "provider": "google-vertex",
+      "modelId": "gemini-2.5-flash",
+      "temperature": 0,
+      "reasoning": "low",
+      "maxFiles": 5,
+      "ignorePatterns": [
+        "package-lock.json"
+      ]
+    },
+    "compactionTriggered": true,
+    "issueComments": [
+      "## Review Summary\n\n**Verdict:** Skipped\n\n### Issues Found\n\n- Agent encountered an error and failed to produce a review summary.\n\n### Key Findings\n\n- None\n\n---\n*Reviewed by shitty-reviewing-agent • model: gemini-2.5-flash*\n*Billing: <redacted>*\n<!-- sri:bot-comment -->\n<!-- sri:last-reviewed-sha:head -->"
+    ],
+    "reviewComments": [],
+    "replies": [],
+    "stats": {
+      "issueComments": 1,
+      "reviewComments": 0,
+      "replies": 0,
+      "suggestions": 0
+    },
+    "calls": [
+      {
+        "type": "issue_comment",
+        "body": "## Review Summary\n\n**Verdict:** Skipped\n\n### Issues Found\n\n- Agent encountered an error and failed to produce a review summary.\n\n### Key Findings\n\n- None\n\n---\n*Reviewed by shitty-reviewing-agent • model: gemini-2.5-flash*\n*Billing: <redacted>*\n<!-- sri:bot-comment -->\n<!-- sri:last-reviewed-sha:head -->"
+      }
+    ]
+  }
+}

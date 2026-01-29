@@ -1,0 +1,30 @@
+{
+  "id": "compaction",
+  "description": "Compaction triggers with a tiny context window override.",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5,
+    "contextWindow": 200,
+    "preloadChars": 4000
+  },
+  "changedFiles": [
+    {
+      "filename": "src/agent/context-compaction.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "patch": "@@ -55,7 +55,7 @@\n-      const truncated = text.length > 2000 ? `${text.slice(0, 2000)}...` : text;\n+      const truncated = text.length > 400 ? `${text.slice(0, 400)}...` : text;\n"
+    }
+  ],
+  "expected": {
+    "summaryContains": [
+      "## Review Summary",
+      "Reviewed by shitty-reviewing-agent"
+    ],
+    "compactionTriggered": true
+  }
+}

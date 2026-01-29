@@ -1,0 +1,29 @@
+{
+  "id": "ignore-pattern",
+  "description": "Ignore patterns exclude lockfile-only changes.",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5,
+    "ignorePatterns": ["package-lock.json"]
+  },
+  "changedFiles": [
+    {
+      "filename": "package-lock.json",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "patch": "@@ -1,3 +1,3 @@\n-  \"name\": \"shitty-reviewing-agent\",\n+  \"name\": \"shitty-reviewing-agent\",\n"
+    }
+  ],
+  "expected": {
+    "summaryContains": [
+      "## Review Summary",
+      "Reviewed by shitty-reviewing-agent"
+    ],
+    "maxInlineComments": 0
+  }
+}

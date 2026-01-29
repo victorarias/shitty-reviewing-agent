@@ -1,0 +1,27 @@
+{
+  "id": "comment-suggestion",
+  "description": "Inline comment behavior on tool allowlist regression.",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5
+  },
+  "changedFiles": [
+    {
+      "filename": "src/commands/run.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "patch": "@@ -69,7 +69,7 @@\n   if (mode === \"pr\") {\n-    allowed = allowed.filter((item) => item !== \"repo.write\");\n+    allowed = allowed.filter((item) => item === \"repo.write\");\n   }\n"
+    }
+  ],
+  "expected": {
+    "summaryContains": [
+      "## Review Summary",
+      "Reviewed by shitty-reviewing-agent"
+    ]
+  }
+}

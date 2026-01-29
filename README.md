@@ -31,7 +31,7 @@ jobs:
 ## Inputs
 
 - `provider` (required unless set in `.reviewerc`): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
-- `api-key` (required unless using Vertex AI): API key for the provider. Vertex AI uses ADC instead.
+- `api-key` (required unless using Vertex AI): API key for the provider. For Vertex AI, api-key is optional (ADC or key). When using a key with Vertex, also set `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) and `GOOGLE_CLOUD_LOCATION`. For the Gemini API provider (`google`), use `GEMINI_API_KEY` locally/CI.
 - `model` (required unless set in `.reviewerc`): Model name
 - `compaction-model` (optional): Model used for context compaction summaries. Defaults to `gemini-3-flash-preview` when provider is `google`, otherwise uses `model`.
 - `max-files` (optional, default `50`): Max files to review; skips if exceeded
