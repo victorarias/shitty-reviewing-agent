@@ -47,9 +47,8 @@ export function createSubagentTool(params: SubagentToolParams): AgentTool<typeof
     execute: async (
       _id: string,
       toolParams: { task: string },
-      onUpdate?: (partial: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void,
-      _ctx?: unknown,
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      onUpdate?: (partial: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void
     ) => {
 
       const contextState = {
