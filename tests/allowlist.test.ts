@@ -72,7 +72,7 @@ test("runReview filters tools by allowlist", async () => {
     changedFiles: baseChangedFiles,
     existingComments: [],
     reviewThreads: [],
-    toolAllowlist: ["filesystem", "github.write"],
+    toolAllowlist: ["filesystem", "github.pr.feedback"],
     overrides: {
       model: { contextWindow: 1000 } as any,
       compactionModel: null,

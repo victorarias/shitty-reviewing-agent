@@ -46,7 +46,7 @@ test("runCommand filters review tools for issue-only", async () => {
     existingComments: [],
     reviewThreads: [],
     commentType: "issue",
-    allowlist: ["filesystem", "git.read", "github.read", "github.write"],
+    allowlist: ["filesystem", "git.read", "github.pr.read", "github.pr.feedback"],
     overrides: {
       model: { contextWindow: 1000 } as any,
       compactionModel: null,
@@ -79,7 +79,7 @@ test("runCommand filters review tools for review-only", async () => {
     existingComments: [],
     reviewThreads: [],
     commentType: "review",
-    allowlist: ["filesystem", "git.read", "github.read", "github.write"],
+    allowlist: ["filesystem", "git.read", "github.pr.read", "github.pr.feedback"],
     overrides: {
       model: { contextWindow: 1000 } as any,
       compactionModel: null,
@@ -112,7 +112,7 @@ test("runCommand exposes PR tools when allowPrToolsInReview is true", async () =
     existingComments: [],
     reviewThreads: [],
     commentType: "issue",
-    allowlist: ["filesystem", "git.read", "github.read", "github.write", "github.pr"],
+    allowlist: ["filesystem", "git.read", "github.pr.read", "github.pr.feedback", "github.pr.manage"],
     overrides: {
       model: { contextWindow: 1000 } as any,
       compactionModel: null,

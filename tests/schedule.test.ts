@@ -26,7 +26,7 @@ const baseConfig: ActionConfig = {
     enabled: true,
     runs: {},
   },
-  toolsAllowlist: ["filesystem", "git.read", "git.history", "github.read", "github.write", "github.pr", "repo.write"],
+  toolsAllowlist: ["filesystem", "git.read", "git.history", "github.pr.read", "github.pr.feedback", "github.pr.manage", "repo.write"],
   outputCommentType: "both",
 };
 

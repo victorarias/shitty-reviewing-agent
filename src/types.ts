@@ -41,6 +41,9 @@ export type ToolCategory =
   | "github.read"
   | "github.write"
   | "github.pr"
+  | "github.pr.read"
+  | "github.pr.feedback"
+  | "github.pr.manage"
   | "repo.write";
 
 export type CommentType = "issue" | "review" | "both";

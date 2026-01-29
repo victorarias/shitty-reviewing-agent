@@ -71,12 +71,12 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 - `filesystem` (read-only): `read`, `grep`, `find`, `ls`
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
 - `git.history` (repo history): `git_log`, `git_diff_range`
-- `github.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google only)
-- `github.write` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
-- `github.pr` (PR creation): `commit_changes`, `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
+- `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google only)
+- `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
+- `github.pr.manage` (PR creation): `commit_changes`, `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
 - `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
 
-Note: scheduled runs do not have PR context; PR-only tools (`git.read`, `github.read`, `github.write`) are not available there.
+Note: scheduled runs do not have PR context; PR-only tools (`git.read`, `github.pr.read`, `github.pr.feedback`) are not available there.
 
 ### Scheduled maintenance example
 
@@ -92,7 +92,7 @@ commands:
       Use git history to identify behavior changes and update README.md and docs accordingly.
       If changes should be reviewed, commit them with commit_changes and open a PR with push_pr.
     tools:
-      allow: [filesystem, git.history, repo.write, github.pr]
+      allow: [filesystem, git.history, repo.write, github.pr.manage]
 
 schedule:
   enabled: true
@@ -108,7 +108,7 @@ schedule:
     include: ["README.md", "docs/**"]
 
 tools:
-  allowlist: [filesystem, git.read, git.history, github.read, github.write, github.pr, repo.write]
+  allowlist: [filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
 ```
 
 Workflow (weekly, Monday 08:00 Stockholm time / 07:00 UTC):
