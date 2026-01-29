@@ -159,6 +159,7 @@ jobs:
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).
 - Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc`. The agent must call `commit_changes` and `push_pr` to open or update a PR.
+- Scheduled PR descriptions include the model + billing footer when the agent calls `push_pr`.
 
 Minimal workflow (implicit token):
 
