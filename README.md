@@ -64,6 +64,20 @@ review:
 See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schema.json` for the full schema.
 Use `review.allowPrToolsInReview: true` to enable PR-creation tools in PR review mode.
 
+## Tools
+
+Tools are grouped by allowlist categories. Commands can further restrict via `tools.allow`.
+
+- `filesystem` (read-only): `read`, `grep`, `find`, `ls`
+- `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
+- `git.history` (repo history): `git_log`, `git_diff_range`
+- `github.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google only)
+- `github.write` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
+- `github.pr` (PR creation): `commit_changes`, `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
+- `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
+
+Note: scheduled runs do not have PR context; PR-only tools (`git.read`, `github.read`, `github.write`) are not available there.
+
 ### Scheduled maintenance example
 
 `.reviewerc`:
