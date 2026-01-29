@@ -9,7 +9,7 @@ import { fetchExistingComments, fetchPrData } from "./app/pr-data.js";
 import { runScheduledFlow } from "./app/schedule.js";
 import { matchesBotMention, parseCommandInvocation } from "./commands/args.js";
 import { CommandRegistry } from "./commands/registry.js";
-import { runCommand } from "./commands/run.js";
+import { runCommand } from "./commands/command-runner.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 
 async function main(): Promise<void> {

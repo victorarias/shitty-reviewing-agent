@@ -10,7 +10,7 @@
   },
   "changedFiles": [
     {
-      "filename": "src/commands/run.ts",
+      "filename": "src/commands/command-runner.ts",
       "status": "modified",
       "additions": 1,
       "deletions": 1,

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { runActionFlow } from "../src/app/flow.ts";
-import { buildUserPrompt } from "../src/prompt.ts";
+import { buildUserPrompt } from "../src/prompts/review.ts";
 import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
 const config: ReviewConfig = {

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { buildSummaryMarkdown } from "../src/summary.ts";
-import { buildUserPrompt } from "../src/prompt.ts";
+import { buildUserPrompt } from "../src/prompts/review.ts";
 
 test("buildSummaryMarkdown adds footer + marker", () => {
   const body = buildSummaryMarkdown({

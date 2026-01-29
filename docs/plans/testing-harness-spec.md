@@ -118,7 +118,7 @@ Recommended initial scenarios:
   - Bot marker present.
 
 ### Scenario B: Inline comment + suggestion
-- Files: `src/commands/run.ts`
+- Files: `src/commands/command-runner.ts`
 - Patch: small change in tool filtering or prompt logic.
 - Expected:
   - At least 1 inline comment.

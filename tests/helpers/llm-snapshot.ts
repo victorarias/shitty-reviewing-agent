@@ -6,7 +6,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { runReview } from "../../src/agent.ts";
 import { runScheduledFlow } from "../../src/app/schedule.ts";
-import { runCommand } from "../../src/commands/run.ts";
+import { runCommand } from "../../src/commands/command-runner.ts";
 import type {
   ActionConfig,
   ChangedFile,

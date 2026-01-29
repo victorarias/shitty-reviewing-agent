@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { runCommand } from "../src/commands/run.ts";
+import { runCommand } from "../src/commands/command-runner.ts";
 import type { ReviewConfig, ReviewContext, PullRequestInfo, ChangedFile, CommandDefinition } from "../src/types.ts";
 import { makeOctokitSpy } from "./helpers/fake-octokit.ts";
 

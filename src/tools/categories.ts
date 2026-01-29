@@ -24,6 +24,7 @@ export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
   push_pr: "github.pr.manage",
   git_log: "git.history",
   git_diff_range: "git.history",
+  git: "git.history",
   write_file: "repo.write",
   apply_patch: "repo.write",
   delete_file: "repo.write",

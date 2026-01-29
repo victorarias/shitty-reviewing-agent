@@ -92,6 +92,7 @@ Supported categories (proposed):
 - `git.read`: `get_diff`, `get_changed_files`
   - Why: access to PR diffs and changed files.
 - `git.history`: `git_log`, `git_diff_range`
+  - `git` (read-only): native git subcommands like `git log`, `git show`, `git diff`
   - Why: scheduled jobs need repo-level history without a PR context.
 - `github.pr.read`: `get_pr_info`, list comments/threads
   - Why: PR metadata and context.
@@ -131,6 +132,7 @@ are unavailable in scheduled jobs and should not be expected to work there.
 `git.history` tool sketch (scheduled jobs):
 - `git_log`: list commits in a time window (e.g., `sinceHours`, optional `paths`).
 - `git_diff_range`: diff between two refs (e.g., `from`, `to`, optional `paths`).
+- `git`: run read-only git subcommands (e.g., `log`, `show`, `diff`) with explicit args.
 
 ## Shared prompt module model
 

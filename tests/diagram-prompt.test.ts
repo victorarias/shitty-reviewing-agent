@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildUserPrompt } from "../src/prompt.ts";
+import { buildUserPrompt } from "../src/prompts/review.ts";
 
 function buildDiagramPrompt(params: { prTitle: string; prBody: string; changedFiles: string[] }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
