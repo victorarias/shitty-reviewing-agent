@@ -7,7 +7,7 @@ import type { getOctokit } from "@actions/github";
 import { minimatch } from "minimatch";
 import type { IncludeExclude, ScheduleConfig } from "../types.js";
 import { buildScheduleBranchName } from "../app/schedule-utils.js";
-import { listBlockedPaths } from "../app/write-scope.js";
+import { listBlockedPaths, normalizePath } from "../app/write-scope.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,34 +31,6 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
   const schedule = deps.schedule ?? {};
   const state = {
     branch: buildScheduleBranchName(deps.jobId, deps.commandIds),
-  };
-
-  const commitTool: AgentTool<typeof CommitSchema, { branch: string }> = {
-    name: "commit_changes",
-    label: "Commit changes",
-    description: "Stage and commit the current workspace changes to a branch.",
-    parameters: CommitSchema,
-    execute: async (_id, params) => {
-      const branch = resolveBranch(params.branch, state.branch);
-      const changedFiles = await listWorkingTreeFiles(deps.repoRoot);
-      if (changedFiles.length === 0) {
-        throw new Error("No changes detected. Make edits before committing.");
-      }
-      const blocked = listBlockedPaths(changedFiles, deps.writeScope);
-      if (blocked.length > 0) {
-        throw new Error(`Write scope violation. Blocked paths: ${blocked.join(", ")}`);
-      }
-      await runGit(deps, ["checkout", "-B", branch]);
-      await runGit(deps, ["config", "user.name", "shitty-reviewing-agent"]);
-      await runGit(deps, ["config", "user.email", "shitty-reviewing-agent@users.noreply.github.com"]);
-      await runGit(deps, ["add", "-A"]);
-      await runGit(deps, ["commit", "-m", params.message]);
-      state.branch = branch;
-      return {
-        content: [{ type: "text", text: `Committed changes on ${branch}.` }],
-        details: { branch },
-      };
-    },
   };
 
   const pushTool: AgentTool<typeof PushPrSchema, { branch: string }> = {
@@ -146,7 +118,7 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
     },
   };
 
-  return [commitTool, pushTool];
+  return [pushTool];
 }
 
 const SCHEDULE_BILLING_MARKER = "<!-- sri:schedule-billing -->";
@@ -226,8 +198,9 @@ async function listDiffFiles(repoRoot: string, baseRef: string): Promise<string[
 }
 
 async function assertCleanWorkingTree(repoRoot: string): Promise<void> {
-  const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd: repoRoot });
-  if (stdout.toString().trim()) {
+  const changedFiles = await listWorkingTreeFiles(repoRoot);
+  const { remaining: trackedFiles } = partitionIgnoredPaths(changedFiles);
+  if (trackedFiles.length > 0) {
     throw new Error("Working tree has uncommitted changes. Commit before pushing a PR.");
   }
 }
@@ -314,10 +287,25 @@ function resolveBranch(input: string | undefined, fallback: string): string {
   return branch;
 }
 
-const CommitSchema = Type.Object({
-  message: Type.String({ description: "Commit message" }),
-  branch: Type.Optional(Type.String({ description: "Branch name (optional; defaults to schedule branch)" })),
-});
+const ALWAYS_IGNORE_PATHS = ["gha-creds-*.json"];
+
+function partitionIgnoredPaths(paths: string[]): { ignored: string[]; remaining: string[] } {
+  const ignored: string[] = [];
+  const remaining: string[] = [];
+  for (const file of paths) {
+    if (isAlwaysIgnoredPath(file)) {
+      ignored.push(file);
+    } else {
+      remaining.push(file);
+    }
+  }
+  return { ignored, remaining };
+}
+
+function isAlwaysIgnoredPath(file: string): boolean {
+  const normalized = normalizePath(file);
+  return ALWAYS_IGNORE_PATHS.some((pattern) => minimatch(normalized, pattern, { dot: true, matchBase: true }));
+}
 
 const PushPrSchema = Type.Object({
   title: Type.String({ description: "PR title" }),

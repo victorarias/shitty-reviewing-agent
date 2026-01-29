@@ -24,6 +24,7 @@ import { createRepoWriteTools } from "../tools/repo-write.js";
 import { createSchedulePrTools } from "../tools/schedule-pr.js";
 import { createSubagentTool } from "../tools/subagent.js";
 import { createAgentWithCompaction, AgentSetupOverrides } from "../agent/agent-setup.js";
+import { buildScheduleBranchName } from "../app/schedule-utils.js";
 
 export interface CommandArgs {
   args: string;
@@ -239,7 +240,12 @@ function buildTools(
   }
 
   if (allowedSet.has("git.history")) {
-    baseTools.push(...createGitHistoryTools(input.config.repoRoot));
+    baseTools.push(
+      ...createGitHistoryTools(input.config.repoRoot, {
+        allowWrite: input.mode === "schedule",
+        writeScope: input.mode === "schedule" ? (input as Extract<CommandRunInput, { mode: "schedule" }>).writeScope : undefined,
+      })
+    );
   }
 
   if (input.mode === "pr") {
@@ -359,7 +365,9 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
       : null,
     hasTool("git")
-      ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
+      ? input.mode === "schedule"
+        ? "- Git tool schema: git({ args: string[] }) where args[0] is a supported subcommand. Write subcommands are allowed with strict rules: git add requires explicit file paths (no -A/--all/-u, no globs, no '.'); git commit requires -m/--message (no -a/--all/--amend); git checkout only allows -b/-B <branch>; git switch only allows -c/--create <branch>; git config only allows user.name/user.email. Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
+        : "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
       : null,
   ]
     .filter(Boolean)
@@ -374,11 +382,16 @@ Execute the command described in the user prompt. The command prompt is authorit
 # Constraints
 ${constraintLines}`;
 
+  const scheduleBranch =
+    input.mode === "schedule"
+      ? buildScheduleBranchName(input.scheduleContext.jobId, input.scheduleContext.commandIds)
+      : null;
   const scheduleLines = [
     "- This is a scheduled run with no PR context. Do not expect PR-only tools.",
     "- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.",
-    toolSet.has("commit_changes") && toolSet.has("push_pr")
-      ? "- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
+    "- Never add or commit secrets (API keys, tokens, service account files, private keys). Only include explicit dummy secrets in documentation.",
+    toolSet.has("git") && toolSet.has("push_pr")
+      ? `- If you want to submit changes for review, use git checkout -B ${scheduleBranch}, ensure git config user.name/user.email are set, then git add <paths>, git commit -m <message>, and finally push_pr with a PR title/body.`
       : null,
   ].filter(Boolean);
 

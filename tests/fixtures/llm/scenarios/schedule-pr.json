@@ -11,7 +11,7 @@
   },
   "changedFiles": [],
   "schedule": {
-    "commandPrompt": "You are running in schedule mode. Use the write_file tool (not apply_patch) to:\n1) Create docs/auto.md with a short paragraph about automated updates.\n2) Overwrite docs/seed.md with exactly two lines: 'seed' and 'Automated update applied.'.\nAfter writing files, commit them with commit_changes using message 'Scheduled docs update', then call push_pr with title 'Scheduled docs update' and body 'Automated docs update from scheduled run.'.\nDo not modify any other files. Do not respond with prose; only use tools until everything is complete.",
+    "commandPrompt": "You are running in schedule mode. Use the write_file tool (not apply_patch) to:\n1) Create docs/auto.md with a short paragraph about automated updates.\n2) Overwrite docs/seed.md with exactly two lines: 'seed' and 'Automated update applied.'.\nAfter writing files, run git config user.name \"shitty-reviewing-agent\" and git config user.email \"shitty-reviewing-agent@users.noreply.github.com\", then git add docs/auto.md docs/seed.md, git commit -m \"Scheduled docs update\", then call push_pr with title \"Scheduled docs update\" and body \"Automated docs update from scheduled run.\".\nDo not modify any other files. Do not respond with prose; only use tools until everything is complete.",
     "writeScope": {
       "include": ["docs/**"]
     },
@@ -23,6 +23,6 @@
     "prCreated": true,
     "changedFilesInclude": ["docs/auto.md", "docs/seed.md"],
     "llmChanges": true,
-    "toolCallsInclude": ["write_file", "commit_changes", "push_pr"]
+    "toolCallsInclude": ["write_file", "git", "push_pr"]
   }
 }

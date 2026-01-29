@@ -71,10 +71,10 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 - `agent.subagent` (in-process delegation): `subagent`
 - `filesystem` (read-only): `read`, `grep`, `find`, `ls`
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
-- `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only)
+- `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only in PR mode; write-enabled in scheduled runs with restrictions)
 - `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google/Vertex only; Vertex requires `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`)
 - `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
-- `github.pr.manage` (PR creation): `commit_changes`, `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
+- `github.pr.manage` (PR creation): `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
 - `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
 
 Note: scheduled runs do not have PR context; PR-only tools (`git.read`, `github.pr.read`, `github.pr.feedback`) are not available there.
@@ -92,7 +92,7 @@ commands:
     prompt: |
       Detect outdated documentation based on recent code changes (last 7 days).
       Use git history to identify behavior changes and update README.md and docs accordingly.
-      If changes should be reviewed, commit them with commit_changes and open a PR with push_pr.
+      If changes should be reviewed, use git add <paths>, git commit -m <message>, then open a PR with push_pr.
     tools:
       allow: [filesystem, git.history, repo.write, github.pr.manage]
 
@@ -160,7 +160,7 @@ jobs:
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).
-- Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc`. The agent must call `commit_changes` and `push_pr` to open or update a PR.
+- Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc`. The agent should use `git add` + `git commit`, then `push_pr` to open or update a PR.
 - Manual `workflow_dispatch` runs use the same schedule flow and `schedule.runs[GITHUB_JOB]` mapping.
 - Scheduled PR descriptions include the model + billing footer when the agent calls `push_pr`.
 
