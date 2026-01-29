@@ -10,7 +10,11 @@ function ensureInsideRoot(root: string, target: string): string {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(resolvedRoot, target);
   const relative = path.relative(resolvedRoot, resolved);
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+  const isOutside =
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative);
+  if (relative === "" || !isOutside) {
     return resolved;
   }
   throw new Error(`Path escapes repo root: ${target}`);

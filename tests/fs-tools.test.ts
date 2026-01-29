@@ -5,10 +5,16 @@ import { createReadOnlyTools } from "../src/tools/fs.ts";
 
 const tempDir = path.join(process.cwd(), "data");
 const tempPath = path.join(tempDir, "tmp-read-test.txt");
+const dotDotPath = path.join(process.cwd(), "..foo");
 
 afterEach(async () => {
   try {
     await fs.unlink(tempPath);
+  } catch {
+    // ignore
+  }
+  try {
+    await fs.unlink(dotDotPath);
   } catch {
     // ignore
   }
@@ -60,4 +66,14 @@ test("ls tool allows repo root", async () => {
 
   const result = await lsTool.execute("", {});
   expect(result.details.entries.length).toBeGreaterThan(0);
+});
+
+test("read tool allows files starting with .. in repo root", async () => {
+  await fs.writeFile(dotDotPath, "ok", "utf8");
+  const tools = createReadOnlyTools(process.cwd());
+  const readTool = tools.find((tool) => tool.name === "read");
+  if (!readTool) throw new Error("read tool missing");
+
+  const result = await readTool.execute("", { path: "..foo" });
+  expect(result.content[0].text).toContain("ok");
 });

@@ -72,3 +72,13 @@ test("repo write tools apply patch", async () => {
   expect(fs.readFileSync(filePath, "utf8")).toBe("hello world\n");
   expect(typeof patchResult.details.diffStat).toBe("string");
 });
+
+test("repo write tools allow files starting with .. in repo root", async () => {
+  const repoRoot = makeRepo();
+  const tools = createRepoWriteTools(repoRoot);
+  const writeTool = tools.find((tool) => tool.name === "write_file") as any;
+  const target = path.join(repoRoot, "..foo");
+
+  await writeTool.execute("", { path: "..foo", content: "ok" });
+  expect(fs.readFileSync(target, "utf8")).toBe("ok");
+});
