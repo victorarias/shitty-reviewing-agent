@@ -70,17 +70,59 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  const lsTool: AgentTool<typeof LsSchema, { entries: string[] }> = {
+  const lsTool: AgentTool<typeof LsSchema, { entries: string[]; longEntries?: LsLongEntry[] }> = {
     name: "ls",
     label: "List directory",
-    description: "List directory contents.",
+    description: "List directory contents. Set long=true for ls -l style metadata in details.longEntries.",
     parameters: LsSchema,
     execute: async (_id, params) => {
       const target = ensureInsideRoot(repoRoot, params.path ?? ".");
       const entries = await fs.readdir(target);
+      if (!params.long) {
+        return {
+          content: [{ type: "text", text: entries.join("\n") }],
+          details: { entries },
+        };
+      }
+
+      const longEntries = await Promise.all(
+        entries.map(async (name) => {
+          const entryPath = path.join(target, name);
+          let stats;
+          try {
+            stats = await fs.lstat(entryPath);
+          } catch {
+            return null;
+          }
+          const type = getEntryType(stats);
+          const permissions = formatPermissions(stats, type);
+          const targetLink =
+            type === "symlink"
+              ? await fs.readlink(entryPath).catch(() => null)
+              : null;
+          return {
+            name,
+            type,
+            mode: stats.mode,
+            permissions,
+            nlink: stats.nlink,
+            uid: stats.uid,
+            gid: stats.gid,
+            size: stats.size,
+            mtime: stats.mtime.toISOString(),
+            target: targetLink ?? undefined,
+          };
+        })
+      );
+
+      const filtered = longEntries.filter(Boolean) as LsLongEntry[];
+      const lines = filtered.map((entry) => {
+        const name = entry.target ? `${entry.name} -> ${entry.target}` : entry.name;
+        return `${entry.permissions} ${entry.nlink} ${entry.uid} ${entry.gid} ${entry.size} ${formatLsTime(entry.mtime)} ${name}`;
+      });
       return {
-        content: [{ type: "text", text: entries.join("\n") }],
-        details: { entries },
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: { entries, longEntries: filtered },
       };
     },
   };
@@ -173,6 +215,7 @@ const ReadSchema = Type.Object({
 
 const LsSchema = Type.Object({
   path: Type.Optional(Type.String({ description: "Directory path relative to repo root" })),
+  long: Type.Optional(Type.Boolean({ description: "Include ls -l style metadata" })),
 });
 
 const FindSchema = Type.Object({
@@ -192,4 +235,63 @@ interface GrepMatch {
   path: string;
   line: number;
   text: string;
+}
+
+type LsEntryType = "file" | "dir" | "symlink" | "block" | "char" | "fifo" | "socket" | "unknown";
+
+interface LsLongEntry {
+  name: string;
+  type: LsEntryType;
+  mode: number;
+  permissions: string;
+  nlink: number;
+  uid: number;
+  gid: number;
+  size: number;
+  mtime: string;
+  target?: string;
+}
+
+function getEntryType(stats: import("node:fs").Stats): LsEntryType {
+  if (stats.isDirectory()) return "dir";
+  if (stats.isFile()) return "file";
+  if (stats.isSymbolicLink()) return "symlink";
+  if (stats.isBlockDevice()) return "block";
+  if (stats.isCharacterDevice()) return "char";
+  if (stats.isFIFO()) return "fifo";
+  if (stats.isSocket()) return "socket";
+  return "unknown";
+}
+
+function formatPermissions(stats: import("node:fs").Stats, type: LsEntryType): string {
+  const typeChar = type === "dir"
+    ? "d"
+    : type === "symlink"
+      ? "l"
+      : type === "block"
+        ? "b"
+        : type === "char"
+          ? "c"
+          : type === "fifo"
+            ? "p"
+            : type === "socket"
+              ? "s"
+              : "-";
+  const mode = stats.mode;
+  const perm = (bit: number, char: string) => (mode & bit ? char : "-");
+  const usr = `${perm(0o400, "r")}${perm(0o200, "w")}${perm(0o100, "x")}`;
+  const grp = `${perm(0o040, "r")}${perm(0o020, "w")}${perm(0o010, "x")}`;
+  const oth = `${perm(0o004, "r")}${perm(0o002, "w")}${perm(0o001, "x")}`;
+  return `${typeChar}${usr}${grp}${oth}`;
+}
+
+function formatLsTime(isoTime: string): string {
+  const date = new Date(isoTime);
+  if (Number.isNaN(date.getTime())) return isoTime;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }

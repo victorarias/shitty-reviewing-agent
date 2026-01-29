@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -60,8 +61,26 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
     return stdout.toString();
   } catch (error: any) {
     const message = error?.stderr?.toString() || error?.message || String(error);
+    if (isDubiousOwnershipError(message)) {
+      await addSafeDirectory(cwd);
+      try {
+        const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 });
+        return stdout.toString();
+      } catch (retryError: any) {
+        const retryMessage = retryError?.stderr?.toString() || retryError?.message || String(retryError);
+        throw new Error(`git ${args.join(" ")} failed: ${retryMessage}`);
+      }
+    }
     throw new Error(`git ${args.join(" ")} failed: ${message}`);
   }
+}
+
+function isDubiousOwnershipError(message: string): boolean {
+  return /dubious ownership/i.test(message);
+}
+
+async function addSafeDirectory(cwd: string): Promise<void> {
+  await execFileAsync("git", ["config", "--global", "--add", "safe.directory", path.resolve(cwd)]);
 }
 
 const GitLogSchema = Type.Object({
