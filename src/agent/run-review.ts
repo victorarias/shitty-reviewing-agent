@@ -130,7 +130,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   const webSearchTools = createWebSearchTool({
     apiKey: config.apiKey,
     modelId: config.modelId,
-    enabled: config.provider === "google",
+    enabled: config.provider === "google" || config.provider === "google-vertex",
+    provider: config.provider,
   });
 
   const tools = filterToolsByAllowlist(

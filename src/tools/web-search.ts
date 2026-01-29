@@ -6,6 +6,7 @@ interface WebSearchDeps {
   apiKey: string;
   modelId: string;
   enabled: boolean;
+  provider: string;
 }
 
 export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
@@ -17,18 +18,37 @@ export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
     execute: async (_id, params) => {
       if (!deps.enabled) {
         return {
-          content: [{ type: "text", text: "Web search is only supported with Google/Gemini provider." }],
+          content: [{ type: "text", text: "Web search is only supported with Google/Gemini or Vertex AI providers." }],
           details: { queries: [], sources: [] },
         };
       }
-      if (!deps.apiKey) {
+      const isVertex = deps.provider === "google-vertex";
+      if (!isVertex && !deps.apiKey) {
         return {
           content: [{ type: "text", text: "Missing API key for web search." }],
           details: { queries: [], sources: [] },
         };
       }
 
-      const ai = new GoogleGenAI({ apiKey: deps.apiKey });
+      let ai: GoogleGenAI;
+      if (isVertex) {
+        const project = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT ?? "";
+        const location = process.env.GOOGLE_CLOUD_LOCATION ?? "global";
+        if (!project) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Missing Vertex AI config for web search. Set GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT) and GOOGLE_CLOUD_LOCATION.",
+              },
+            ],
+            details: { queries: [], sources: [] },
+          };
+        }
+        ai = new GoogleGenAI({ vertexai: true, project, location });
+      } else {
+        ai = new GoogleGenAI({ apiKey: deps.apiKey });
+      }
       const groundingTool = { googleSearch: {} } as const;
       const config = { tools: [groundingTool] };
       const response = await ai.models.generateContent({
