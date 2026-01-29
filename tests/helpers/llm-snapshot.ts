@@ -548,7 +548,7 @@ async function runScheduleScenario(
       runs: { nightly: [commandId] },
       writeScope: schedule.writeScope,
     },
-    toolsAllowlist: ["filesystem", "repo.write", "github.pr"],
+    toolsAllowlist: ["filesystem", "repo.write", "github.pr.manage"],
     outputCommentType: "both",
   };
 

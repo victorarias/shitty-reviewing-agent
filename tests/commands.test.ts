@@ -81,7 +81,7 @@ test("runActionFlow logs missing command id", async () => {
     commandIds: ["missing"],
     commandRegistry: new CommandRegistry([]),
     runCommandFn: async () => {},
-    toolsAllowlist: ["filesystem", "git.read", "git.history", "github.read", "github.write", "repo.write"],
+    toolsAllowlist: ["filesystem", "git.read", "git.history", "github.pr.read", "github.pr.feedback", "repo.write"],
     defaultCommentType: "both",
     logInfo: (msg) => {
       message = msg;

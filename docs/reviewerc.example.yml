@@ -5,7 +5,7 @@ commands:
     prompt: |
       Review for authz bypass, unsafe deserialization, secrets, and input validation gaps.
     tools:
-      allow: [filesystem, git.read, github.read]
+      allow: [filesystem, git.read, github.pr.read]
     limits:
       maxFiles: 200
       maxFindings: 15
@@ -22,7 +22,7 @@ commands:
       Use git history to identify recent changes and update docs if needed.
       If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
     tools:
-      allow: [filesystem, git.history, repo.write, github.pr]
+      allow: [filesystem, git.history, repo.write, github.pr.manage]
 
 review:
   defaults:
@@ -46,7 +46,7 @@ schedule:
     include: ["README.md", "docs/**"]
 
 tools:
-  allowlist: [filesystem, git.read, git.history, github.read, github.write, github.pr, repo.write]
+  allowlist: [filesystem, git.read, git.history, github.pr.read, github.pr.feedback, github.pr.manage, repo.write]
 
 output:
   commentType: issue

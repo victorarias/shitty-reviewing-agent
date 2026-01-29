@@ -38,9 +38,9 @@ export type ToolCategory =
   | "filesystem"
   | "git.read"
   | "git.history"
-  | "github.read"
-  | "github.write"
-  | "github.pr"
+  | "github.pr.read"
+  | "github.pr.feedback"
+  | "github.pr.manage"
   | "repo.write";
 
 export type CommentType = "issue" | "review" | "both";

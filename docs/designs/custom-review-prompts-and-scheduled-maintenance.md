@@ -93,11 +93,11 @@ Supported categories (proposed):
   - Why: access to PR diffs and changed files.
 - `git.history`: `git_log`, `git_diff_range`
   - Why: scheduled jobs need repo-level history without a PR context.
-- `github.read`: `get_pr_info`, list comments/threads
+- `github.pr.read`: `get_pr_info`, list comments/threads
   - Why: PR metadata and context.
-- `github.write`: `comment`, `suggest`, `post_summary`
+- `github.pr.feedback`: `comment`, `suggest`, `post_summary`
   - Why: PR feedback output.
-- `github.pr`: `commit_changes`, `push_pr`
+- `github.pr.manage`: `commit_changes`, `push_pr`
   - Why: agent-driven scheduled PR creation.
 - `repo.write`: write local files (scheduled jobs only)
   - Why: enables maintenance edits prior to committing.
@@ -201,7 +201,7 @@ commands:
     prompt: |
       Review for authz bypass, unsafe deserialization, secrets, and input validation gaps.
     tools:
-      allow: [filesystem, git.read, github.read]
+      allow: [filesystem, git.read, github.pr.read]
     limits:
       maxFiles: 200
       maxFindings: 15
@@ -254,7 +254,7 @@ commands:
       Use git history to identify recent changes and update docs if needed.
       If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
     tools:
-      allow: [filesystem, git.history, repo.write, github.pr]
+      allow: [filesystem, git.history, repo.write, github.pr.manage]
 
 schedule:
   enabled: true

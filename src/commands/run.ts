@@ -191,11 +191,11 @@ function resolveAllowedCategories(
   if (mode === "pr") {
     allowed = allowed.filter((item) => item !== "repo.write");
     if (!allowPrToolsInReview) {
-      allowed = allowed.filter((item) => item !== "github.pr");
+      allowed = allowed.filter((item) => item !== "github.pr.manage");
     }
   }
   if (mode === "schedule") {
-    allowed = allowed.filter((item) => !["git.read", "github.read", "github.write"].includes(item));
+    allowed = allowed.filter((item) => !["git.read", "github.pr.read", "github.pr.feedback"].includes(item));
   }
   return allowed;
 }
@@ -218,7 +218,7 @@ function buildTools(
 
   if (input.mode === "pr") {
     const prInput = input as Extract<CommandRunInput, { mode: "pr" }>;
-    if (allowedSet.has("git.read") || allowedSet.has("github.read")) {
+    if (allowedSet.has("git.read") || allowedSet.has("github.pr.read")) {
       const githubTools = createGithubTools({
         octokit: prInput.octokit,
         owner: prInput.context.owner,
@@ -232,7 +232,7 @@ function buildTools(
       allTools.push(...githubTools);
     }
 
-    if (allowedSet.has("github.write")) {
+    if (allowedSet.has("github.pr.feedback")) {
       const reviewTools = createReviewTools({
         octokit: prInput.octokit,
         owner: prInput.context.owner,
@@ -259,7 +259,7 @@ function buildTools(
       allTools.push(...filterReviewToolsByCommentType(reviewTools, prInput.commentType));
     }
 
-    if (allowedSet.has("github.pr")) {
+    if (allowedSet.has("github.pr.manage")) {
       allTools.push(
         ...createSchedulePrTools({
           repoRoot: input.config.repoRoot,
@@ -279,7 +279,7 @@ function buildTools(
     if (allowedSet.has("repo.write")) {
       allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
     }
-    if (allowedSet.has("github.pr")) {
+    if (allowedSet.has("github.pr.manage")) {
       allTools.push(
         ...createSchedulePrTools({
           repoRoot: input.config.repoRoot,
