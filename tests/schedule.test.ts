@@ -3,7 +3,8 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runScheduledFlow, buildScheduleBranchName } from "../src/app/schedule.ts";
+import { runScheduledFlow } from "../src/app/schedule.ts";
+import { buildScheduleBranchName } from "../src/app/schedule-utils.ts";
 import type { ActionConfig, ReviewConfig } from "../src/types.ts";
 
 const baseReview: ReviewConfig = {
@@ -25,7 +26,7 @@ const baseConfig: ActionConfig = {
     enabled: true,
     runs: {},
   },
-  toolsAllowlist: ["filesystem", "git.read", "git.history", "github.read", "github.write", "repo.write"],
+  toolsAllowlist: ["filesystem", "git.read", "git.history", "github.read", "github.write", "github.pr", "repo.write"],
   outputCommentType: "both",
 };
 
@@ -83,7 +84,6 @@ test("runScheduledFlow honors branch conditions", async () => {
         enabled: true,
         runs: { nightly: ["cmd"] },
         conditions: { branch: { include: ["main"] } },
-        pr: { base: "main", title: "Test" },
       },
       commands: [{ id: "cmd", prompt: "Do work" }],
     },
@@ -98,98 +98,7 @@ test("runScheduledFlow honors branch conditions", async () => {
   restoreEnv(prevJob, prevRepo);
 });
 
-test("runScheduledFlow honors path conditions and limits", async () => {
-  const prevJob = process.env.GITHUB_JOB;
-  const prevRepo = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_JOB = "nightly";
-  process.env.GITHUB_REPOSITORY = "owner/repo";
-  let message = "";
-  await runScheduledFlow({
-    config: {
-      ...baseConfig,
-      schedule: {
-        enabled: true,
-        runs: { nightly: ["cmd"] },
-        conditions: { paths: { include: ["docs/**"] } },
-        limits: { maxFiles: 1, maxDiffLines: 1 },
-        pr: { base: "main", title: "Test" },
-      },
-      commands: [{ id: "cmd", prompt: "Do work" }],
-    },
-    octokit: fakeOctokit(),
-    runCommandFn: async () => {},
-    logInfo: (msg) => {
-      message = msg;
-    },
-    getCurrentBranchFn: async () => "main",
-    listChangedFilesFn: async () => ["src/a.ts"],
-    getDiffStatsFn: async () => ({ totalLines: 2 }),
-  });
-  expect(message).toContain("Schedule conditions blocked run due to path filters");
-  restoreEnv(prevJob, prevRepo);
-});
-
-test("runScheduledFlow skips when maxFiles exceeded", async () => {
-  const prevJob = process.env.GITHUB_JOB;
-  const prevRepo = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_JOB = "nightly";
-  process.env.GITHUB_REPOSITORY = "owner/repo";
-  let message = "";
-  await runScheduledFlow({
-    config: {
-      ...baseConfig,
-      schedule: {
-        enabled: true,
-        runs: { nightly: ["cmd"] },
-        limits: { maxFiles: 1 },
-        pr: { base: "main", title: "Test" },
-      },
-      commands: [{ id: "cmd", prompt: "Do work" }],
-    },
-    octokit: fakeOctokit(),
-    runCommandFn: async () => {},
-    logInfo: (msg) => {
-      message = msg;
-    },
-    getCurrentBranchFn: async () => "main",
-    listChangedFilesFn: async () => ["docs/a.md", "docs/b.md"],
-    getDiffStatsFn: async () => ({ totalLines: 1 }),
-  });
-  expect(message).toContain("exceeded maxFiles");
-  restoreEnv(prevJob, prevRepo);
-});
-
-test("runScheduledFlow skips when maxDiffLines exceeded", async () => {
-  const prevJob = process.env.GITHUB_JOB;
-  const prevRepo = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_JOB = "nightly";
-  process.env.GITHUB_REPOSITORY = "owner/repo";
-  let message = "";
-  await runScheduledFlow({
-    config: {
-      ...baseConfig,
-      schedule: {
-        enabled: true,
-        runs: { nightly: ["cmd"] },
-        limits: { maxDiffLines: 1 },
-        pr: { base: "main", title: "Test" },
-      },
-      commands: [{ id: "cmd", prompt: "Do work" }],
-    },
-    octokit: fakeOctokit(),
-    runCommandFn: async () => {},
-    logInfo: (msg) => {
-      message = msg;
-    },
-    getCurrentBranchFn: async () => "main",
-    listChangedFilesFn: async () => ["docs/a.md"],
-    getDiffStatsFn: async () => ({ totalLines: 5 }),
-  });
-  expect(message).toContain("exceeded maxDiffLines");
-  restoreEnv(prevJob, prevRepo);
-});
-
-test("runScheduledFlow creates or updates PR", async () => {
+test("runScheduledFlow does not create PR without tool calls", async () => {
   const prevJob = process.env.GITHUB_JOB;
   const prevRepo = process.env.GITHUB_REPOSITORY;
   process.env.GITHUB_JOB = "nightly";
@@ -214,60 +123,15 @@ test("runScheduledFlow creates or updates PR", async () => {
       schedule: {
         enabled: true,
         runs: { nightly: ["cmd"] },
-        pr: { base: "main", title: "Test" },
       },
       commands: [{ id: "cmd", prompt: "Do work" }],
     },
     octokit,
     runCommandFn: async () => {},
-    listChangedFilesFn: async () => ["docs/a.md"],
     getCurrentBranchFn: async () => "main",
-    getDiffStatsFn: async () => ({ totalLines: 1 }),
-    runGitFn: async () => {},
   });
 
-  expect(calls).toEqual(["create"]);
-  restoreEnv(prevJob, prevRepo);
-});
-
-test("runScheduledFlow updates existing PR", async () => {
-  const prevJob = process.env.GITHUB_JOB;
-  const prevRepo = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_JOB = "nightly";
-  process.env.GITHUB_REPOSITORY = "owner/repo";
-
-  const calls: string[] = [];
-  const octokit = fakeOctokit({
-    list: async () => ({ data: [{ number: 1, body: "old" }] }),
-    create: async () => {
-      calls.push("create");
-      return { data: { number: 1 } };
-    },
-    update: async () => {
-      calls.push("update");
-      return { data: { number: 1 } };
-    },
-  });
-
-  await runScheduledFlow({
-    config: {
-      ...baseConfig,
-      schedule: {
-        enabled: true,
-        runs: { nightly: ["cmd"] },
-        pr: { base: "main", title: "Test" },
-      },
-      commands: [{ id: "cmd", prompt: "Do work" }],
-    },
-    octokit,
-    runCommandFn: async () => {},
-    listChangedFilesFn: async () => ["docs/a.md"],
-    getCurrentBranchFn: async () => "main",
-    getDiffStatsFn: async () => ({ totalLines: 1 }),
-    runGitFn: async () => {},
-  });
-
-  expect(calls).toEqual(["update"]);
+  expect(calls).toEqual([]);
   restoreEnv(prevJob, prevRepo);
 });
 
@@ -296,13 +160,11 @@ test("runScheduledFlow uses ref name when HEAD is detached", async () => {
         enabled: true,
         runs: { nightly: ["cmd"] },
         conditions: { branch: { include: ["main"] } },
-        pr: { base: "main", title: "Test" },
       },
       commands: [{ id: "cmd", prompt: "Do work" }],
     },
     octokit: fakeOctokit(),
     runCommandFn: async () => {},
-    listChangedFilesFn: async () => [],
     logInfo: (msg) => {
       messages.push(msg);
     },
@@ -315,45 +177,6 @@ test("runScheduledFlow uses ref name when HEAD is detached", async () => {
   } else {
     process.env.GITHUB_REF_NAME = prevRefName;
   }
-});
-
-test("runScheduledFlow counts untracked lines in diff stats", async () => {
-  const prevJob = process.env.GITHUB_JOB;
-  const prevRepo = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_JOB = "nightly";
-  process.env.GITHUB_REPOSITORY = "owner/repo";
-  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sra-schedule-"));
-  execSync("git init", { cwd: repoRoot, stdio: "ignore" });
-  fs.mkdirSync(path.join(repoRoot, "docs"), { recursive: true });
-  fs.writeFileSync(path.join(repoRoot, "docs/new.md"), "line1\nline2\nline3\n", "utf8");
-
-  let message = "";
-  await runScheduledFlow({
-    config: {
-      ...baseConfig,
-      review: { ...baseReview, repoRoot },
-      schedule: {
-        enabled: true,
-        runs: { nightly: ["cmd"] },
-        limits: { maxDiffLines: 1 },
-        pr: { base: "main", title: "Test" },
-      },
-      commands: [{ id: "cmd", prompt: "Do work" }],
-    },
-    octokit: fakeOctokit(),
-    runCommandFn: async () => {},
-    getCurrentBranchFn: async () => "main",
-    listChangedFilesFn: async () => ["docs/new.md"],
-    logInfo: (msg) => {
-      message = msg;
-    },
-    runGitFn: async () => {
-      throw new Error("runGit should not be called");
-    },
-  });
-
-  expect(message).toContain("exceeded maxDiffLines");
-  restoreEnv(prevJob, prevRepo);
 });
 
 function fakeOctokit(overrides?: Partial<any>) {

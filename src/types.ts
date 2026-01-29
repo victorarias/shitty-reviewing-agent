@@ -31,6 +31,7 @@ export interface ReviewConfig {
   debug: boolean;
   reasoning: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   temperature?: number;
+  allowPrToolsInReview?: boolean;
 }
 
 export type ToolCategory =
@@ -39,6 +40,7 @@ export type ToolCategory =
   | "git.history"
   | "github.read"
   | "github.write"
+  | "github.pr"
   | "repo.write";
 
 export type CommentType = "issue" | "review" | "both";
@@ -83,16 +85,9 @@ export interface CommandDefinition {
   files?: IncludeExclude;
 }
 
-export interface SchedulePrConfig {
-  base: string;
-  title: string;
-  body?: string;
-}
-
 export interface ScheduleConfig {
   enabled?: boolean;
   runs?: Record<string, string[]>;
-  pr?: SchedulePrConfig;
   limits?: LimitsConfig;
   conditions?: {
     paths?: IncludeExclude;
@@ -106,6 +101,7 @@ export interface ReviewercConfig {
   review?: {
     defaults?: ReviewDefaults;
     run?: string[];
+    allowPrToolsInReview?: boolean;
   };
   commands?: CommandDefinition[];
   schedule?: ScheduleConfig;

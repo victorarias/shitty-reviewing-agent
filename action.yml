@@ -29,6 +29,9 @@ inputs:
   temperature:
     description: "Sampling temperature (0-2). Gemini 3 defaults to 1.0 and may behave unexpectedly at lower values."
     required: false
+  allow-pr-tools:
+    description: "Allow PR-creation tools in PR review mode (default false; always allowed in schedule mode)."
+    required: false
   bot-name:
     description: "Bot/app mention name for @bot command triggers (e.g., my-app)."
     required: false

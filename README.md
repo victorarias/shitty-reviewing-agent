@@ -38,6 +38,7 @@ jobs:
 - `ignore-patterns` (optional, default `*.lock,*.generated.*`): Comma-separated globs to skip
 - `reasoning` (optional, default `off`): Thinking level (`off|minimal|low|medium|high|xhigh`)
 - `temperature` (optional): Sampling temperature (0-2)
+- `allow-pr-tools` (optional): Allow PR-creation tools in PR review mode (default false; schedule mode always allows them)
 - `bot-name` (optional): Bot/app mention name for `@bot command` triggers (e.g., `my-app`)
 - `app-id` (optional): GitHub App ID (use instead of GITHUB_TOKEN)
 - `app-installation-id` (optional): GitHub App installation ID
@@ -61,6 +62,76 @@ review:
 ```
 
 See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schema.json` for the full schema.
+Use `review.allowPrToolsInReview: true` to enable PR-creation tools in PR review mode.
+
+### Scheduled maintenance example
+
+`.reviewerc`:
+```yaml
+version: 1
+
+commands:
+  - id: docs-drift
+    title: "Docs drift check"
+    prompt: |
+      Detect outdated documentation based on recent code changes (last 7 days).
+      Use git history to identify behavior changes and update README.md and docs accordingly.
+      If changes should be reviewed, commit them with commit_changes and open a PR with push_pr.
+    tools:
+      allow: [filesystem, git.history, repo.write, github.pr]
+
+schedule:
+  enabled: true
+  runs:
+    nightly-docs: [docs-drift]
+  limits:
+    maxFiles: 50
+    maxDiffLines: 800
+  conditions:
+    paths:
+      include: ["README.md", "docs/**"]
+  writeScope:
+    include: ["README.md", "docs/**"]
+
+tools:
+  allowlist: [filesystem, git.read, git.history, github.read, github.write, github.pr, repo.write]
+```
+
+Workflow (weekly, Monday 08:00 Stockholm time / 07:00 UTC):
+```yaml
+name: Reviewer Maintenance
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      run_docs:
+        description: "Run docs drift job"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  docs-upkeep:
+    if: ${{ github.event_name == 'schedule' || inputs.run_docs }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+        with:
+          provider: vertex-ai
+          model: gemini-3-pro-preview
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+```
 
 ## Notes
 
@@ -73,7 +144,7 @@ See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schem
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).
-- Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc` and open/update a PR with changes.
+- Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc`. The agent must call `commit_changes` and `push_pr` to open or update a PR.
 
 Minimal workflow (implicit token):
 

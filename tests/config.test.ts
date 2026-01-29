@@ -81,6 +81,22 @@ test("readConfig does not require api-key for google-vertex", () => {
   expect(config.review.apiKey).toBe("");
 });
 
+test("readConfig enables PR tools when allow-pr-tools input is true", () => {
+  const repoRoot = makeTempRepo();
+  const config = withEnv(
+    {
+      GITHUB_WORKSPACE: repoRoot,
+      "INPUT_PROVIDER": "google",
+      "INPUT_MODEL": "gemini-3-pro-preview",
+      "INPUT_API-KEY": "test",
+      "INPUT_ALLOW-PR-TOOLS": "true",
+    },
+    () => readConfig()
+  );
+
+  expect(config.review.allowPrToolsInReview).toBe(true);
+});
+
 test("readConfig rejects invalid YAML", () => {
   const repoRoot = makeTempRepo();
   fs.writeFileSync(path.join(repoRoot, ".reviewerc"), "version: [", "utf8");

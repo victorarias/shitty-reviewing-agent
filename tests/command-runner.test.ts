@@ -97,3 +97,36 @@ test("runCommand filters review tools for review-only", async () => {
   expect(toolNames).toContain("comment");
   expect(toolNames).not.toContain("post_summary");
 });
+
+test("runCommand exposes PR tools when allowPrToolsInReview is true", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+  await runCommand({
+    mode: "pr",
+    command,
+    config: { ...baseConfig, allowPrToolsInReview: true },
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseFiles,
+    existingComments: [],
+    reviewThreads: [],
+    commentType: "issue",
+    allowlist: ["filesystem", "git.read", "github.read", "github.write", "github.pr"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory: ({ initialState }: any) => {
+        toolNames = initialState.tools.map((tool: any) => tool.name);
+        return {
+          state: { error: null, messages: [] },
+          subscribe() {},
+          async prompt() {},
+          abort() {},
+        };
+      },
+    },
+  });
+  expect(toolNames).toContain("commit_changes");
+  expect(toolNames).toContain("push_pr");
+});

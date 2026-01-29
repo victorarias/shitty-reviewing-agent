@@ -546,14 +546,9 @@ async function runScheduleScenario(
     schedule: {
       enabled: true,
       runs: { nightly: [commandId] },
-      pr: {
-        base: schedule.pr?.base ?? "main",
-        title: schedule.pr?.title ?? "Scheduled update",
-        body: schedule.pr?.body ?? "Automated scheduled update.",
-      },
       writeScope: schedule.writeScope,
     },
-    toolsAllowlist: ["filesystem", "repo.write"],
+    toolsAllowlist: ["filesystem", "repo.write", "github.pr"],
     outputCommentType: "both",
   };
 
@@ -652,14 +647,7 @@ async function runScheduleScenario(
         }
       }
     }
-    llmChanges = listChangedFiles(repoRoot).length > 0;
-  };
-
-  let scheduleChangedFiles: string[] = [];
-  const listChangedFilesFn = async () => {
-    const changed = listChangedFiles(repoRoot);
-    scheduleChangedFiles = changed;
-    return changed;
+    llmChanges = listDiffFiles(repoRoot, "main").length > 0;
   };
 
   try {
@@ -671,7 +659,6 @@ async function runScheduleScenario(
         runGitFn,
         runCommandFn,
         getCurrentBranchFn: async () => "main",
-        listChangedFilesFn,
         logInfo: () => {},
     }),
     timeoutMs,
@@ -692,7 +679,7 @@ async function runScheduleScenario(
     restoreEnv(prevJob, prevRepo);
   }
 
-  const changedFiles = scheduleChangedFiles;
+  const changedFiles = listDiffFiles(repoRoot, "main");
   const snapshot = buildSnapshot(scenario, calls, false);
   snapshot.mode = "schedule";
   snapshot.schedule = {
@@ -735,6 +722,15 @@ function listChangedFiles(repoRoot: string): string[] {
       }
       return entry;
     })
+    .filter(Boolean);
+}
+
+function listDiffFiles(repoRoot: string, baseRef: string): string[] {
+  const output = execFileSync("git", ["diff", "--name-only", `${baseRef}...HEAD`], { cwd: repoRoot }).toString();
+  return output
+    .trimEnd()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
     .filter(Boolean);
 }
 
