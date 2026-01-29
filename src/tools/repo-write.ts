@@ -7,12 +7,17 @@ import type { IncludeExclude } from "../types.js";
 import { assertWriteAllowed, normalizePath } from "../app/write-scope.js";
 
 function ensureInsideRoot(root: string, target: string): string {
-  const resolved = path.resolve(root, target);
-  const normalizedRoot = path.resolve(root) + path.sep;
-  if (!resolved.startsWith(normalizedRoot)) {
-    throw new Error(`Path escapes repo root: ${target}`);
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, target);
+  const relative = path.relative(resolvedRoot, resolved);
+  const isOutside =
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative);
+  if (relative === "" || !isOutside) {
+    return resolved;
   }
-  return resolved;
+  throw new Error(`Path escapes repo root: ${target}`);
 }
 
 function assertRelativePath(target: string): void {
