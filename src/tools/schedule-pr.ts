@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
@@ -169,11 +170,32 @@ export function ensureSchedulePrFooter(
 }
 
 async function runGit(deps: SchedulePrDeps, args: string[]): Promise<void> {
-  if (deps.runGit) {
-    await deps.runGit(deps.repoRoot, args);
-    return;
+  const exec = async () => {
+    if (deps.runGit) {
+      await deps.runGit(deps.repoRoot, args);
+      return;
+    }
+    await execFileAsync("git", args, { cwd: deps.repoRoot });
+  };
+  try {
+    await exec();
+  } catch (error: any) {
+    const message = error?.stderr?.toString() || error?.message || String(error);
+    if (isDubiousOwnershipError(message)) {
+      await addSafeDirectory(deps.repoRoot);
+      await exec();
+      return;
+    }
+    throw error;
   }
-  await execFileAsync("git", args, { cwd: deps.repoRoot });
+}
+
+function isDubiousOwnershipError(message: string): boolean {
+  return /dubious ownership/i.test(message);
+}
+
+async function addSafeDirectory(repoRoot: string): Promise<void> {
+  await execFileAsync("git", ["config", "--global", "--add", "safe.directory", path.resolve(repoRoot)]);
 }
 
 async function listWorkingTreeFiles(repoRoot: string): Promise<string[]> {

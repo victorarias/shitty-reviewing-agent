@@ -146,6 +146,7 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
       if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
         contextState.filesDiffed.add(event.args.path);
       }
+      log(`tool call: ${event.toolName}`, event.args ? safeStringify(event.args) : "{}");
       if (toolExecutions >= maxIterations) {
         agent.abort();
       }

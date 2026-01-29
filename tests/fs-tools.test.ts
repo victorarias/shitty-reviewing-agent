@@ -68,6 +68,22 @@ test("ls tool allows repo root", async () => {
   expect(result.details.entries.length).toBeGreaterThan(0);
 });
 
+test("ls tool supports long metadata", async () => {
+  await fs.mkdir(tempDir, { recursive: true });
+  await fs.writeFile(tempPath, "metadata\n", "utf8");
+  const tools = createReadOnlyTools(process.cwd());
+  const lsTool = tools.find((tool) => tool.name === "ls");
+  if (!lsTool) throw new Error("ls tool missing");
+
+  const result = await lsTool.execute("", { path: "data", long: true });
+  expect(result.details.longEntries?.length).toBeGreaterThan(0);
+  const entry = result.details.longEntries?.find((item) => item.name === "tmp-read-test.txt");
+  expect(entry).toBeTruthy();
+  expect(entry?.permissions.length).toBe(10);
+  expect(typeof entry?.size).toBe("number");
+  expect(entry?.mtime).toContain("T");
+});
+
 test("read tool allows files starting with .. in repo root", async () => {
   await fs.writeFile(dotDotPath, "ok", "utf8");
   const tools = createReadOnlyTools(process.cwd());

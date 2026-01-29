@@ -82,3 +82,15 @@ test("repo write tools allow files starting with .. in repo root", async () => {
   await writeTool.execute("", { path: "..foo", content: "ok" });
   expect(fs.readFileSync(target, "utf8")).toBe("ok");
 });
+
+test("repo write tools surface git errors in details", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sra-write-nogit-"));
+  const tools = createRepoWriteTools(repoRoot);
+  const writeTool = tools.find((tool) => tool.name === "write_file") as any;
+
+  const result = await writeTool.execute("", { path: "notes.txt", content: "hello" });
+  expect(result.details.status).toEqual([]);
+  expect(result.details.diffStat).toBe("");
+  expect(result.details.statusError).toMatch(/not a git repository/i);
+  expect(result.details.diffStatError).toMatch(/not a git repository/i);
+});

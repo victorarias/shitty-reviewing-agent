@@ -168,7 +168,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
         contextState.filesDiffed.add(event.args.path);
       }
-      log(`tool start: ${event.toolName}`, event.args ?? "");
+      log(`tool call: ${event.toolName}`, event.args ? safeStringify(event.args) : "{}");
       if (toolExecutions >= maxIterations) {
         summaryState.abortedByLimit = true;
         agent.abort();

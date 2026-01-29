@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { IncludeExclude } from "../types.js";
 import { assertWriteAllowed, normalizePath } from "../app/write-scope.js";
+
+const execFileAsync = promisify(execFile);
 
 function ensureInsideRoot(root: string, target: string): string {
   const resolvedRoot = path.resolve(root);
@@ -133,33 +136,70 @@ async function runGitApply(repoRoot: string, patch: string, scope?: IncludeExclu
   });
 }
 
-async function getRepoSummary(repoRoot: string): Promise<{ status: string[]; diffStat: string }> {
+async function getRepoSummary(
+  repoRoot: string
+): Promise<{ status: string[]; diffStat: string; statusError?: string; diffStatError?: string }> {
   const [status, diffStat] = await Promise.all([
     runGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]),
     runGit(repoRoot, ["diff", "--stat"]),
   ]);
   return {
-    status: status.split(/\r?\n/).filter(Boolean),
-    diffStat: diffStat.trim(),
+    status: status.stdout.split(/\r?\n/).filter(Boolean),
+    diffStat: diffStat.stdout.trim(),
+    statusError: status.error,
+    diffStatError: diffStat.error,
   };
 }
 
-async function runGit(repoRoot: string, args: string[]): Promise<string> {
+type GitRunResult = { stdout: string; error?: string };
+
+async function runGit(repoRoot: string, args: string[]): Promise<GitRunResult> {
+  const first = await execGitOnce(repoRoot, args);
+  if (first.code === 0) return { stdout: first.stdout };
+  if (isDubiousOwnershipError(first.stderr)) {
+    await addSafeDirectory(repoRoot);
+    const retry = await execGitOnce(repoRoot, args);
+    if (retry.code === 0) return { stdout: retry.stdout };
+    return {
+      stdout: "",
+      error: retry.stderr || `git ${args.join(" ")} failed with code ${retry.code}`,
+    };
+  }
+  return {
+    stdout: "",
+    error: first.stderr || `git ${args.join(" ")} failed with code ${first.code}`,
+  };
+}
+
+async function execGitOnce(
+  repoRoot: string,
+  args: string[]
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return await new Promise((resolve) => {
     const child = spawn("git", args, { cwd: repoRoot });
     let stdout = "";
+    let stderr = "";
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
-    child.on("error", () => resolve(""));
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      resolve({ code: 1, stdout: "", stderr: String(error) });
+    });
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        resolve("");
-      }
+      resolve({ code: code ?? 1, stdout, stderr });
     });
   });
+}
+
+function isDubiousOwnershipError(message: string): boolean {
+  return /dubious ownership/i.test(message);
+}
+
+async function addSafeDirectory(repoRoot: string): Promise<void> {
+  await execFileAsync("git", ["config", "--global", "--add", "safe.directory", path.resolve(repoRoot)]);
 }
 
 function extractPatchPaths(patch: string): string[] {
