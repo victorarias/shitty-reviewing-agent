@@ -108,6 +108,8 @@ Safety guardrails for scheduled PRs:
 - Optional write scope (include/exclude globs) limits which paths can be modified.
 - Always block edits to `.github/workflows/**` and `/.reviewerc`.
 
+Note: PR tools are available in PR review mode only when explicitly enabled via `allow-pr-tools` (or `.reviewerc` `review.allowPrToolsInReview`).
+
 ## Output modes and comment types
 
 Output modes:

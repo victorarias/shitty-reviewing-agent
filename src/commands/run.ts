@@ -258,6 +258,20 @@ function buildTools(
       });
       allTools.push(...filterReviewToolsByCommentType(reviewTools, prInput.commentType));
     }
+
+    if (allowedSet.has("github.pr")) {
+      allTools.push(
+        ...createSchedulePrTools({
+          repoRoot: input.config.repoRoot,
+          schedule: undefined,
+          jobId: `pr-${prInput.context.prNumber}`,
+          commandIds: [input.command.id],
+          owner: prInput.context.owner,
+          repo: prInput.context.repo,
+          octokit: prInput.octokit,
+        })
+      );
+    }
   }
 
   if (input.mode === "schedule") {

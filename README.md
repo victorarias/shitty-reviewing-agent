@@ -38,7 +38,7 @@ jobs:
 - `ignore-patterns` (optional, default `*.lock,*.generated.*`): Comma-separated globs to skip
 - `reasoning` (optional, default `off`): Thinking level (`off|minimal|low|medium|high|xhigh`)
 - `temperature` (optional): Sampling temperature (0-2)
-- `allow-pr-tools` (optional): Allow PR-creation tools in PR review mode (default false; always allowed in schedule mode)
+- `allow-pr-tools` (optional): Allow PR-creation tools in PR review mode (default false; schedule mode always allows them)
 - `bot-name` (optional): Bot/app mention name for `@bot command` triggers (e.g., `my-app`)
 - `app-id` (optional): GitHub App ID (use instead of GITHUB_TOKEN)
 - `app-installation-id` (optional): GitHub App installation ID

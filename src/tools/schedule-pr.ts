@@ -14,7 +14,7 @@ type Octokit = ReturnType<typeof getOctokit>;
 
 interface SchedulePrDeps {
   repoRoot: string;
-  schedule: ScheduleConfig;
+  schedule?: ScheduleConfig;
   writeScope?: IncludeExclude;
   jobId: string;
   commandIds: string[];
@@ -25,6 +25,7 @@ interface SchedulePrDeps {
 }
 
 export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
+  const schedule = deps.schedule ?? {};
   const state = {
     branch: buildScheduleBranchName(deps.jobId, deps.commandIds),
   };
@@ -77,19 +78,19 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
         throw new Error("No committed changes found to submit.");
       }
 
-      if (deps.schedule.conditions?.paths && !passesPathConditions(changedFiles, deps.schedule.conditions.paths)) {
+      if (schedule.conditions?.paths && !passesPathConditions(changedFiles, schedule.conditions.paths)) {
         throw new Error("Schedule conditions blocked PR creation due to path filters.");
       }
 
       const diffStats = await getDiffStats(deps.repoRoot, baseBranch);
-      if (deps.schedule.limits?.maxFiles && changedFiles.length > deps.schedule.limits.maxFiles) {
+      if (schedule.limits?.maxFiles && changedFiles.length > schedule.limits.maxFiles) {
         throw new Error(
-          `Scheduled run exceeded maxFiles (${changedFiles.length}/${deps.schedule.limits.maxFiles}).`
+          `Scheduled run exceeded maxFiles (${changedFiles.length}/${schedule.limits.maxFiles}).`
         );
       }
-      if (deps.schedule.limits?.maxDiffLines && diffStats.totalLines > deps.schedule.limits.maxDiffLines) {
+      if (schedule.limits?.maxDiffLines && diffStats.totalLines > schedule.limits.maxDiffLines) {
         throw new Error(
-          `Scheduled run exceeded maxDiffLines (${diffStats.totalLines}/${deps.schedule.limits.maxDiffLines}).`
+          `Scheduled run exceeded maxDiffLines (${diffStats.totalLines}/${schedule.limits.maxDiffLines}).`
         );
       }
 
