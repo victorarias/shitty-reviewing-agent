@@ -7,12 +7,13 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 const DEFAULT_EXCLUDES = ["**/.git/**", "**/node_modules/**", "**/dist/**", "**/coverage/**"];
 
 function ensureInsideRoot(root: string, target: string): string {
-  const resolved = path.resolve(root, target);
-  const normalizedRoot = path.resolve(root) + path.sep;
-  if (!resolved.startsWith(normalizedRoot)) {
-    throw new Error(`Path escapes repo root: ${target}`);
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, target);
+  const relative = path.relative(resolvedRoot, resolved);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    return resolved;
   }
-  return resolved;
+  throw new Error(`Path escapes repo root: ${target}`);
 }
 
 function looksBinary(buffer: Buffer): boolean {

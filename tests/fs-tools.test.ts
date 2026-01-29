@@ -52,3 +52,12 @@ test("read tool annotates truncation", async () => {
   expect(result.content[0].text).toContain("truncated at 10 chars");
   expect(result.content[0].text).toContain("...<truncated>");
 });
+
+test("ls tool allows repo root", async () => {
+  const tools = createReadOnlyTools(process.cwd());
+  const lsTool = tools.find((tool) => tool.name === "ls");
+  if (!lsTool) throw new Error("ls tool missing");
+
+  const result = await lsTool.execute("", {});
+  expect(result.details.entries.length).toBeGreaterThan(0);
+});
