@@ -1,0 +1,28 @@
+{
+  "id": "summary-footer",
+  "description": "Summary formatting and footer markers are preserved.",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5
+  },
+  "changedFiles": [
+    {
+      "filename": "src/summary.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "patch": "@@ -24,7 +24,7 @@\n   if (!items || items.length === 0) {\n-    return \"- None\";\n+    return \"- none\";\n   }\n"
+    }
+  ],
+  "expected": {
+    "summaryContains": [
+      "## Review Summary",
+      "Reviewed by shitty-reviewing-agent",
+      "<!-- sri:bot-comment -->"
+    ]
+  }
+}

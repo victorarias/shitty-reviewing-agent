@@ -1,0 +1,33 @@
+{
+  "id": "schedule-pr",
+  "description": "Agent makes repo changes in schedule mode and opens a PR.",
+  "mode": "schedule",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5
+  },
+  "changedFiles": [],
+  "schedule": {
+    "commandPrompt": "You are running in schedule mode. Use the write_file tool (not apply_patch) to:\n1) Create docs/auto.md with a short paragraph about automated updates.\n2) Overwrite docs/seed.md with exactly two lines: 'seed' and 'Automated update applied.'.\nDo not modify any other files. Do not respond with prose; only use tools until both files are written.",
+    "writeScope": {
+      "include": ["docs/**"]
+    },
+    "seedFiles": {
+      "docs/seed.md": "seed\n"
+    },
+    "pr": {
+      "base": "main",
+      "title": "Scheduled docs update",
+      "body": "Automated docs update from scheduled run."
+    }
+  },
+  "expected": {
+    "prCreated": true,
+    "changedFilesInclude": ["docs/auto.md", "docs/seed.md"],
+    "llmChanges": true,
+    "toolCallsInclude": ["write_file"]
+  }
+}

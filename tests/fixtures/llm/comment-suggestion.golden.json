@@ -1,0 +1,48 @@
+{
+  "id": "comment-suggestion",
+  "description": "Inline comment behavior on tool allowlist regression.",
+  "mode": "review",
+  "config": {
+    "provider": "google-vertex",
+    "modelId": "gemini-2.5-flash",
+    "temperature": 0,
+    "reasoning": "low",
+    "maxFiles": 5,
+    "ignorePatterns": [
+      "*.lock",
+      "*.generated.*"
+    ]
+  },
+  "compactionTriggered": false,
+  "issueComments": [
+    "## Review Summary\n\n**Verdict:** Skipped\n\n### Issues Found\n\n- Agent failed to produce a review summary.\n\n### Key Findings\n\n- None\n\n---\n*Reviewed by shitty-reviewing-agent • model: gemini-2.5-flash*\n*Billing: <redacted>*\n<!-- sri:bot-comment -->\n<!-- sri:last-reviewed-sha:head -->"
+  ],
+  "reviewComments": [
+    {
+      "path": "src/commands/run.ts",
+      "line": 71,
+      "side": "RIGHT",
+      "body": "This change alters the `resolveAllowedCategories` function to *only* allow `repo.write` when in PR mode, instead of disallowing it. This seems like a critical logic error. If this is intended, it would severely restrict the agent's ability to perform reviews, as it would prevent the use of tools like `read`, `get_diff`, `comment`, and `suggest`. Was this change intentional, or should it revert to `item !== \"repo.write\"`?\n\n<!-- sri:bot-comment -->"
+    }
+  ],
+  "replies": [],
+  "stats": {
+    "issueComments": 1,
+    "reviewComments": 1,
+    "replies": 0,
+    "suggestions": 0
+  },
+  "calls": [
+    {
+      "type": "review_comment",
+      "path": "src/commands/run.ts",
+      "line": 71,
+      "side": "RIGHT",
+      "body": "This change alters the `resolveAllowedCategories` function to *only* allow `repo.write` when in PR mode, instead of disallowing it. This seems like a critical logic error. If this is intended, it would severely restrict the agent's ability to perform reviews, as it would prevent the use of tools like `read`, `get_diff`, `comment`, and `suggest`. Was this change intentional, or should it revert to `item !== \"repo.write\"`?\n\n<!-- sri:bot-comment -->"
+    },
+    {
+      "type": "issue_comment",
+      "body": "## Review Summary\n\n**Verdict:** Skipped\n\n### Issues Found\n\n- Agent failed to produce a review summary.\n\n### Key Findings\n\n- None\n\n---\n*Reviewed by shitty-reviewing-agent • model: gemini-2.5-flash*\n*Billing: <redacted>*\n<!-- sri:bot-comment -->\n<!-- sri:last-reviewed-sha:head -->"
+    }
+  ]
+}

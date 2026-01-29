@@ -1,0 +1,86 @@
+{
+  "recordedAt": "2026-01-28T23:23:43.232Z",
+  "snapshot": {
+    "id": "schedule-pr",
+    "description": "Agent makes repo changes in schedule mode and opens a PR.",
+    "mode": "schedule",
+    "config": {
+      "provider": "google-vertex",
+      "modelId": "gemini-2.5-flash",
+      "temperature": 0,
+      "reasoning": "low",
+      "maxFiles": 5,
+      "ignorePatterns": [
+        "*.lock",
+        "*.generated.*"
+      ]
+    },
+    "compactionTriggered": false,
+    "issueComments": [],
+    "reviewComments": [],
+    "replies": [],
+    "stats": {
+      "issueComments": 0,
+      "reviewComments": 0,
+      "replies": 0,
+      "suggestions": 0
+    },
+    "calls": [],
+    "schedule": {
+      "prCreated": true,
+      "prUpdated": false,
+      "changedFiles": [
+        "docs/seed.md",
+        "docs/auto.md"
+      ],
+      "gitCalls": [
+        "checkout -B sra/schedule/scheduled-update-d55142d0",
+        "config user.name shitty-reviewing-agent",
+        "config user.email shitty-reviewing-agent@users.noreply.github.com",
+        "add -A",
+        "commit -m Scheduled docs update",
+        "push --force-with-lease origin sra/schedule/scheduled-update-d55142d0"
+      ],
+      "toolCalls": [
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file"
+      ],
+      "llmChanges": true,
+      "assistantMessages": [],
+      "commandRan": true
+    }
+  }
+}

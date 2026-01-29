@@ -19,6 +19,24 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run harness tests
         run: bun run test:harness
+  llm-snapshots:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: "1.3.6"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run LLM snapshot tests
+        env:
+          VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RUN_LLM_SNAPSHOTS: "1"
+        run: bun run test:llm
   test:
     runs-on: ubuntu-latest
     steps:

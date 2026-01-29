@@ -6,7 +6,7 @@ inputs:
     description: "LLM provider (openrouter, gemini, anthropic, openai, etc.). Aliases: gemini→google, vertex→google-vertex."
     required: false
   api-key:
-    description: "API key for the LLM provider"
+    description: "API key for the LLM provider (required for non-Vertex providers; optional for Vertex AI)"
     required: false
   model:
     description: "Model to use (e.g., anthropic/claude-sonnet-4)"

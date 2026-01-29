@@ -75,3 +75,12 @@
 - [ ] Add patch-only mode / model-based gating (disable `write` + `edit`, allow `apply_patch`).
 - [ ] Centralize tool registry and global gating (single place to enable/disable tool categories).
 - [ ] Add post-write diagnostics (e.g., diff summary or lightweight lint) to tool results.
+
+## Testing Harness (Live LLM Snapshots)
+- [x] Update config/docs to allow `api-key` for `google-vertex`.
+- [x] Add LLM snapshot fixtures + runner (`tests/fixtures/llm/**`, `tests/llm-snapshots.test.ts`).
+- [x] Add snapshot recording script (`scripts/record-llm.ts`) + package scripts.
+- [x] Update CI to run `test:llm` on internal PRs (skip forks).
+- [x] Patch `@mariozechner/pi-ai` for Vertex Express API key support (patch-package).
+- [ ] Confirm live auth works: `GEMINI_API_KEY` must be a real Gemini API key (Vertex API keys return 401 "API keys are not supported").
+- [ ] Verify: `npm test`, `npm run test:llm` (requires key), `npm run build`.

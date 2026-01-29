@@ -273,7 +273,7 @@ Execute the command described in the user prompt. The command prompt is authorit
 
   const modeNote =
     input.mode === "schedule"
-      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools."
+      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools.\n- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use."
       : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
 
   return `${base}${modeNote}\n\n# Command Prompt\n${commandPrompt}`;

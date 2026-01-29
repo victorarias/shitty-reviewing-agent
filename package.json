@@ -8,7 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "smoke": "node scripts/smoke.mjs",
     "start": "bun src/index.ts",
+    "postinstall": "patch-package",
     "test": "bun test",
+    "test:llm": "RUN_LLM_SNAPSHOTS=1 bun test tests/llm-snapshots.test.ts",
+    "record:llm": "RUN_LLM_SNAPSHOTS=1 bun scripts/record-llm.ts",
     "test:harness": "bun test tests/flow*.test.ts tests/*prompt*.test.ts tests/summary-posts.test.ts tests/skip-summary.test.ts tests/run-review-*.test.ts tests/app-pr-data.test.ts tests/config.test.ts",
     "validate:reviewerc": "bun scripts/validate-reviewerc.mjs"
   },
@@ -31,6 +34,7 @@
   "devDependencies": {
     "@octokit/types": "^16.0.0",
     "@types/node": "^24.3.0",
+    "patch-package": "^8.0.1",
     "typescript": "^5.7.3"
   }
 }

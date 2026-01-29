@@ -50,6 +50,37 @@ test("readConfig merges .reviewerc defaults with action inputs", () => {
   expect(config.review.temperature).toBe(0.4);
 });
 
+test("readConfig allows api-key for google-vertex", () => {
+  const repoRoot = makeTempRepo();
+  const config = withEnv(
+    {
+      GITHUB_WORKSPACE: repoRoot,
+      "INPUT_PROVIDER": "google-vertex",
+      "INPUT_MODEL": "gemini-2.5-flash",
+      "INPUT_API-KEY": "vertex-key",
+    },
+    () => readConfig()
+  );
+
+  expect(config.review.provider).toBe("google-vertex");
+  expect(config.review.apiKey).toBe("vertex-key");
+});
+
+test("readConfig does not require api-key for google-vertex", () => {
+  const repoRoot = makeTempRepo();
+  const config = withEnv(
+    {
+      GITHUB_WORKSPACE: repoRoot,
+      "INPUT_PROVIDER": "google-vertex",
+      "INPUT_MODEL": "gemini-2.5-flash",
+    },
+    () => readConfig()
+  );
+
+  expect(config.review.provider).toBe("google-vertex");
+  expect(config.review.apiKey).toBe("");
+});
+
 test("readConfig rejects invalid YAML", () => {
   const repoRoot = makeTempRepo();
   fs.writeFileSync(path.join(repoRoot, ".reviewerc"), "version: [", "utf8");
