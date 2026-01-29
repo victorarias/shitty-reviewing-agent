@@ -10,6 +10,7 @@ import type {
   ReviewConfig,
   ReviewContext,
   ReviewThreadInfo,
+  ScheduleConfig,
   ToolCategory,
   IncludeExclude,
 } from "../types.js";
@@ -20,6 +21,7 @@ import { createGithubTools } from "../tools/github.js";
 import { createReviewTools } from "../tools/review.js";
 import { createGitHistoryTools } from "../tools/git-history.js";
 import { createRepoWriteTools } from "../tools/repo-write.js";
+import { createSchedulePrTools } from "../tools/schedule-pr.js";
 import { createAgentWithCompaction, AgentSetupOverrides } from "../agent/agent-setup.js";
 
 export interface CommandArgs {
@@ -48,6 +50,15 @@ export type CommandRunInput =
       mode: "schedule";
       command: CommandDefinition;
       config: ReviewConfig;
+      schedule: ScheduleConfig;
+      scheduleContext: {
+        jobId: string;
+        commandIds: string[];
+        owner: string;
+        repo: string;
+        octokit: ReturnType<typeof import("@actions/github").getOctokit>;
+        runGitFn?: (repoRoot: string, args: string[]) => Promise<void>;
+      };
       commandArgs?: CommandArgs;
       commentType: CommentType;
       allowlist: ToolCategory[];
@@ -65,7 +76,12 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
 
   const commandArgs = input.commandArgs ?? { args: "", argv: [] };
   const promptText = interpolateCommandPrompt(input.command.prompt, commandArgs);
-  const allowedCategories = resolveAllowedCategories(input.allowlist, input.command.tools?.allow, input.mode);
+  const allowedCategories = resolveAllowedCategories(
+    input.allowlist,
+    input.command.tools?.allow,
+    input.mode,
+    input.config.allowPrToolsInReview ?? false
+  );
 
   const summaryState = {
     posted: false,
@@ -167,12 +183,16 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
 function resolveAllowedCategories(
   globalAllowlist: ToolCategory[],
   commandAllow: ToolCategory[] | undefined,
-  mode: "pr" | "schedule"
+  mode: "pr" | "schedule",
+  allowPrToolsInReview: boolean
 ): ToolCategory[] {
   const base = new Set(globalAllowlist);
   let allowed = commandAllow && commandAllow.length > 0 ? commandAllow.filter((item) => base.has(item)) : [...base];
   if (mode === "pr") {
     allowed = allowed.filter((item) => item !== "repo.write");
+    if (!allowPrToolsInReview) {
+      allowed = allowed.filter((item) => item !== "github.pr");
+    }
   }
   if (mode === "schedule") {
     allowed = allowed.filter((item) => !["git.read", "github.read", "github.write"].includes(item));
@@ -240,9 +260,26 @@ function buildTools(
     }
   }
 
-  if (input.mode === "schedule" && allowedSet.has("repo.write")) {
+  if (input.mode === "schedule") {
     const scheduleInput = input as Extract<CommandRunInput, { mode: "schedule" }>;
-    allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
+    if (allowedSet.has("repo.write")) {
+      allTools.push(...createRepoWriteTools(input.config.repoRoot, scheduleInput.writeScope));
+    }
+    if (allowedSet.has("github.pr")) {
+      allTools.push(
+        ...createSchedulePrTools({
+          repoRoot: input.config.repoRoot,
+          schedule: scheduleInput.schedule,
+          writeScope: scheduleInput.writeScope,
+          jobId: scheduleInput.scheduleContext.jobId,
+          commandIds: scheduleInput.scheduleContext.commandIds,
+          owner: scheduleInput.scheduleContext.owner,
+          repo: scheduleInput.scheduleContext.repo,
+          octokit: scheduleInput.scheduleContext.octokit,
+          runGit: scheduleInput.scheduleContext.runGitFn,
+        })
+      );
+    }
   }
 
   return filterToolsByAllowlist(allTools, [...allowedSet]);
@@ -273,7 +310,7 @@ Execute the command described in the user prompt. The command prompt is authorit
 
   const modeNote =
     input.mode === "schedule"
-      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools.\n- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use."
+      ? "\n- This is a scheduled run with no PR context. Do not expect PR-only tools.\n- When the command requests file changes, you must use repo write tools to make those changes. Do not respond with prose in place of tool use.\n- If you want to submit changes for review, call commit_changes with a commit message, then push_pr with a PR title/body. The PR targets the repo default branch."
       : "\n- This is a PR-scoped run. You may use PR tools to gather context.";
 
   return `${base}${modeNote}\n\n# Command Prompt\n${commandPrompt}`;

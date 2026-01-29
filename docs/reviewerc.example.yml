@@ -20,8 +20,9 @@ commands:
     prompt: |
       Compare README and docs against current code behavior for changes in the last 24 hours.
       Use git history to identify recent changes and update docs if needed.
+      If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
     tools:
-      allow: [filesystem, git.history, repo.write, github.read]
+      allow: [filesystem, git.history, repo.write, github.pr]
 
 review:
   defaults:
@@ -35,10 +36,6 @@ schedule:
   enabled: true
   runs:
     nightly-docs: [docs-drift]
-  pr:
-    base: main
-    title: "Docs: fix drift"
-    body: "Automated docs refresh"
   limits:
     maxFiles: 50
     maxDiffLines: 800
@@ -49,7 +46,7 @@ schedule:
     include: ["README.md", "docs/**"]
 
 tools:
-  allowlist: [filesystem, git.read, git.history, github.read, github.write, repo.write]
+  allowlist: [filesystem, git.read, git.history, github.read, github.write, github.pr, repo.write]
 
 output:
   commentType: issue

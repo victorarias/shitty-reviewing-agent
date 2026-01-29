@@ -97,12 +97,14 @@ Supported categories (proposed):
   - Why: PR metadata and context.
 - `github.write`: `comment`, `suggest`, `post_summary`
   - Why: PR feedback output.
-- `repo.write`: write local files, create branches/commits (scheduled PRs only)
-  - Why: enables maintenance PR creation.
+- `github.pr`: `commit_changes`, `push_pr`
+  - Why: agent-driven scheduled PR creation.
+- `repo.write`: write local files (scheduled jobs only)
+  - Why: enables maintenance edits prior to committing.
 
-Safety guardrails for `repo.write`:
-- Never push directly to the base branch; always create/update a bot branch and open a PR.
-- Branch creation/push are handled by a dedicated tool with a fixed strategy; branch name is not configurable.
+Safety guardrails for scheduled PRs:
+- Never push directly to the base branch; always create/update a bot branch and open a PR via `push_pr`.
+- Branch names are deterministic (based on job + command ids) unless explicitly overridden in the tool call.
 - Optional write scope (include/exclude globs) limits which paths can be modified.
 - Always block edits to `.github/workflows/**` and `/.reviewerc`.
 
@@ -248,17 +250,14 @@ commands:
     prompt: |
       Compare README and docs against current code behavior for changes in the last 24 hours.
       Use git history to identify recent changes and update docs if needed.
+      If you make changes that should be reviewed, commit them with commit_changes and open a PR with push_pr.
     tools:
-      allow: [filesystem, git.history, repo.write, github.read]
+      allow: [filesystem, git.history, repo.write, github.pr]
 
 schedule:
   enabled: true
   runs:
     nightly-docs: [docs-drift]
-  pr:
-    base: main
-    title: "Docs: fix drift"
-    body: "Automated docs refresh"
   limits:
     maxFiles: 50
     maxDiffLines: 800
@@ -271,15 +270,16 @@ schedule:
 
 Key attributes and rationale:
 - `schedule.runs`: map of job id → list of command ids to run for that scheduled job.
-- `schedule.pr`: shared PR settings for scheduled runs (the only supported output).
 - `schedule.limits`: guardrails to avoid giant PRs.
 - `schedule.conditions`: repo-scoped filters (not PR-scoped).
 - `schedule.writeScope`: include/exclude globs limiting which paths can be modified.
 
 PR creation behavior:
-- Bot branch name is deterministic from the command id (internal strategy).
-- If an existing bot PR is already open for that branch, update it instead of creating a new one.
-- If no changes are needed, skip creating a PR.
+- PRs are agent-driven: the scheduled command must call commit_changes and push_pr.
+- The PR targets the repo default branch (not configurable).
+- Bot branch name is deterministic from the scheduled job + command ids (internal strategy).
+- If an existing bot PR is already open for that branch, push_pr updates it instead of creating a new one.
+- If no committed changes are present, push_pr fails with a clear error.
 
 Permissions (scheduled maintenance):
 - `contents: write`
