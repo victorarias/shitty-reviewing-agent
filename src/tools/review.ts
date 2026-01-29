@@ -401,15 +401,28 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           body: ensureBotMarker(params.body),
         })
       );
-      await safeCall(() =>
-        deps.octokit.graphql(RESOLVE_THREAD_MUTATION, {
-          threadId: thread.threadId,
-        })
-      );
-      return {
-        content: [{ type: "text", text: `Resolved thread ${thread.id} with reply ${reply.data.id}.` }],
-        details: { id: reply.data.id },
-      };
+      try {
+        await safeCall(() =>
+          deps.octokit.graphql(RESOLVE_THREAD_MUTATION, {
+            threadId: thread.threadId,
+          })
+        );
+        return {
+          content: [{ type: "text", text: `Resolved thread ${thread.id} with reply ${reply.data.id}.` }],
+          details: { id: reply.data.id },
+        };
+      } catch (error) {
+        if (isIntegrationAccessError(error)) {
+          return {
+            content: [{
+              type: "text",
+              text: `Reply posted: ${reply.data.id}. Unable to resolve thread ${thread.id} due to integration permissions; mention in summary and move on.`,
+            }],
+            details: { id: reply.data.id },
+          };
+        }
+        throw error;
+      }
     },
   };
 
@@ -443,7 +456,18 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listThreadsTool, commentTool, suggestTool, updateTool, replyTool, resolveTool, summaryTool];
+  const terminateTool: AgentTool<typeof TerminateSchema, { ok: boolean }> = {
+    name: "terminate",
+    label: "Terminate",
+    description: "No-op tool for ending the review. Always succeeds.",
+    parameters: TerminateSchema,
+    execute: async () => ({
+      content: [{ type: "text", text: "Terminated." }],
+      details: { ok: true },
+    }),
+  };
+
+  return [listThreadsTool, commentTool, suggestTool, updateTool, replyTool, resolveTool, summaryTool, terminateTool];
 }
 
 const CommentSchema = Type.Object({
@@ -474,6 +498,8 @@ const ListThreadsSchema = Type.Object({
 const SummarySchema = Type.Object({
   body: Type.String({ description: "Markdown summary" }),
 });
+
+const TerminateSchema = Type.Object({});
 
 const ReplySchema = Type.Object({
   comment_id: Type.Integer({ minimum: 1 }),
@@ -581,11 +607,11 @@ function buildThreadIndex(threads: ReviewThreadInfo[]): {
   const byId = new Map<number, ReviewThreadInfo>();
   const byRootCommentId = new Map<number, ReviewThreadInfo>();
   for (const thread of threads) {
-    if (!thread.path || thread.line === null) continue;
     byId.set(thread.id, thread);
     if (thread.rootCommentId) {
       byRootCommentId.set(thread.rootCommentId, thread);
     }
+    if (!thread.path || thread.line === null) continue;
     if (thread.side) {
       const sideKey = `${thread.path}:${thread.line}:${thread.side}`;
       const sideList = byLocation.get(sideKey) ?? [];
@@ -776,4 +802,15 @@ async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw error;
   }
+}
+
+function isIntegrationAccessError(error: any): boolean {
+  const message = String(error?.message ?? "");
+  if (/resource not accessible by integration/i.test(message)) return true;
+  if (error?.status === 403 && /forbidden|not authorized|insufficient scopes/i.test(message)) return true;
+  const graphqlErrors = error?.errors ?? error?.data?.errors;
+  if (Array.isArray(graphqlErrors)) {
+    return graphqlErrors.some((item) => /resource not accessible by integration/i.test(String(item?.message ?? "")));
+  }
+  return false;
 }

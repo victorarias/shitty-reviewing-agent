@@ -156,6 +156,9 @@ export async function runCommand(input: CommandRunInput): Promise<void> {
       if (input.config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
+      if (event.toolName === "terminate") {
+        agent.abort();
+      }
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
       const usage = event.message.usage;
