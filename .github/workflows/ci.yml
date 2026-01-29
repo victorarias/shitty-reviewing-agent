@@ -35,7 +35,7 @@ jobs:
       - name: Run LLM snapshot tests
         env:
           LLM_SNAPSHOT_REPLAY: "1"
-        run: bun run test:llm
+        run: bun test tests/llm-snapshots.test.ts
   test:
     runs-on: ubuntu-latest
     steps:
