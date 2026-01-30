@@ -364,7 +364,6 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
-    "- If terminate is unavailable, complete the task and stop when finished.",
     hasTool("subagent")
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
       : null,
