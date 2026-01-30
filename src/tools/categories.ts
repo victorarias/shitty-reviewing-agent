@@ -36,6 +36,7 @@ export function filterToolsByAllowlist(tools: AgentTool<any>[], allowlist?: Tool
   if (!allowlist || allowlist.length === 0) return tools;
   const allowed = new Set(allowlist);
   return tools.filter((tool) => {
+    if (tool.name === "terminate") return true;
     const category = TOOL_CATEGORY_BY_NAME[tool.name];
     if (!category) return false;
     return allowed.has(category);

@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
+import { createTerminateTool } from "./terminate.js";
 import type { ChangedFile, ExistingComment, ReviewThreadInfo } from "../types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
@@ -456,18 +457,16 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const terminateTool: AgentTool<typeof TerminateSchema, { ok: boolean }> = {
-    name: "terminate",
-    label: "Terminate",
-    description: "No-op tool for ending the review. Always succeeds.",
-    parameters: TerminateSchema,
-    execute: async () => ({
-      content: [{ type: "text", text: "Terminated." }],
-      details: { ok: true },
-    }),
-  };
-
-  return [listThreadsTool, commentTool, suggestTool, updateTool, replyTool, resolveTool, summaryTool, terminateTool];
+  return [
+    listThreadsTool,
+    commentTool,
+    suggestTool,
+    updateTool,
+    replyTool,
+    resolveTool,
+    summaryTool,
+    createTerminateTool(),
+  ];
 }
 
 const CommentSchema = Type.Object({
@@ -498,8 +497,6 @@ const ListThreadsSchema = Type.Object({
 const SummarySchema = Type.Object({
   body: Type.String({ description: "Markdown summary" }),
 });
-
-const TerminateSchema = Type.Object({});
 
 const ReplySchema = Type.Object({
   comment_id: Type.Integer({ minimum: 1 }),

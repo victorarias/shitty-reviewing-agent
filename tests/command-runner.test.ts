@@ -130,6 +130,40 @@ test("runCommand exposes PR tools when allowPrToolsInReview is true", async () =
   expect(toolNames).toContain("push_pr");
 });
 
+test("runCommand always exposes terminate", async () => {
+  const { octokit } = makeOctokitSpy();
+  let toolNames: string[] = [];
+  await runCommand({
+    mode: "schedule",
+    command,
+    config: baseConfig,
+    schedule: { enabled: true },
+    scheduleContext: {
+      jobId: "nightly",
+      commandIds: ["security"],
+      owner: "o",
+      repo: "r",
+      octokit: octokit as any,
+    },
+    commentType: "issue",
+    allowlist: ["filesystem"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory: ({ initialState }: any) => {
+        toolNames = initialState.tools.map((tool: any) => tool.name);
+        return {
+          state: { error: null, messages: [] },
+          subscribe() {},
+          async prompt() {},
+          abort() {},
+        };
+      },
+    },
+  });
+  expect(toolNames).toContain("terminate");
+});
+
 test("runCommand logs assistant thinking when debug is enabled", async () => {
   const { octokit } = makeOctokitSpy();
   const logs: string[] = [];

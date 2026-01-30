@@ -3,7 +3,8 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
   const hasTool = (name: string) => toolSet.has(name);
 
   const constraints = [
-    hasTool("post_summary") ? "- Call post_summary exactly once as your final action, then stop." : null,
+    hasTool("post_summary") ? "- If post_summary is available, call it exactly once near the end to publish the review." : null,
+    hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     "- Focus on bugs, security issues, performance problems, logic errors, unused code, and duplication. Leave formatting and style to linters.",
     "- Read full files, not just diffs. Use tools to explore context.",
     "- If a read response is truncated or partial, fetch additional ranges before drawing conclusions.",
@@ -55,7 +56,10 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     workflowSteps.push(line);
   }
   if (hasTool("post_summary")) {
-    workflowSteps.push("Post summary exactly once, then stop.");
+    workflowSteps.push("Post summary exactly once.");
+  }
+  if (hasTool("terminate")) {
+    workflowSteps.push("Call terminate exactly once, then stop.");
   }
 
   const workflowSection = workflowSteps.length

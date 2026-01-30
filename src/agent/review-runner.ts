@@ -78,6 +78,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     suggestions: 0,
     abortedByLimit: false,
     abortedByCancellation: false,
+    terminatedByTool: false,
     billing: {
       input: 0,
       output: 0,
@@ -144,6 +145,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   });
 
   const tools = filterToolsByAllowlist([...allowlistedBaseTools, subagentTool], input.toolAllowlist);
+  const feedbackAllowed =
+    !input.toolAllowlist ||
+    input.toolAllowlist.length === 0 ||
+    input.toolAllowlist.includes("github.pr.feedback");
 
   const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
     config,
@@ -161,7 +166,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   agent.subscribe((event) => {
     if (event.type === "tool_execution_start") {
       toolExecutions += 1;
-      if (summaryState.posted) {
+      if (summaryState.posted && event.toolName !== "terminate") {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
       }
       if (event.toolName === "read" && event.args?.path) {
@@ -188,6 +193,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
       if (event.toolName === "terminate") {
+        summaryState.terminatedByTool = true;
         agent.abort();
       }
     }
@@ -276,9 +282,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log("prompt done");
   } catch (error) {
     if (isCancellationError(error)) {
-      summaryState.abortedByCancellation = true;
-      log("run canceled; skipping summary");
-      return;
+      if (!summaryState.terminatedByTool) {
+        summaryState.abortedByCancellation = true;
+        log("run canceled; skipping summary");
+        return;
+      }
+      log("run terminated by tool; finishing gracefully");
     }
     if (summaryState.abortedByLimit) {
       abortedByLimit = true;
@@ -287,16 +296,18 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         error instanceof RateLimitError
           ? "GitHub API rate limit exceeded."
           : "LLM request failed after retries.";
-      await postFailureSummary({
-        octokit,
-        owner: context.owner,
-        repo: context.repo,
-        prNumber: context.prNumber,
-        reason,
-        model: config.modelId,
-        billing: summaryState.billing,
-        reviewSha: input.prInfo.headSha,
-      });
+      if (feedbackAllowed) {
+        await postFailureSummary({
+          octokit,
+          owner: context.owner,
+          repo: context.repo,
+          prNumber: context.prNumber,
+          reason,
+          model: config.modelId,
+          billing: summaryState.billing,
+          reviewSha: input.prInfo.headSha,
+        });
+      }
       throw error;
     }
   }
@@ -305,13 +316,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log(`agent error: ${agent.state.error}`);
   }
 
-  if (isCancellationError(agent.state.error)) {
+  if (isCancellationError(agent.state.error) && !summaryState.terminatedByTool) {
     summaryState.abortedByCancellation = true;
     log("run canceled; skipping summary");
     return;
   }
 
-  if (!summaryState.posted && agent.state.error) {
+  if (!summaryState.posted && agent.state.error && feedbackAllowed) {
     const reason = deriveErrorReason(agent.state.error);
     await postFailureSummary({
       octokit,
@@ -330,7 +341,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     return;
   }
 
-  if (!summaryState.posted) {
+  if (!summaryState.posted && feedbackAllowed) {
     const verdict = "Skipped";
     const reason = summaryState.abortedByLimit || abortedByLimit
       ? "Agent exceeded iteration limit before posting summary."

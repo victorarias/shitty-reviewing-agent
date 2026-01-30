@@ -185,3 +185,32 @@ test("runReview subagent uses allowlisted tools only", async () => {
   expect(subagentTools).not.toContain("get_pr_info");
   expect(subagentTools).not.toContain("comment");
 });
+
+test("runReview skips fallback summary when feedback tools are disallowed", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+
+  const agentFactory = () => ({
+    state: { error: null, messages: [] },
+    subscribe() {},
+    async prompt() {},
+    abort() {},
+  });
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(calls.some((call) => call.type === "issue_comment")).toBe(false);
+});
