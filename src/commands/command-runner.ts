@@ -23,6 +23,7 @@ import { createGitHistoryTools } from "../tools/git-history.js";
 import { createRepoWriteTools } from "../tools/repo-write.js";
 import { createSchedulePrTools } from "../tools/schedule-pr.js";
 import { createSubagentTool } from "../tools/subagent.js";
+import { createTerminateTool } from "../tools/terminate.js";
 import { createAgentWithCompaction, AgentSetupOverrides } from "../agent/agent-setup.js";
 import { buildScheduleBranchName } from "../app/schedule-utils.js";
 
@@ -239,6 +240,8 @@ function buildTools(
     baseTools.push(...createReadOnlyTools(input.config.repoRoot));
   }
 
+  baseTools.push(createTerminateTool());
+
   if (allowedSet.has("git.history")) {
     baseTools.push(
       ...createGitHistoryTools(input.config.repoRoot, {
@@ -358,9 +361,10 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
   const constraintLines = [
     "- Use only the tools provided.",
     hasTool("post_summary")
-      ? "- If you can post a summary (post_summary tool), call it exactly once as your final action."
+      ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
-    "- If no summary tool is available, complete the task and stop when finished.",
+    hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
+    "- If terminate is unavailable, complete the task and stop when finished.",
     hasTool("subagent")
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
       : null,

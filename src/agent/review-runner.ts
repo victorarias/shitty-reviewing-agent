@@ -161,7 +161,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   agent.subscribe((event) => {
     if (event.type === "tool_execution_start") {
       toolExecutions += 1;
-      if (summaryState.posted) {
+      if (summaryState.posted && event.toolName !== "terminate") {
         console.warn(`[warn] tool called after summary: ${event.toolName}`);
       }
       if (event.toolName === "read" && event.args?.path) {
