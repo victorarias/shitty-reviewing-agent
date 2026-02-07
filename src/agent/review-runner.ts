@@ -19,6 +19,7 @@ export interface ReviewRunInput {
   octokit: ReturnType<typeof import("@actions/github").getOctokit>;
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  fullPrChangedFiles?: ChangedFile[];
   existingComments: ExistingComment[];
   reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
@@ -238,6 +239,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   });
 
   const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
+  const explainerFiles = filterIgnoredFiles(input.fullPrChangedFiles ?? input.changedFiles, config.ignorePatterns);
   log(`filtered files: ${filteredFiles.length}`);
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
@@ -290,7 +292,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         pullNumber: context.prNumber,
         headSha: input.prInfo.headSha,
         prInfo: input.prInfo,
-        changedFiles: filteredFiles,
+        changedFiles: explainerFiles,
         existingComments: input.existingComments,
         sequenceDiagram,
         effectiveThinkingLevel,
