@@ -391,6 +391,21 @@ async function upsertFileGuideComment(
   );
   if (existing) {
     if (existing.type === "review") {
+      if (typeof existing.line === "number") {
+        const migrated = await tryCreateFileLevelReviewComment(params, file, body);
+        if (migrated) {
+          try {
+            await params.octokit.rest.pulls.deleteReviewComment({
+              owner: params.owner,
+              repo: params.repo,
+              comment_id: existing.id,
+            });
+          } catch (error) {
+            params.log(`pr explainer failed to delete legacy inline comment ${existing.id}`, error);
+          }
+          return;
+        }
+      }
       await params.octokit.rest.pulls.updateReviewComment({
         owner: params.owner,
         repo: params.repo,
@@ -405,6 +420,11 @@ async function upsertFileGuideComment(
         body: formatIssueFileBody(file.filename, body),
       });
     }
+    return;
+  }
+
+  const createdFileLevel = await tryCreateFileLevelReviewComment(params, file, body);
+  if (createdFileLevel) {
     return;
   }
 
@@ -441,6 +461,38 @@ async function upsertFileGuideComment(
       issue_number: params.pullNumber,
       body: formatIssueFileBody(file.filename, body),
     });
+  }
+}
+
+async function tryCreateFileLevelReviewComment(
+  params: {
+    octokit: Octokit;
+    owner: string;
+    repo: string;
+    pullNumber: number;
+    headSha: string;
+    log: (...args: unknown[]) => void;
+  },
+  file: ChangedFile,
+  body: string
+): Promise<boolean> {
+  try {
+    await params.octokit.rest.pulls.createReviewComment({
+      owner: params.owner,
+      repo: params.repo,
+      pull_number: params.pullNumber,
+      commit_id: params.headSha,
+      path: file.filename,
+      body,
+      subject_type: "file",
+    });
+    return true;
+  } catch (error) {
+    if (!isRecoverableFileLevelCommentError(error)) {
+      throw error;
+    }
+    params.log(`pr explainer fallback from file-level comment for ${file.filename}`);
+    return false;
   }
 }
 
@@ -524,4 +576,22 @@ function isLikelyInlineAnchorError(error: any): boolean {
   if (status === 400 || status === 404 || status === 422) return true;
   const message = String(error?.message ?? "");
   return /line|side|diff|position|not part of the diff|unprocessable|validation/i.test(message);
+}
+
+function isRecoverableFileLevelCommentError(error: any): boolean {
+  const status = error?.status ?? error?.response?.status;
+  if (status !== 400 && status !== 404 && status !== 422) return false;
+
+  const errors = error?.response?.data?.errors;
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      const field = String(entry?.field ?? "");
+      if (field === "line" || field === "subject_type" || field === "position") {
+        return true;
+      }
+    }
+  }
+
+  const message = String(error?.message ?? error?.response?.data?.message ?? "");
+  return /line|required|subject_type|position|validation|unprocessable|diff/i.test(message);
 }
