@@ -64,6 +64,7 @@ export async function runActionFlow(params: {
   }
 
   const filtered = applyIgnorePatterns(scopedResult.files, reviewConfig.ignorePatterns);
+  const filteredFullPrFiles = applyIgnorePatterns(changedFiles, reviewConfig.ignorePatterns);
   if (filtered.length > reviewConfig.maxFiles) {
     await postSkipSummaryImpl(octokit, context, reviewConfig.modelId, filtered.length, reviewConfig.maxFiles);
     return;
@@ -75,6 +76,7 @@ export async function runActionFlow(params: {
     octokit,
     prInfo,
     changedFiles: filtered,
+    fullPrChangedFiles: filteredFullPrFiles,
     existingComments,
     reviewThreads,
     lastReviewedSha,

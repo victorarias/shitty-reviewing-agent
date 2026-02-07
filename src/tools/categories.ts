@@ -7,6 +7,7 @@ export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
   grep: "filesystem",
   find: "filesystem",
   ls: "filesystem",
+  validate_mermaid: "filesystem",
   get_pr_info: "github.pr.read",
   get_review_context: "github.pr.read",
   get_changed_files: "git.read",

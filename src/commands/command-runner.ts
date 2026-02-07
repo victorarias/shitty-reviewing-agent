@@ -363,6 +363,9 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
     hasTool("post_summary")
       ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
+    hasTool("post_summary")
+      ? "- For post_summary body, write only summary sections. Do not include footer lines (Reviewed by/model/billing) or sri markers; tooling appends them."
+      : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     hasTool("subagent")
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."
@@ -371,6 +374,9 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? input.mode === "schedule"
         ? "- Git tool schema: git({ args: string[] }) where args[0] is a supported subcommand. Write subcommands are allowed with strict rules: git add requires explicit file paths (no -A/--all/-u, no globs, no '.'); git commit requires -m/--message (no -a/--all/--amend); git checkout only allows -b/-B <branch>; git switch only allows -c/--create <branch>; git config only allows user.name/user.email. Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
         : "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
+      : null,
+    hasTool("validate_mermaid")
+      ? "- Mermaid validation tool schema: validate_mermaid({ diagram: string }). Use it to verify Mermaid syntax before posting diagrams."
       : null,
   ]
     .filter(Boolean)

@@ -15,7 +15,8 @@
       "properties": {
         "defaults": { "$ref": "#/$defs/reviewDefaults" },
         "run": { "$ref": "#/$defs/stringList" },
-        "allowPrToolsInReview": { "type": "boolean" }
+        "allowPrToolsInReview": { "type": "boolean" },
+        "experimental": { "$ref": "#/$defs/reviewExperimental" }
       }
     },
     "commands": {
@@ -158,6 +159,13 @@
         "model": { "type": "string", "minLength": 1 },
         "reasoning": { "$ref": "#/$defs/reasoning" },
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+      }
+    },
+    "reviewExperimental": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prExplainer": { "type": "boolean" }
       }
     },
     "commandDefinition": {

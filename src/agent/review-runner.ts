@@ -8,6 +8,8 @@ import { createAgentWithCompaction } from "./agent-setup.js";
 import { countDistinctDirectories, filterDiagramFiles, filterIgnoredFiles } from "./file-filters.js";
 import { maybeGenerateSequenceDiagram } from "./diagram.js";
 import { isGemini3 } from "./model.js";
+import { maybePostPrExplainer } from "./pr-explainer.js";
+import type { PrExplainerGenerateFn } from "./pr-explainer.js";
 import { withRetries } from "./retries.js";
 import { deriveErrorReason, postFailureSummary, postFallbackSummary } from "./summary.js";
 
@@ -17,6 +19,7 @@ export interface ReviewRunInput {
   octokit: ReturnType<typeof import("@actions/github").getOctokit>;
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  fullPrChangedFiles?: ChangedFile[];
   existingComments: ExistingComment[];
   reviewThreads: ReviewThreadInfo[];
   lastReviewedSha?: string | null;
@@ -42,6 +45,7 @@ export interface ReviewRunInput {
     streamFn?: typeof streamSimple;
     model?: ReturnType<typeof getModel>;
     compactionModel?: ReturnType<typeof getModel> | null;
+    prExplainerGenerateFn?: PrExplainerGenerateFn;
   };
 }
 
@@ -51,6 +55,16 @@ type AgentLike = {
   prompt: (input: any) => Promise<void>;
   abort: () => void;
 };
+
+export function shouldGenerateLegacySequenceDiagram(config: ReviewConfig, directoryCount: number): boolean {
+  if (config.experimentalPrExplainer) return false;
+  return directoryCount > 3;
+}
+
+export function shouldRequireExplainerDiagrams(config: ReviewConfig, directoryCount: number): boolean {
+  if (!config.experimentalPrExplainer) return false;
+  return directoryCount > 3;
+}
 
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
@@ -230,11 +244,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   });
 
   const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
+  const explainerFiles = filterIgnoredFiles(input.fullPrChangedFiles ?? input.changedFiles, config.ignorePatterns);
   log(`filtered files: ${filteredFiles.length}`);
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
+  const requireExplainerDiagrams = shouldRequireExplainerDiagrams(config, directoryCount);
   const sequenceDiagram = await maybeGenerateSequenceDiagram({
-    enabled: directoryCount > 3,
+    enabled: shouldGenerateLegacySequenceDiagram(config, directoryCount),
     model,
     tools: [...readTools, ...githubTools],
     config,
@@ -268,6 +284,42 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     previousReviewBody: input.previousReviewBody ?? null,
     sequenceDiagram,
   });
+
+  if (config.experimentalPrExplainer && feedbackAllowed) {
+    try {
+      await maybePostPrExplainer({
+        enabled: true,
+        model,
+        tools: [...readTools, ...githubTools],
+        config,
+        octokit,
+        owner: context.owner,
+        repo: context.repo,
+        pullNumber: context.prNumber,
+        headSha: input.prInfo.headSha,
+        prInfo: input.prInfo,
+        changedFiles: explainerFiles,
+        existingComments: input.existingComments,
+        sequenceDiagram,
+        effectiveThinkingLevel,
+        effectiveTemperature,
+        log,
+        requireDiagrams: requireExplainerDiagrams,
+        onBilling: (usage: Usage) => {
+          const cost = calculateCost(model, usage);
+          summaryState.billing.input += usage.input;
+          summaryState.billing.output += usage.output;
+          summaryState.billing.total += usage.totalTokens;
+          summaryState.billing.cost += cost.total;
+        },
+        generateFn: input.overrides?.prExplainerGenerateFn,
+      });
+    } catch (error) {
+      log("pr explainer failed", error);
+    }
+  } else if (config.experimentalPrExplainer && !feedbackAllowed) {
+    log("experimental PR explainer skipped because github.pr.feedback tools are not allowlisted");
+  }
 
   let abortedByLimit = false;
   try {

@@ -203,7 +203,32 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  return [readTool, grepTool, findTool, lsTool];
+  const validateMermaidTool: AgentTool<typeof ValidateMermaidSchema, {
+    valid: boolean;
+    diagramType: string | null;
+    errors: string[];
+    warnings: string[];
+  }> = {
+    name: "validate_mermaid",
+    label: "Validate Mermaid diagram",
+    description: "Validate Mermaid syntax using Mermaid's parser plus lightweight structural checks.",
+    parameters: ValidateMermaidSchema,
+    execute: async (_id, params) => {
+      const result = await validateMermaidDiagram(params.diagram);
+      const summary = [
+        `valid: ${result.valid}`,
+        `diagram_type: ${result.diagramType ?? "unknown"}`,
+        result.errors.length > 0 ? `errors:\n${result.errors.map((error) => `- ${error}`).join("\n")}` : "errors:\n- none",
+        result.warnings.length > 0 ? `warnings:\n${result.warnings.map((warning) => `- ${warning}`).join("\n")}` : "warnings:\n- none",
+      ].join("\n");
+      return {
+        content: [{ type: "text", text: summary }],
+        details: result,
+      };
+    },
+  };
+
+  return [readTool, grepTool, findTool, lsTool, validateMermaidTool];
 }
 
 const ReadSchema = Type.Object({
@@ -229,6 +254,10 @@ const GrepSchema = Type.Object({
   globs: Type.Optional(Type.String({ description: "Comma-separated glob patterns" })),
   paths: Type.Optional(Type.String({ description: "Comma-separated file paths" })),
   max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+});
+
+const ValidateMermaidSchema = Type.Object({
+  diagram: Type.String({ description: "Mermaid diagram source (raw or fenced)." }),
 });
 
 interface GrepMatch {
@@ -294,4 +323,121 @@ function formatLsTime(isoTime: string): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+export async function validateMermaidDiagram(diagram: string): Promise<{
+  valid: boolean;
+  diagramType: string | null;
+  errors: string[];
+  warnings: string[];
+}> {
+  const normalized = extractMermaidSource(diagram);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!normalized) {
+    return {
+      valid: false,
+      diagramType: null,
+      errors: ["Diagram is empty."],
+      warnings,
+    };
+  }
+
+  const lines = normalized.split(/\r?\n/);
+  const firstLine = lines.find((line) => line.trim().length > 0)?.trim() ?? "";
+  let diagramType = detectMermaidType(firstLine);
+  try {
+    const mermaid = await import("mermaid");
+    const parseResult = await mermaid.default.parse(normalized, { suppressErrors: false });
+    diagramType = parseResult?.diagramType ?? diagramType;
+  } catch (error: any) {
+    errors.push(formatMermaidParseError(error));
+  }
+
+  if (/\t/.test(normalized)) {
+    warnings.push("Diagram contains tab characters; Mermaid is usually safer with spaces.");
+  }
+
+  errors.push(...checkBalancedPairs(normalized, "(", ")", "parentheses"));
+  errors.push(...checkBalancedPairs(normalized, "[", "]", "square brackets"));
+  errors.push(...checkBalancedPairs(normalized, "{", "}", "curly braces"));
+
+  if (diagramType === "sequenceDiagram" && !/(->>|-->>|->|-->|<--|<<--|x->|->x)/.test(normalized)) {
+    warnings.push("Sequence diagram has no obvious message arrows.");
+  }
+
+  if (lines.length < 2) {
+    warnings.push("Diagram has very few lines; verify it includes intended relationships.");
+  }
+
+  return {
+    valid: errors.length === 0,
+    diagramType,
+    errors,
+    warnings,
+  };
+}
+
+function extractMermaidSource(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  const fencedMermaid = trimmed.match(/```mermaid\s*([\s\S]*?)```/i);
+  if (fencedMermaid?.[1]) return fencedMermaid[1].trim();
+  const fenced = trimmed.match(/```\s*([\s\S]*?)```/);
+  if (fenced?.[1]) return fenced[1].trim();
+  return trimmed;
+}
+
+function detectMermaidType(firstLine: string): string | null {
+  const line = firstLine.trim();
+  const known: Array<{ type: string; pattern: RegExp }> = [
+    { type: "sequenceDiagram", pattern: /^sequenceDiagram\b/i },
+    { type: "flowchart", pattern: /^flowchart\b/i },
+    { type: "graph", pattern: /^graph\b/i },
+    { type: "classDiagram", pattern: /^classDiagram\b/i },
+    { type: "stateDiagram-v2", pattern: /^stateDiagram-v2\b/i },
+    { type: "stateDiagram", pattern: /^stateDiagram\b/i },
+    { type: "erDiagram", pattern: /^erDiagram\b/i },
+    { type: "journey", pattern: /^journey\b/i },
+    { type: "gantt", pattern: /^gantt\b/i },
+    { type: "pie", pattern: /^pie\b/i },
+    { type: "mindmap", pattern: /^mindmap\b/i },
+    { type: "timeline", pattern: /^timeline\b/i },
+    { type: "gitGraph", pattern: /^gitGraph\b/i },
+    { type: "requirementDiagram", pattern: /^requirementDiagram\b/i },
+    { type: "quadrantChart", pattern: /^quadrantChart\b/i },
+    { type: "xychart-beta", pattern: /^xychart-beta\b/i },
+    { type: "block-beta", pattern: /^block-beta\b/i },
+    { type: "sankey-beta", pattern: /^sankey-beta\b/i },
+    { type: "packet-beta", pattern: /^packet-beta\b/i },
+    { type: "C4Context", pattern: /^C4Context\b/i },
+    { type: "C4Container", pattern: /^C4Container\b/i },
+    { type: "C4Component", pattern: /^C4Component\b/i },
+    { type: "C4Dynamic", pattern: /^C4Dynamic\b/i },
+    { type: "C4Deployment", pattern: /^C4Deployment\b/i },
+  ];
+  for (const candidate of known) {
+    if (candidate.pattern.test(line)) return candidate.type;
+  }
+  return null;
+}
+
+function checkBalancedPairs(input: string, openChar: string, closeChar: string, label: string): string[] {
+  let depth = 0;
+  for (const char of input) {
+    if (char === openChar) depth += 1;
+    if (char === closeChar) depth -= 1;
+    if (depth < 0) {
+      return [`Unbalanced ${label}: found '${closeChar}' before matching '${openChar}'.`];
+    }
+  }
+  if (depth !== 0) {
+    return [`Unbalanced ${label}: missing '${closeChar}'.`];
+  }
+  return [];
+}
+
+function formatMermaidParseError(error: any): string {
+  const message = String(error?.message ?? error ?? "").trim();
+  return message || "Mermaid parser rejected the diagram.";
 }

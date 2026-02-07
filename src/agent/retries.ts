@@ -1,9 +1,16 @@
 import { computeRetryDelayMs, extractRetryAfterMs, isQuotaError } from "../retry.js";
 
+interface RetryRuntime {
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  env?: Record<string, string | undefined>;
+}
+
 export async function withRetries(
   fn: () => Promise<void>,
   attempts: number,
-  shouldRetry: (error: unknown) => boolean
+  shouldRetry: (error: unknown) => boolean,
+  runtime?: RetryRuntime
 ): Promise<void> {
   const standardRetry = {
     baseDelayMs: 1000,
@@ -17,14 +24,19 @@ export async function withRetries(
     minDelayMs: 30000,
     jitterRatio: 0.2,
   };
+  const env = runtime?.env ?? process.env;
+  const now = runtime?.now ?? (() => Date.now());
+  const sleep = runtime?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const configuredRateLimitMaxElapsedMs = parsePositiveInteger(env.LLM_RATE_LIMIT_MAX_WAIT_MS);
+  const configuredRateLimitAttempts = parsePositiveInteger(env.LLM_RATE_LIMIT_MAX_ATTEMPTS);
   const standardMaxElapsedMs = 60_000;
-  const rateLimitMaxElapsedMs = 15 * 60_000;
-  const rateLimitAttempts = Math.max(attempts, 6);
+  const rateLimitMaxElapsedMs = configuredRateLimitMaxElapsedMs ?? 60 * 60_000;
+  const rateLimitAttempts = Math.max(attempts, configuredRateLimitAttempts ?? 12);
 
   let lastError: unknown;
   let attempt = 0;
   let maxAttempts = attempts;
-  const startMs = Date.now();
+  const startMs = now();
 
   while (attempt < maxAttempts) {
     try {
@@ -53,14 +65,21 @@ export async function withRetries(
         retryAfterMs,
       });
       const maxElapsedMs = quotaError ? rateLimitMaxElapsedMs : standardMaxElapsedMs;
-      const elapsed = Date.now() - startMs;
+      const elapsed = now() - startMs;
       if (elapsed + waitMs > maxElapsedMs) {
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await sleep(waitMs);
       attempt += 1;
     }
   }
 
   throw lastError;
+}
+
+function parsePositiveInteger(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
 }

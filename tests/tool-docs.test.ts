@@ -40,6 +40,9 @@ test("system prompts only mention available tools", async () => {
   expect(buildSystemPrompt([])).not.toContain("Git tool schema:");
   expect(buildSystemPrompt(["post_summary"])).toContain("post_summary");
   expect(buildSystemPrompt([])).not.toContain("post_summary");
+  expect(buildSystemPrompt([])).toContain("Never post a suggestion block that keeps code unchanged");
+  expect(buildSystemPrompt([])).toContain("No jokes, metaphors, mascots, or unrelated flavor text");
+  expect(buildSystemPrompt([])).not.toContain("farm-animal reference");
 
   const baseConfig: ReviewConfig = {
     provider: "google",

@@ -49,3 +49,48 @@ jobs:
         run: bun test
       - name: Typecheck
         run: bun run build
+
+  reviewer-latest:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+    needs: [test, harness]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    continue-on-error: true
+    env:
+      VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v1
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
+        with:
+          bun-version: "1.3.6"
+      - name: Skip reviewer when VERTEX_AI_API_KEY is missing
+        if: ${{ env.VERTEX_AI_API_KEY == '' }}
+        run: echo "Skipping reviewer-latest (VERTEX_AI_API_KEY not configured)."
+      - name: Install dependencies (apply local patches)
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
+        run: bun install --frozen-lockfile
+      - name: Verify pi-ai patch is active
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
+        run: grep -n "VERTEX_AI_API_KEY" node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+      - name: Run reviewer from source (patched dependencies)
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          env \
+            GITHUB_TOKEN="${GITHUB_TOKEN}" \
+            INPUT_PROVIDER=google-vertex \
+            INPUT_MODEL=gemini-3-flash-preview \
+            INPUT_REASONING=minimal \
+            INPUT_DEBUG=true \
+            INPUT_EXPERIMENTAL-PR-EXPLAINER=true \
+            LLM_RATE_LIMIT_MAX_WAIT_MS=3600000 \
+            LLM_RATE_LIMIT_MAX_ATTEMPTS=20 \
+            "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
+            bun src/index.ts

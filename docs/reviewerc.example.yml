@@ -31,6 +31,10 @@ review:
     reasoning: medium
     temperature: 0.4
   run: [security]
+  experimental:
+    # Experimental PR explainer: one top-level review guide + one explainer comment per file.
+    # Equivalent action input: experimental-pr-explainer: true
+    prExplainer: true
 
 schedule:
   enabled: true

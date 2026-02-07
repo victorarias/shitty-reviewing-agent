@@ -32,6 +32,7 @@ export interface ReviewConfig {
   reasoning: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   temperature?: number;
   allowPrToolsInReview?: boolean;
+  experimentalPrExplainer?: boolean;
 }
 
 export type ToolCategory =
@@ -103,6 +104,9 @@ export interface ReviewercConfig {
     defaults?: ReviewDefaults;
     run?: string[];
     allowPrToolsInReview?: boolean;
+    experimental?: {
+      prExplainer?: boolean;
+    };
   };
   commands?: CommandDefinition[];
   schedule?: ScheduleConfig;

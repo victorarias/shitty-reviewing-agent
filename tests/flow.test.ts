@@ -101,4 +101,5 @@ test("runActionFlow passes scope warning and previous summary into runReview", a
   expect(captured.scopeWarning).toBe("Scoped warning");
   expect(captured.previousVerdict).toBe("Approve");
   expect(captured.changedFiles).toEqual(scopedFiles);
+  expect(captured.fullPrChangedFiles).toEqual(files);
 });
