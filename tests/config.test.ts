@@ -97,6 +97,48 @@ test("readConfig enables PR tools when allow-pr-tools input is true", () => {
   expect(config.review.allowPrToolsInReview).toBe(true);
 });
 
+test("readConfig enables experimental PR explainer when input is true", () => {
+  const repoRoot = makeTempRepo();
+  const config = withEnv(
+    {
+      GITHUB_WORKSPACE: repoRoot,
+      "INPUT_PROVIDER": "google",
+      "INPUT_MODEL": "gemini-3-pro-preview",
+      "INPUT_API-KEY": "test",
+      "INPUT_EXPERIMENTAL-PR-EXPLAINER": "true",
+    },
+    () => readConfig()
+  );
+
+  expect(config.review.experimentalPrExplainer).toBe(true);
+});
+
+test("readConfig enables experimental PR explainer from .reviewerc", () => {
+  const repoRoot = makeTempRepo();
+  fs.writeFileSync(
+    path.join(repoRoot, ".reviewerc"),
+    [
+      "version: 1",
+      "review:",
+      "  experimental:",
+      "    prExplainer: true",
+    ].join("\n"),
+    "utf8"
+  );
+
+  const config = withEnv(
+    {
+      GITHUB_WORKSPACE: repoRoot,
+      "INPUT_PROVIDER": "google",
+      "INPUT_MODEL": "gemini-3-pro-preview",
+      "INPUT_API-KEY": "test",
+    },
+    () => readConfig()
+  );
+
+  expect(config.review.experimentalPrExplainer).toBe(true);
+});
+
 test("readConfig rejects invalid YAML", () => {
   const repoRoot = makeTempRepo();
   fs.writeFileSync(path.join(repoRoot, ".reviewerc"), "version: [", "utf8");

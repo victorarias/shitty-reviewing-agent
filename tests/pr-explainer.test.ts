@@ -1,0 +1,216 @@
+import { expect, test } from "bun:test";
+import { buildFileGuideMarker, findPreferredInlineAnchor, maybePostPrExplainer, REVIEW_GUIDE_MARKER } from "../src/agent/pr-explainer.ts";
+import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig } from "../src/types.ts";
+
+function makeOctokitSpy() {
+  const calls: Array<{ type: string; args: any }> = [];
+  const octokit = {
+    rest: {
+      issues: {
+        createComment: async (args: any) => {
+          calls.push({ type: "issue_create", args });
+          return { data: { id: 1 } };
+        },
+        updateComment: async (args: any) => {
+          calls.push({ type: "issue_update", args });
+          return { data: { id: args.comment_id } };
+        },
+      },
+      pulls: {
+        createReviewComment: async (args: any) => {
+          calls.push({ type: "review_create", args });
+          return { data: { id: 2 } };
+        },
+        updateReviewComment: async (args: any) => {
+          calls.push({ type: "review_update", args });
+          return { data: { id: args.comment_id } };
+        },
+      },
+    },
+  };
+  return { octokit, calls };
+}
+
+const baseConfig: ReviewConfig = {
+  provider: "google",
+  apiKey: "test",
+  modelId: "model",
+  maxFiles: 50,
+  ignorePatterns: [],
+  repoRoot: process.cwd(),
+  debug: false,
+  reasoning: "off",
+  experimentalPrExplainer: true,
+};
+
+const basePrInfo: PullRequestInfo = {
+  number: 7,
+  title: "Improve reviewer outputs",
+  body: "Adds richer review assistance.",
+  author: "victor",
+  baseRef: "main",
+  headRef: "feature",
+  baseSha: "base",
+  headSha: "head",
+  url: "https://example.com/pr/7",
+};
+
+test("maybePostPrExplainer posts guide and inline file comment", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "## Review Guide\nFocus on state and side effects.",
+      fileComments: [
+        {
+          path: "src/index.ts",
+          body: "### What this file does\n- Entry point.\n\n### What changed\n- Adds branch logic.\n\n### Why this changed\n- Needed for new flow.\n\n### Review checklist (high-risk focus)\n- [ ] Validate happy path.",
+        },
+      ],
+    }),
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_MARKER);
+  expect(calls[1].type).toBe("review_create");
+  expect(calls[1].args.path).toBe("src/index.ts");
+  expect(calls[1].args.side).toBe("RIGHT");
+  expect(calls[1].args.body).toContain(buildFileGuideMarker("src/index.ts"));
+});
+
+test("maybePostPrExplainer falls back to issue comment when file has no inline anchor", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "assets/logo.png",
+      status: "modified",
+      additions: 0,
+      deletions: 0,
+      changes: 0,
+      patch: undefined,
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "Guide",
+      fileComments: [{ path: "assets/logo.png", body: "### What this file does\n- Binary asset." }],
+    }),
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[1].type).toBe("issue_create");
+  expect(calls[1].args.body).toContain("### File guide: `assets/logo.png`");
+});
+
+test("maybePostPrExplainer updates existing guide and file comments when markers are present", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 1,
+      changes: 3,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+  const existingComments: ExistingComment[] = [
+    {
+      id: 11,
+      author: "bot[bot]",
+      authorType: "Bot",
+      body: `Old guide\n\n${REVIEW_GUIDE_MARKER}\n\n<!-- sri:bot-comment -->`,
+      url: "https://example.com/11",
+      type: "issue",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      id: 22,
+      author: "bot[bot]",
+      authorType: "Bot",
+      body: `Old file\n\n${buildFileGuideMarker("src/index.ts")}\n\n<!-- sri:bot-comment -->`,
+      url: "https://example.com/22",
+      type: "review",
+      path: "src/index.ts",
+      line: 2,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments,
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "Updated guide",
+      fileComments: [{ path: "src/index.ts", body: "Updated file guide" }],
+    }),
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("issue_update");
+  expect(calls[0].args.comment_id).toBe(11);
+  expect(calls[1].type).toBe("review_update");
+  expect(calls[1].args.comment_id).toBe(22);
+});
+
+test("findPreferredInlineAnchor prefers added RIGHT lines, then context, then deleted LEFT", () => {
+  expect(findPreferredInlineAnchor("@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n")).toEqual({ line: 2, side: "RIGHT" });
+  expect(findPreferredInlineAnchor("@@ -3,2 +3,0 @@\n-const a = 1;\n-const b = 2;\n")).toEqual({ line: 3, side: "LEFT" });
+});

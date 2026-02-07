@@ -32,6 +32,9 @@ inputs:
   allow-pr-tools:
     description: "Allow PR-creation tools in PR review mode (default false; always allowed in schedule mode)."
     required: false
+  experimental-pr-explainer:
+    description: "Experimental: post a PR review guide comment and one explainer comment per changed file."
+    required: false
   bot-name:
     description: "Bot/app mention name for @bot command triggers (e.g., my-app)."
     required: false

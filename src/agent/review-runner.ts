@@ -8,6 +8,8 @@ import { createAgentWithCompaction } from "./agent-setup.js";
 import { countDistinctDirectories, filterDiagramFiles, filterIgnoredFiles } from "./file-filters.js";
 import { maybeGenerateSequenceDiagram } from "./diagram.js";
 import { isGemini3 } from "./model.js";
+import { maybePostPrExplainer } from "./pr-explainer.js";
+import type { PrExplainerGenerateFn } from "./pr-explainer.js";
 import { withRetries } from "./retries.js";
 import { deriveErrorReason, postFailureSummary, postFallbackSummary } from "./summary.js";
 
@@ -42,6 +44,7 @@ export interface ReviewRunInput {
     streamFn?: typeof streamSimple;
     model?: ReturnType<typeof getModel>;
     compactionModel?: ReturnType<typeof getModel> | null;
+    prExplainerGenerateFn?: PrExplainerGenerateFn;
   };
 }
 
@@ -268,6 +271,39 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     previousReviewBody: input.previousReviewBody ?? null,
     sequenceDiagram,
   });
+
+  if (config.experimentalPrExplainer) {
+    try {
+      await maybePostPrExplainer({
+        enabled: true,
+        model,
+        tools: [...readTools, ...githubTools],
+        config,
+        octokit,
+        owner: context.owner,
+        repo: context.repo,
+        pullNumber: context.prNumber,
+        headSha: input.prInfo.headSha,
+        prInfo: input.prInfo,
+        changedFiles: filteredFiles,
+        existingComments: input.existingComments,
+        sequenceDiagram,
+        effectiveThinkingLevel,
+        effectiveTemperature,
+        log,
+        onBilling: (usage: Usage) => {
+          const cost = calculateCost(model, usage);
+          summaryState.billing.input += usage.input;
+          summaryState.billing.output += usage.output;
+          summaryState.billing.total += usage.totalTokens;
+          summaryState.billing.cost += cost.total;
+        },
+        generateFn: input.overrides?.prExplainerGenerateFn,
+      });
+    } catch (error) {
+      log("pr explainer failed", error);
+    }
+  }
 
   let abortedByLimit = false;
   try {

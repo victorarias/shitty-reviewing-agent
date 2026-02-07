@@ -45,6 +45,7 @@ export function readConfig(): ActionConfig {
   const temperatureInput = getOptionalInput("temperature");
   const botNameInput = getOptionalInput("bot-name");
   const allowPrToolsInput = getOptionalInput("allow-pr-tools");
+  const experimentalPrExplainerInput = getOptionalInput("experimental-pr-explainer");
 
   const providerRaw = providerInput ?? reviewDefaults.provider ?? "";
   if (!providerRaw) {
@@ -83,6 +84,10 @@ export function readConfig(): ActionConfig {
     allowPrToolsInput !== undefined
       ? allowPrToolsInput.toLowerCase() === "true"
       : reviewerc?.review?.allowPrToolsInReview ?? false;
+  const experimentalPrExplainer =
+    experimentalPrExplainerInput !== undefined
+      ? experimentalPrExplainerInput.toLowerCase() === "true"
+      : reviewerc?.review?.experimental?.prExplainer ?? false;
 
   if (!apiKeyInput && provider !== "google-vertex") {
     throw new Error("api-key is required for non-Vertex providers. For Vertex AI, api-key is optional (ADC or key).");
@@ -100,6 +105,7 @@ export function readConfig(): ActionConfig {
     reasoning,
     temperature,
     allowPrToolsInReview: allowPrTools,
+    experimentalPrExplainer,
   };
 
   return {
