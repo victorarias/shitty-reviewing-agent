@@ -306,18 +306,46 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
 
   const updateTool: AgentTool<typeof UpdateSchema, { id: number }> = {
     name: "update_comment",
-    label: "Update review comment",
-    description: "Update an existing review comment in place.",
+    label: "Update PR comment",
+    description: "Update an existing PR comment (review or issue comment).",
     parameters: UpdateSchema,
     execute: async (_id, params) => {
-      const response = await safeCall(() =>
-        deps.octokit.rest.pulls.updateReviewComment({
-          owner: deps.owner,
-          repo: deps.repo,
-          comment_id: params.comment_id,
-          body: ensureBotMarker(params.body),
-        })
-      );
+      const existing = commentById.get(params.comment_id);
+      const body = ensureBotMarker(params.body);
+      const updateByType = async (type: "review" | "issue") => {
+        if (type === "review") {
+          return safeCall(() =>
+            deps.octokit.rest.pulls.updateReviewComment({
+              owner: deps.owner,
+              repo: deps.repo,
+              comment_id: params.comment_id,
+              body,
+            })
+          );
+        }
+        return safeCall(() =>
+          deps.octokit.rest.issues.updateComment({
+            owner: deps.owner,
+            repo: deps.repo,
+            comment_id: params.comment_id,
+            body,
+          })
+        );
+      };
+      const preferredType = existing?.type === "issue" ? "issue" : "review";
+      const fallbackType = preferredType === "review" ? "issue" : "review";
+      try {
+        const response = await updateByType(preferredType);
+        return {
+          content: [{ type: "text", text: `Comment updated: ${response.data.id}` }],
+          details: { id: response.data.id },
+        };
+      } catch (error: any) {
+        if (!isLikelyWrongCommentType(error)) {
+          throw error;
+        }
+      }
+      const response = await updateByType(fallbackType);
       return {
         content: [{ type: "text", text: `Comment updated: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -809,5 +837,14 @@ function isIntegrationAccessError(error: any): boolean {
   if (Array.isArray(graphqlErrors)) {
     return graphqlErrors.some((item) => /resource not accessible by integration/i.test(String(item?.message ?? "")));
   }
+  return false;
+}
+
+function isLikelyWrongCommentType(error: any): boolean {
+  const status = error?.status;
+  if (status === 404 || status === 422) return true;
+  const message = String(error?.message ?? "");
+  if (/not found/i.test(message)) return true;
+  if (/unprocessable|validation/i.test(message)) return true;
   return false;
 }
