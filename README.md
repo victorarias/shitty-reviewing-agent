@@ -92,9 +92,13 @@ Behavior when enabled:
 - Posts one PR-level "Review Guide" issue comment.
 - Posts selective explainer comments for meaningful changed files (inline when possible, issue-comment fallback for non-commentable/binary/large diffs).
 - Disables the legacy auto-generated summary sequence diagram.
+- For larger PRs (>3 distinct non-test/non-generated directories), the review guide must include both:
+  - a Mermaid component relationship diagram
+  - a Mermaid sequence diagram
+- Required diagrams are validated with Mermaid's parser before posting.
 - Skips generated/noise artifact files (for example lock/log/minified/map/snapshot/coverage artifacts) from per-file explainer comments.
 - Allows partial explainer output; unknown file paths are ignored instead of failing the whole explainer run.
-- If explainer output is missing or not parseable JSON, posts an explicit failure signal comment.
+- If required diagrams are missing/invalid, or output is missing/not parseable JSON, posts an explicit failure signal comment.
 - Mermaid snippets can be checked with the `validate_mermaid` tool (parser-backed via Mermaid's parser).
 
 ### Add reviewer-latest to CI
@@ -245,6 +249,7 @@ jobs:
 - For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
 - When `experimental-pr-explainer` (or `review.experimental.prExplainer`) is enabled, the agent also posts:
   - one PR-level "Review Guide" comment
+  - for larger PRs (>3 distinct non-test/non-generated directories), the review guide includes both a Mermaid component relationship diagram and a Mermaid sequence diagram
   - selective explainer comments for meaningful changed files (inline when possible, issue-comment fallback for non-commentable/binary/large diffs)
   - the legacy auto-generated summary sequence diagram is disabled
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.

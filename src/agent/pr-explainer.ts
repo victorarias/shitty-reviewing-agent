@@ -4,6 +4,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
 import { isGeneratedPath } from "./file-filters.js";
+import { validateMermaidDiagram } from "../tools/fs.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig } from "../types.js";
 import type { ThinkingLevel } from "./model.js";
 
@@ -24,6 +25,7 @@ export type PrExplainerGenerateFn = (params: {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
   eligibleFiles: ChangedFile[];
+  requireDiagrams: boolean;
   sequenceDiagram?: string | null;
 }) => Promise<PrExplainerContent | null>;
 
@@ -46,6 +48,7 @@ export async function maybePostPrExplainer(params: {
   log: (...args: unknown[]) => void;
   onBilling?: (usage: Usage) => void;
   generateFn?: PrExplainerGenerateFn;
+  requireDiagrams?: boolean;
 }): Promise<void> {
   if (!params.enabled || params.changedFiles.length === 0) return;
   const { eligibleFiles, skippedFiles } = await selectEligibleFilesForExplainer(params.changedFiles, params.config.repoRoot);
@@ -61,6 +64,7 @@ export async function maybePostPrExplainer(params: {
       prInfo: params.prInfo,
       changedFiles: params.changedFiles,
       eligibleFiles,
+      requireDiagrams: Boolean(params.requireDiagrams),
       sequenceDiagram: params.sequenceDiagram,
     })
     : await generatePrExplainerContent({
@@ -86,6 +90,12 @@ export async function maybePostPrExplainer(params: {
     return;
   }
 
+  const diagramValidation = await validateReviewGuideDiagrams(normalized.reviewGuide, Boolean(params.requireDiagrams));
+  if (!diagramValidation.ok) {
+    await upsertExplainerFailureComment(params, diagramValidation.errors);
+    return;
+  }
+
   if (normalized.reviewGuide) {
     await upsertReviewGuideComment(params, normalized.reviewGuide);
   }
@@ -103,6 +113,7 @@ async function generatePrExplainerContent(params: {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
   eligibleFiles: ChangedFile[];
+  requireDiagrams?: boolean;
   sequenceDiagram?: string | null;
   effectiveThinkingLevel: ThinkingLevel;
   effectiveTemperature?: number;
@@ -111,7 +122,7 @@ async function generatePrExplainerContent(params: {
 }): Promise<PrExplainerContent | null> {
   const agent = new Agent({
     initialState: {
-      systemPrompt: buildPrExplainerSystemPrompt(),
+      systemPrompt: buildPrExplainerSystemPrompt(Boolean(params.requireDiagrams)),
       model: params.model,
       tools: params.tools,
       messages: [],
@@ -136,6 +147,7 @@ async function generatePrExplainerContent(params: {
         prInfo: params.prInfo,
         changedFiles: params.changedFiles,
         eligibleFiles: params.eligibleFiles,
+        requireDiagrams: Boolean(params.requireDiagrams),
         sequenceDiagram: params.sequenceDiagram,
       })
     );
@@ -149,7 +161,18 @@ async function generatePrExplainerContent(params: {
   }
 }
 
-function buildPrExplainerSystemPrompt(): string {
+function buildPrExplainerSystemPrompt(requireDiagrams: boolean): string {
+  const diagramsSection = requireDiagrams
+    ? `
+- The "reviewGuide" MUST include two Mermaid diagrams in fenced blocks:
+  1) A component relationship diagram (use flowchart/graph/class/C4 style).
+  2) A sequence diagram (must start with "sequenceDiagram").
+- Add headings exactly:
+  - "## Component relationship diagram"
+  - "## Sequence diagram"
+- Validate both diagrams with the validate_mermaid tool before final output.
+`
+    : "";
   return `# Role
 You write a PR review guide and per-file explainer comments.
 
@@ -166,6 +189,7 @@ You write a PR review guide and per-file explainer comments.
 - Only include fileComments for files from the "Eligible files for per-file comments" list.
 - Skip fileComments for trivial low-risk edits (small formatting/docs/meta churn) even when eligible.
 - Do not invent file paths.
+- Consider the PR description when explaining intent and rationale.
 - Each file comment must include these headings:
   - "What this file does"
   - "What changed"
@@ -176,13 +200,14 @@ You write a PR review guide and per-file explainer comments.
 - Do not use task-list checkboxes (\`- [ ]\` or \`- [x]\`) in explainer comments.
 - Never include "Low risk" content inside a "Review checklist (high-risk focus)" section.
 - For lower-risk files, keep the "Why this changed" section concise and explicitly mention why risk is low.
-- Keep content practical and brief; avoid repeating the same sentences across files.`;
+- Keep content practical and brief; avoid repeating the same sentences across files.${diagramsSection}`;
 }
 
 function buildPrExplainerUserPrompt(params: {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
   eligibleFiles: ChangedFile[];
+  requireDiagrams: boolean;
   sequenceDiagram?: string | null;
 }): string {
   const fileList = params.changedFiles
@@ -196,6 +221,12 @@ function buildPrExplainerUserPrompt(params: {
   const sequenceSection = params.sequenceDiagram?.trim()
     ? `\n\n# Prebuilt Sequence Diagram\n${params.sequenceDiagram.trim()}\n`
     : "";
+  const diagramRequirementSection = params.requireDiagrams
+    ? `\n# Required Review Guide Diagrams
+This PR is large. "reviewGuide" must include:
+- A component relationship Mermaid diagram under heading "## Component relationship diagram".
+- A Mermaid sequence diagram under heading "## Sequence diagram".\n`
+    : "";
   const body = params.prInfo.body?.trim() ? params.prInfo.body.trim() : "(no description)";
   return `# PR Context
 Title: ${params.prInfo.title}
@@ -207,7 +238,7 @@ ${fileList}
 
 Eligible files for per-file comments:
 ${eligibleFileList}
-${sequenceSection}
+${sequenceSection}${diagramRequirementSection}
 # Task
 Produce a review guide and zero-or-more per-file explainer comments using the required JSON format.`;
 }
@@ -370,6 +401,64 @@ function isNoiseArtifactPath(normalizedPath: string): boolean {
   if (basename.endsWith(".snap")) return true;
   if (normalizedPath.includes("/coverage/")) return true;
   return false;
+}
+
+async function validateReviewGuideDiagrams(
+  reviewGuide: string,
+  requireDiagrams: boolean
+): Promise<{ ok: boolean; errors: string[] }> {
+  if (!requireDiagrams) return { ok: true, errors: [] };
+
+  const mermaidBlocks = extractMermaidBlocks(reviewGuide);
+  if (mermaidBlocks.length === 0) {
+    return {
+      ok: false,
+      errors: [
+        "Large PR explainer requires Mermaid diagrams in `reviewGuide`, but none were found.",
+      ],
+    };
+  }
+
+  const validations = await Promise.all(mermaidBlocks.map((diagram) => validateMermaidDiagram(diagram)));
+  const validDiagrams = validations.filter((entry) => entry.valid);
+  const hasValidSequenceDiagram = validDiagrams.some(
+    (entry) => entry.diagramType === "sequenceDiagram" || entry.diagramType === "sequence"
+  );
+  const hasValidComponentDiagram = validDiagrams.some(
+    (entry) => entry.diagramType && entry.diagramType !== "sequenceDiagram" && entry.diagramType !== "sequence"
+  );
+  const errors: string[] = [];
+
+  if (!hasValidComponentDiagram) {
+    errors.push("Large PR explainer requires a valid Mermaid component relationship diagram in `reviewGuide`.");
+  }
+  if (!hasValidSequenceDiagram) {
+    errors.push("Large PR explainer requires a valid Mermaid sequence diagram in `reviewGuide`.");
+  }
+
+  if (errors.length > 0) {
+    const firstParseError = validations
+      .flatMap((entry) => entry.errors)
+      .find((error) => error.trim().length > 0);
+    if (firstParseError) {
+      errors.push(`Mermaid validation error: ${firstParseError}`);
+    }
+    return { ok: false, errors };
+  }
+
+  return { ok: true, errors: [] };
+}
+
+function extractMermaidBlocks(markdown: string): string[] {
+  if (!markdown.trim()) return [];
+  const blocks: string[] = [];
+  const regex = /```mermaid\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = regex.exec(markdown)) !== null) {
+    const block = match[1]?.trim();
+    if (block) blocks.push(block);
+  }
+  return blocks;
 }
 
 function normalizeExplainerFileBody(body: string): string {

@@ -61,6 +61,11 @@ export function shouldGenerateLegacySequenceDiagram(config: ReviewConfig, direct
   return directoryCount > 3;
 }
 
+export function shouldRequireExplainerDiagrams(config: ReviewConfig, directoryCount: number): boolean {
+  if (!config.experimentalPrExplainer) return false;
+  return directoryCount > 3;
+}
+
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
   const log = (...args: unknown[]) => {
@@ -243,6 +248,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   log(`filtered files: ${filteredFiles.length}`);
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
+  const requireExplainerDiagrams = shouldRequireExplainerDiagrams(config, directoryCount);
   const sequenceDiagram = await maybeGenerateSequenceDiagram({
     enabled: shouldGenerateLegacySequenceDiagram(config, directoryCount),
     model,
@@ -298,6 +304,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
         effectiveThinkingLevel,
         effectiveTemperature,
         log,
+        requireDiagrams: requireExplainerDiagrams,
         onBilling: (usage: Usage) => {
           const cost = calculateCost(model, usage);
           summaryState.billing.input += usage.input;

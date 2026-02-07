@@ -471,6 +471,110 @@ test("maybePostPrExplainer posts nothing when output has no usable guide or file
   expect(calls.length).toBe(0);
 });
 
+test("maybePostPrExplainer requires valid mermaid diagrams for large PR explainer mode", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    requireDiagrams: true,
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: [
+        "## Review Guide",
+        "- Start with API boundary changes.",
+        "",
+        "## Component relationship diagram",
+        "```mermaid",
+        "flowchart LR",
+        "Client-->API",
+        "API-->DB",
+        "```",
+        "",
+        "## Sequence diagram",
+        "```mermaid",
+        "sequenceDiagram",
+        "participant Client",
+        "participant API",
+        "Client->>API: request",
+        "API-->>Client: response",
+        "```",
+      ].join("\n"),
+      fileComments: [],
+    }),
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_MARKER);
+  expect(calls[0].args.body).toContain("## Component relationship diagram");
+  expect(calls[0].args.body).toContain("## Sequence diagram");
+});
+
+test("maybePostPrExplainer posts failure when required diagrams are missing", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    requireDiagrams: true,
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "## Review Guide\n- No diagrams included.",
+      fileComments: [],
+    }),
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_FAILURE_MARKER);
+  expect(calls[0].args.body).toContain("Large PR explainer requires Mermaid diagrams");
+});
+
 test("maybePostPrExplainer posts explicit failure signal when output is missing", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const changedFiles: ChangedFile[] = [

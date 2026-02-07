@@ -325,7 +325,7 @@ function formatLsTime(isoTime: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-async function validateMermaidDiagram(diagram: string): Promise<{
+export async function validateMermaidDiagram(diagram: string): Promise<{
   valid: boolean;
   diagramType: string | null;
   errors: string[];
