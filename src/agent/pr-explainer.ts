@@ -147,6 +147,8 @@ You write a PR review guide and per-file explainer comments.
   - "What changed"
   - "Why this changed"
   - "Review checklist (high-risk focus)"
+- For "Review checklist (high-risk focus)", use plain markdown bullet points that start with "- ".
+- Do not use task-list checkboxes (\`- [ ]\` or \`- [x]\`) in explainer comments.
 - For lower-risk files, keep checklist concise and note low risk.
 - Keep content practical and brief; avoid repeating the same sentences across files.`;
 }
