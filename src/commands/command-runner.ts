@@ -363,6 +363,9 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
     hasTool("post_summary")
       ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
+    hasTool("post_summary")
+      ? "- For post_summary body, write only summary sections. Do not include footer lines (Reviewed by/model/billing) or sri markers; tooling appends them."
+      : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     hasTool("subagent")
       ? "- You may delegate focused work to the subagent tool; include all context it needs in the task."

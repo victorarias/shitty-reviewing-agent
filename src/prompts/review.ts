@@ -4,6 +4,9 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
 
   const constraints = [
     hasTool("post_summary") ? "- If post_summary is available, call it exactly once near the end to publish the review." : null,
+    hasTool("post_summary")
+      ? "- For post_summary body, write only the summary content sections. Do not include footer lines (Reviewed by/model/billing) or sri markers; tooling adds those."
+      : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     "- Focus on bugs, security issues, performance problems, logic errors, unused code, and duplication. Leave formatting and style to linters.",
     "- Read full files, not just diffs. Use tools to explore context.",
