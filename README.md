@@ -66,6 +66,35 @@ See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schem
 Use `review.allowPrToolsInReview: true` to enable PR-creation tools in PR review mode.
 Use `review.experimental.prExplainer: true` to enable the experimental PR explainer (review guide + per-file explainer comments).
 
+### Experimental PR explainer
+
+Enable via action input:
+
+```yaml
+- uses: ghcr.io/victorarias/shitty-reviewing-agent:latest
+  with:
+    provider: google
+    api-key: ${{ secrets.GEMINI_API_KEY }}
+    model: gemini-3-pro-preview
+    experimental-pr-explainer: true
+```
+
+Enable via `.reviewerc`:
+
+```yaml
+version: 1
+review:
+  experimental:
+    prExplainer: true
+```
+
+Behavior when enabled:
+- Posts one PR-level "Review Guide" issue comment.
+- Posts one explainer comment per changed file (inline when possible, issue-comment fallback for non-commentable/binary/large diffs).
+- Disables the legacy auto-generated summary sequence diagram.
+- If explainer output is missing/invalid/incomplete, posts an explicit failure signal comment and does not post synthetic explainer content.
+- Mermaid snippets can be checked with the `validate_mermaid` tool (parser-backed via Mermaid's parser).
+
 ## Tools
 
 Tools are grouped by allowlist categories. Commands can further restrict via `tools.allow`.

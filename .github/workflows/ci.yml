@@ -49,3 +49,23 @@ jobs:
         run: bun test
       - name: Typecheck
         run: bun run build
+
+  reviewer-main:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && secrets.GEMINI_API_KEY != '' }}
+    needs: [test, harness]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run reviewer using @main image
+        uses: ghcr.io/victorarias/shitty-reviewing-agent:main
+        with:
+          provider: google
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-3-flash-preview
+          reasoning: minimal
