@@ -57,6 +57,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      packages: read
     continue-on-error: true
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -67,12 +68,55 @@ jobs:
       - name: Skip reviewer when GEMINI_API_KEY is missing
         if: ${{ env.GEMINI_API_KEY == '' }}
         run: echo "Skipping reviewer-main (GEMINI_API_KEY not configured)."
-      - name: Run reviewer using @main image
+      - name: Resolve reviewer image (prefer @main)
         if: ${{ env.GEMINI_API_KEY != '' }}
-        uses: docker://ghcr.io/victorarias/shitty-reviewing-agent:main
+        id: reviewer-image
+        run: |
+          set -euo pipefail
+          main_image="ghcr.io/victorarias/shitty-reviewing-agent:main"
+          fallback_image="ghcr.io/victorarias/shitty-reviewing-agent:latest"
+          if docker pull "$main_image" >/dev/null 2>&1; then
+            echo "image=$main_image" >> "$GITHUB_OUTPUT"
+            echo "Using $main_image"
+            exit 0
+          fi
+          echo "::warning::Image $main_image not found. Trying $fallback_image."
+          if docker pull "$fallback_image" >/dev/null 2>&1; then
+            echo "image=$fallback_image" >> "$GITHUB_OUTPUT"
+            echo "Using $fallback_image"
+            exit 0
+          fi
+          echo "::warning::No reviewer image available (main/latest). Skipping reviewer-main."
+          echo "image=" >> "$GITHUB_OUTPUT"
+      - name: Run reviewer using resolved image
+        if: ${{ env.GEMINI_API_KEY != '' && steps.reviewer-image.outputs.image != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_PROVIDER: google
-          "INPUT_API-KEY": ${{ env.GEMINI_API_KEY }}
-          INPUT_MODEL: gemini-3-flash-preview
-          INPUT_REASONING: minimal
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e GITHUB_TOKEN \
+            -e GITHUB_EVENT_NAME \
+            -e GITHUB_EVENT_PATH \
+            -e GITHUB_REPOSITORY \
+            -e GITHUB_SHA \
+            -e GITHUB_REF \
+            -e GITHUB_REF_NAME \
+            -e GITHUB_REF_TYPE \
+            -e GITHUB_WORKFLOW \
+            -e GITHUB_RUN_ID \
+            -e GITHUB_RUN_NUMBER \
+            -e GITHUB_RUN_ATTEMPT \
+            -e GITHUB_ACTOR \
+            -e GITHUB_API_URL \
+            -e GITHUB_SERVER_URL \
+            -e GITHUB_GRAPHQL_URL \
+            -e GITHUB_WORKSPACE \
+            -e INPUT_PROVIDER=google \
+            -e INPUT_MODEL=gemini-3-flash-preview \
+            -e INPUT_REASONING=minimal \
+            -e "INPUT_API-KEY=${GEMINI_API_KEY}" \
+            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
+            -v "${GITHUB_EVENT_PATH}:${GITHUB_EVENT_PATH}:ro" \
+            -w "${GITHUB_WORKSPACE}" \
+            "${{ steps.reviewer-image.outputs.image }}"

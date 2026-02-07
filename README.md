@@ -107,6 +107,7 @@ reviewer-main:
   permissions:
     contents: read
     pull-requests: write
+    packages: read
   continue-on-error: true
   env:
     GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -114,20 +115,49 @@ reviewer-main:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - name: Run reviewer using @main image
+    - name: Resolve reviewer image (prefer @main)
       if: ${{ env.GEMINI_API_KEY != '' }}
-      uses: docker://ghcr.io/victorarias/shitty-reviewing-agent:main
+      id: reviewer-image
+      run: |
+        set -euo pipefail
+        main_image="ghcr.io/victorarias/shitty-reviewing-agent:main"
+        fallback_image="ghcr.io/victorarias/shitty-reviewing-agent:latest"
+        if docker pull "$main_image" >/dev/null 2>&1; then
+          echo "image=$main_image" >> "$GITHUB_OUTPUT"
+        elif docker pull "$fallback_image" >/dev/null 2>&1; then
+          echo "::warning::main image missing; using latest"
+          echo "image=$fallback_image" >> "$GITHUB_OUTPUT"
+        else
+          echo "image=" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Run reviewer using resolved image
+      if: ${{ env.GEMINI_API_KEY != '' && steps.reviewer-image.outputs.image != '' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        INPUT_PROVIDER: google
-        "INPUT_API-KEY": ${{ env.GEMINI_API_KEY }}
-        INPUT_MODEL: gemini-3-flash-preview
-        INPUT_REASONING: minimal
+      run: |
+        docker run --rm \
+          -e GITHUB_TOKEN \
+          -e GITHUB_EVENT_NAME \
+          -e GITHUB_EVENT_PATH \
+          -e GITHUB_REPOSITORY \
+          -e GITHUB_SHA \
+          -e GITHUB_REF \
+          -e GITHUB_REF_NAME \
+          -e GITHUB_REF_TYPE \
+          -e GITHUB_WORKSPACE \
+          -e INPUT_PROVIDER=google \
+          -e INPUT_MODEL=gemini-3-flash-preview \
+          -e INPUT_REASONING=minimal \
+          -e "INPUT_API-KEY=${GEMINI_API_KEY}" \
+          -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
+          -v "${GITHUB_EVENT_PATH}:${GITHUB_EVENT_PATH}:ro" \
+          -w "${GITHUB_WORKSPACE}" \
+          "${{ steps.reviewer-image.outputs.image }}"
 ```
 
 Notes:
-- `docker://` syntax is required when invoking the GHCR image directly in workflows.
 - Secrets cannot be used directly in job-level `if`; gate at step level with an env variable instead.
+- The job prefers `:main` and falls back to `:latest` if `:main` is not published yet.
 
 ## Tools
 
