@@ -138,6 +138,8 @@ reviewer-latest:
           INPUT_MODEL=gemini-3-flash-preview \
           INPUT_REASONING=minimal \
           INPUT_DEBUG=true \
+          LLM_RATE_LIMIT_MAX_WAIT_MS=3600000 \
+          LLM_RATE_LIMIT_MAX_ATTEMPTS=20 \
           "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
           bun src/index.ts
 ```
@@ -246,7 +248,7 @@ jobs:
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
 - Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
-- LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~15 minutes total.
+- LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~60 minutes total by default. Override via `LLM_RATE_LIMIT_MAX_WAIT_MS` and `LLM_RATE_LIMIT_MAX_ATTEMPTS`.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).
 - Scheduled runs read `schedule.runs[GITHUB_JOB]` from `.reviewerc`. The agent should use `git add` + `git commit`, then `push_pr` to open or update a PR.
 - Manual `workflow_dispatch` runs use the same schedule flow and `schedule.runs[GITHUB_JOB]` mapping.
