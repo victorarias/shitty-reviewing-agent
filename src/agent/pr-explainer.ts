@@ -3,6 +3,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
 import type { Usage } from "@mariozechner/pi-ai";
+import { isGeneratedPath } from "./file-filters.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig } from "../types.js";
 import type { ThinkingLevel } from "./model.js";
 
@@ -22,6 +23,7 @@ export interface PrExplainerContent {
 export type PrExplainerGenerateFn = (params: {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  eligibleFiles: ChangedFile[];
   sequenceDiagram?: string | null;
 }) => Promise<PrExplainerContent | null>;
 
@@ -46,14 +48,25 @@ export async function maybePostPrExplainer(params: {
   generateFn?: PrExplainerGenerateFn;
 }): Promise<void> {
   if (!params.enabled || params.changedFiles.length === 0) return;
+  const { eligibleFiles, skippedFiles } = await selectEligibleFilesForExplainer(params.changedFiles, params.config.repoRoot);
+  if (skippedFiles.length > 0) {
+    params.log(
+      "pr explainer skipped files",
+      skippedFiles.map((entry) => `${entry.file}:${entry.reason}`).join(", ")
+    );
+  }
 
   const generated = params.generateFn
     ? await params.generateFn({
       prInfo: params.prInfo,
       changedFiles: params.changedFiles,
+      eligibleFiles,
       sequenceDiagram: params.sequenceDiagram,
     })
-    : await generatePrExplainerContent(params);
+    : await generatePrExplainerContent({
+      ...params,
+      eligibleFiles,
+    });
   if (!generated) {
     await upsertExplainerFailureComment(params, [
       "Explainer output was missing or could not be parsed as required JSON.",
@@ -61,15 +74,22 @@ export async function maybePostPrExplainer(params: {
     return;
   }
 
-  const validation = validatePrExplainerContent(generated, params.changedFiles);
-  if (validation.ok === false) {
-    await upsertExplainerFailureComment(params, validation.errors);
+  const normalized = normalizePrExplainerContent(generated, eligibleFiles);
+  if (normalized.unresolvedPaths.length > 0) {
+    params.log(
+      "pr explainer ignored unknown file comment paths",
+      normalized.unresolvedPaths.join(", ")
+    );
+  }
+  if (!normalized.reviewGuide && normalized.fileCommentByPath.size === 0) {
+    params.log("pr explainer produced no usable content");
     return;
   }
 
-  const normalized = validation.value;
-  await upsertReviewGuideComment(params, normalized.reviewGuide);
-  for (const file of params.changedFiles) {
+  if (normalized.reviewGuide) {
+    await upsertReviewGuideComment(params, normalized.reviewGuide);
+  }
+  for (const file of eligibleFiles) {
     const body = normalized.fileCommentByPath.get(file.filename);
     if (!body) continue;
     await upsertFileGuideComment(params, file, body);
@@ -82,6 +102,7 @@ async function generatePrExplainerContent(params: {
   config: ReviewConfig;
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  eligibleFiles: ChangedFile[];
   sequenceDiagram?: string | null;
   effectiveThinkingLevel: ThinkingLevel;
   effectiveTemperature?: number;
@@ -114,6 +135,7 @@ async function generatePrExplainerContent(params: {
       buildPrExplainerUserPrompt({
         prInfo: params.prInfo,
         changedFiles: params.changedFiles,
+        eligibleFiles: params.eligibleFiles,
         sequenceDiagram: params.sequenceDiagram,
       })
     );
@@ -141,7 +163,9 @@ You write a PR review guide and per-file explainer comments.
     { "path": "path/from/changed/files", "body": "markdown" }
   ]
 }
-- Include one fileComments entry for every changed file path.
+- Only include fileComments for files from the "Eligible files for per-file comments" list.
+- Skip fileComments for trivial low-risk edits (small formatting/docs/meta churn) even when eligible.
+- Do not invent file paths.
 - Each file comment must include these headings:
   - "What this file does"
   - "What changed"
@@ -158,11 +182,17 @@ You write a PR review guide and per-file explainer comments.
 function buildPrExplainerUserPrompt(params: {
   prInfo: PullRequestInfo;
   changedFiles: ChangedFile[];
+  eligibleFiles: ChangedFile[];
   sequenceDiagram?: string | null;
 }): string {
   const fileList = params.changedFiles
     .map((file) => `- ${file.filename} (status=${file.status}, +${file.additions}/-${file.deletions})`)
     .join("\n");
+  const eligibleFileList = params.eligibleFiles.length > 0
+    ? params.eligibleFiles
+      .map((file) => `- ${file.filename} (status=${file.status}, +${file.additions}/-${file.deletions})`)
+      .join("\n")
+    : "(none)";
   const sequenceSection = params.sequenceDiagram?.trim()
     ? `\n\n# Prebuilt Sequence Diagram\n${params.sequenceDiagram.trim()}\n`
     : "";
@@ -174,9 +204,12 @@ URL: ${params.prInfo.url}
 
 Changed files:
 ${fileList}
+
+Eligible files for per-file comments:
+${eligibleFileList}
 ${sequenceSection}
 # Task
-Produce a review guide plus one per-file explainer comment using the required JSON format.`;
+Produce a review guide and zero-or-more per-file explainer comments using the required JSON format.`;
 }
 
 function extractAssistantText(messages: any[]): string {
@@ -240,63 +273,103 @@ function toStringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function validatePrExplainerContent(
+function normalizePrExplainerContent(
   generated: PrExplainerContent,
-  changedFiles: ChangedFile[]
+  eligibleFiles: ChangedFile[]
 ): {
-  ok: true;
-  value: { reviewGuide: string; fileCommentByPath: Map<string, string> };
-} | {
-  ok: false;
-  errors: string[];
+  reviewGuide: string;
+  fileCommentByPath: Map<string, string>;
+  unresolvedPaths: string[];
 } {
-  const errors: string[] = [];
   const reviewGuide = generated.reviewGuide?.trim() ?? "";
-  if (!reviewGuide) {
-    errors.push("Missing non-empty `reviewGuide`.");
+  const normalizedPathToFile = new Map<string, string>();
+  for (const file of eligibleFiles) {
+    normalizedPathToFile.set(normalizePathForMatch(file.filename), file.filename);
   }
-
-  const changedPathSet = new Set(changedFiles.map((file) => normalizePathForMatch(file.filename)));
   const map = new Map<string, string>();
   const unresolvedPaths: string[] = [];
 
   for (const entry of generated.fileComments) {
-    const normalizedPath = normalizePathForMatch(entry.path);
-    if (!changedPathSet.has(normalizedPath)) {
+    const resolvedPath = resolveEligiblePath(entry.path, normalizedPathToFile);
+    if (!resolvedPath) {
       unresolvedPaths.push(entry.path);
       continue;
     }
-    map.set(normalizedPath, normalizeExplainerFileBody(entry.body));
+    map.set(resolvedPath, normalizeExplainerFileBody(entry.body));
   }
-
-  if (unresolvedPaths.length > 0) {
-    errors.push(`Returned file comments for unknown paths: ${unresolvedPaths.map((p) => `\`${p}\``).join(", ")}.`);
-  }
-
-  const missingFiles = changedFiles
-    .map((file) => normalizePathForMatch(file.filename))
-    .filter((path) => !map.has(path));
-  if (missingFiles.length > 0) {
-    errors.push(`Missing file comments for changed files: ${missingFiles.map((p) => `\`${p}\``).join(", ")}.`);
-  }
-
-  if (errors.length > 0) {
-    return { ok: false, errors };
-  }
-
-  const fileCommentByPath = new Map<string, string>();
-  for (const file of changedFiles) {
-    const key = normalizePathForMatch(file.filename);
-    const body = map.get(key);
-    if (body) {
-      fileCommentByPath.set(file.filename, body);
-    }
-  }
-  return { ok: true, value: { reviewGuide, fileCommentByPath } };
+  return { reviewGuide, fileCommentByPath: map, unresolvedPaths };
 }
 
 function normalizePathForMatch(path: string): string {
   return path.trim().replace(/^\.\/+/, "");
+}
+
+function resolveEligiblePath(path: string, eligiblePathMap: Map<string, string>): string | null {
+  const normalizedRaw = normalizePathForMatch(path);
+  const normalized = normalizedRaw.replace(/^[ab]\//, "");
+  const direct = eligiblePathMap.get(normalized) ?? eligiblePathMap.get(normalizedRaw);
+  if (direct) return direct;
+
+  const lower = normalized.toLowerCase();
+  const lowerMatches = [...eligiblePathMap.entries()].filter(([candidate]) => candidate.toLowerCase() === lower);
+  if (lowerMatches.length === 1) return lowerMatches[0][1];
+
+  if (!normalized.includes("/")) {
+    const suffixMatches = [...eligiblePathMap.entries()].filter(([candidate]) => candidate.endsWith(`/${normalized}`));
+    if (suffixMatches.length === 1) return suffixMatches[0][1];
+  }
+  return null;
+}
+
+async function selectEligibleFilesForExplainer(
+  changedFiles: ChangedFile[],
+  repoRoot: string
+): Promise<{
+  eligibleFiles: ChangedFile[];
+  skippedFiles: Array<{ file: string; reason: string }>;
+}> {
+  const checks = await Promise.all(
+    changedFiles.map(async (file) => {
+      const reason = await getExplainerSkipReason(file, repoRoot);
+      return { file, reason };
+    })
+  );
+  const eligibleFiles: ChangedFile[] = [];
+  const skippedFiles: Array<{ file: string; reason: string }> = [];
+  for (const check of checks) {
+    if (check.reason) {
+      skippedFiles.push({ file: check.file.filename, reason: check.reason });
+      continue;
+    }
+    eligibleFiles.push(check.file);
+  }
+  return { eligibleFiles, skippedFiles };
+}
+
+async function getExplainerSkipReason(file: ChangedFile, repoRoot: string): Promise<string | null> {
+  const normalized = file.filename.toLowerCase();
+
+  if (isNoiseArtifactPath(normalized)) {
+    return "noise-artifact";
+  }
+
+  if (await isGeneratedPath(repoRoot, file.filename)) {
+    return "generated";
+  }
+
+  return null;
+}
+
+function isNoiseArtifactPath(normalizedPath: string): boolean {
+  const basename = normalizedPath.split("/").at(-1) ?? normalizedPath;
+  if (basename === "bun.lock" || basename === "bun.lockb") return true;
+  if (basename === "package-lock.json" || basename === "pnpm-lock.yaml" || basename === "yarn.lock") return true;
+  if (basename.endsWith(".log")) return true;
+  if (basename.endsWith(".min.js") || basename.endsWith(".min.css")) return true;
+  if (basename.endsWith(".map")) return true;
+  if (basename.endsWith(".snap")) return true;
+  if (normalizedPath.includes("/coverage/")) return true;
+  return false;
 }
 
 function normalizeExplainerFileBody(body: string): string {

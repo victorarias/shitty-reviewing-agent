@@ -39,7 +39,7 @@ jobs:
 - `reasoning` (optional, default `off`): Thinking level (`off|minimal|low|medium|high|xhigh`)
 - `temperature` (optional): Sampling temperature (0-2)
 - `allow-pr-tools` (optional): Allow PR-creation tools in PR review mode (default false; schedule mode always allows them)
-- `experimental-pr-explainer` (optional): Experimental toggle to post a PR-level review guide comment plus one explainer comment per changed file
+- `experimental-pr-explainer` (optional): Experimental toggle to post a PR-level review guide comment plus selective per-file explainer comments
 - `bot-name` (optional): Bot/app mention name for `@bot command` triggers (e.g., `my-app`)
 - `app-id` (optional): GitHub App ID (use instead of GITHUB_TOKEN)
 - `app-installation-id` (optional): GitHub App installation ID
@@ -64,7 +64,7 @@ review:
 
 See `docs/reviewerc.example.yml` for a full example and `schemas/reviewerc.schema.json` for the full schema.
 Use `review.allowPrToolsInReview: true` to enable PR-creation tools in PR review mode.
-Use `review.experimental.prExplainer: true` to enable the experimental PR explainer (review guide + per-file explainer comments).
+Use `review.experimental.prExplainer: true` to enable the experimental PR explainer (review guide + selective per-file explainer comments).
 
 ### Experimental PR explainer
 
@@ -90,9 +90,11 @@ review:
 
 Behavior when enabled:
 - Posts one PR-level "Review Guide" issue comment.
-- Posts one explainer comment per changed file (inline when possible, issue-comment fallback for non-commentable/binary/large diffs).
+- Posts selective explainer comments for meaningful changed files (inline when possible, issue-comment fallback for non-commentable/binary/large diffs).
 - Disables the legacy auto-generated summary sequence diagram.
-- If explainer output is missing/invalid/incomplete, posts an explicit failure signal comment and does not post synthetic explainer content.
+- Skips generated/noise artifact files (for example lock/log/minified/map/snapshot/coverage artifacts) from per-file explainer comments.
+- Allows partial explainer output; unknown file paths are ignored instead of failing the whole explainer run.
+- If explainer output is missing or not parseable JSON, posts an explicit failure signal comment.
 - Mermaid snippets can be checked with the `validate_mermaid` tool (parser-backed via Mermaid's parser).
 
 ### Add reviewer-latest to CI
@@ -243,7 +245,7 @@ jobs:
 - For PRs touching more than 3 distinct directories, the summary includes a Mermaid sequence diagram in a collapsible `<details>` block.
 - When `experimental-pr-explainer` (or `review.experimental.prExplainer`) is enabled, the agent also posts:
   - one PR-level "Review Guide" comment
-  - one explainer comment per changed file (inline when possible, issue-comment fallback for non-commentable/binary/large diffs)
+  - selective explainer comments for meaningful changed files (inline when possible, issue-comment fallback for non-commentable/binary/large diffs)
   - the legacy auto-generated summary sequence diagram is disabled
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
 - Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".

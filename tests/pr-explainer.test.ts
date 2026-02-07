@@ -338,7 +338,7 @@ test("maybePostPrExplainer migrates legacy inline file guide comment to file-lev
   expect(calls[2].args.comment_id).toBe(22);
 });
 
-test("maybePostPrExplainer posts explicit failure signal when output is incomplete", async () => {
+test("maybePostPrExplainer accepts partial file coverage and posts guide", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const changedFiles: ChangedFile[] = [
     {
@@ -375,8 +375,100 @@ test("maybePostPrExplainer posts explicit failure signal when output is incomple
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("issue_create");
-  expect(calls[0].args.body).toContain(REVIEW_GUIDE_FAILURE_MARKER);
-  expect(calls[0].args.body).toContain("No synthetic explainer content was posted.");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_MARKER);
+  expect(calls[0].args.body).toContain("Guide exists but file coverage is incomplete.");
+});
+
+test("maybePostPrExplainer ignores unknown file paths instead of failing", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "bun.lockb",
+      status: "modified",
+      additions: 10,
+      deletions: 2,
+      changes: 12,
+      patch: "@@ -1,1 +1,1 @@\n-old\n+new\n",
+    },
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "Guide",
+      fileComments: [
+        { path: "bun.lock", body: "### What this file does\n- lockfile." },
+        { path: "src/index.ts", body: "### What this file does\n- entrypoint." },
+      ],
+    }),
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_MARKER);
+  expect(calls[1].type).toBe("review_create");
+  expect(calls[1].args.path).toBe("src/index.ts");
+  expect(calls[1].args.body).toContain(buildFileGuideMarker("src/index.ts"));
+});
+
+test("maybePostPrExplainer posts nothing when output has no usable guide or file comments", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "",
+      fileComments: [{ path: "unknown/path.ts", body: "### What this file does\n- unknown." }],
+    }),
+  });
+
+  expect(calls.length).toBe(0);
 });
 
 test("maybePostPrExplainer posts explicit failure signal when output is missing", async () => {
