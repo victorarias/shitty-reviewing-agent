@@ -223,6 +223,64 @@ test("maybePostPrExplainer updates existing guide and file comments when markers
   expect(calls[1].args.comment_id).toBe(22);
 });
 
+test("maybePostPrExplainer strips high-risk checklist section when it contains low-risk content", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "docs/reviewerc.example.yml",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n version: 1\n+review:\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "Guide",
+      fileComments: [
+        {
+          path: "docs/reviewerc.example.yml",
+          body: [
+            "### What this file does",
+            "- docs",
+            "",
+            "### What changed",
+            "- adds config",
+            "",
+            "### Why this changed",
+            "- document toggle",
+            "",
+            "### Review checklist (high-risk focus)",
+            "- Low risk. Ensure this matches schema.",
+          ].join("\n"),
+        },
+      ],
+    }),
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[1].type).toBe("review_create");
+  expect(calls[1].args.body).not.toContain("### Review checklist (high-risk focus)");
+  expect(calls[1].args.body).not.toContain("Low risk. Ensure this matches schema.");
+});
+
 test("maybePostPrExplainer migrates legacy inline file guide comment to file-level comment", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const changedFiles: ChangedFile[] = [

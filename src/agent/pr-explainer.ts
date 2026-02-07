@@ -146,10 +146,12 @@ You write a PR review guide and per-file explainer comments.
   - "What this file does"
   - "What changed"
   - "Why this changed"
-  - "Review checklist (high-risk focus)"
-- For "Review checklist (high-risk focus)", use plain markdown bullet points that start with "- ".
+- For high-risk files, also include a final section: "Review checklist (high-risk focus)".
+- For low-risk files, do not add any extra final section beyond the three required headings above.
+- If a high-risk checklist section is present, use plain markdown bullet points that start with "- ".
 - Do not use task-list checkboxes (\`- [ ]\` or \`- [x]\`) in explainer comments.
-- For lower-risk files, keep checklist concise and note low risk.
+- Never include "Low risk" content inside a "Review checklist (high-risk focus)" section.
+- For lower-risk files, keep the "Why this changed" section concise and explicitly mention why risk is low.
 - Keep content practical and brief; avoid repeating the same sentences across files.`;
 }
 
@@ -264,7 +266,7 @@ function validatePrExplainerContent(
       unresolvedPaths.push(entry.path);
       continue;
     }
-    map.set(normalizedPath, entry.body.trim());
+    map.set(normalizedPath, normalizeExplainerFileBody(entry.body));
   }
 
   if (unresolvedPaths.length > 0) {
@@ -295,6 +297,39 @@ function validatePrExplainerContent(
 
 function normalizePathForMatch(path: string): string {
   return path.trim().replace(/^\.\/+/, "");
+}
+
+function normalizeExplainerFileBody(body: string): string {
+  const lines = body
+    .trim()
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  if (lines.length === 0) return "";
+
+  // Normalize task list syntax to plain bullets for deterministic rendering.
+  for (let i = 0; i < lines.length; i += 1) {
+    lines[i] = lines[i].replace(/^- \[[ xX]\]\s+/, "- ");
+  }
+
+  const checklistHeadingIndex = lines.findIndex((line) => /^#{2,6}\s*Review checklist \(high-risk focus\)\s*$/i.test(line.trim()));
+  if (checklistHeadingIndex !== -1) {
+    let nextHeadingIndex = lines.length;
+    for (let i = checklistHeadingIndex + 1; i < lines.length; i += 1) {
+      if (/^#{2,6}\s+/.test(lines[i].trim())) {
+        nextHeadingIndex = i;
+        break;
+      }
+    }
+    const checklistContent = lines.slice(checklistHeadingIndex + 1, nextHeadingIndex).join("\n");
+    if (/\blow[- ]risk\b/i.test(checklistContent)) {
+      lines.splice(checklistHeadingIndex, nextHeadingIndex - checklistHeadingIndex);
+    }
+  }
+
+  const normalized = lines.join("\n");
+  return normalized
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 async function upsertExplainerFailureComment(
