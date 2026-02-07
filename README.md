@@ -95,12 +95,12 @@ Behavior when enabled:
 - If explainer output is missing/invalid/incomplete, posts an explicit failure signal comment and does not post synthetic explainer content.
 - Mermaid snippets can be checked with the `validate_mermaid` tool (parser-backed via Mermaid's parser).
 
-### Add reviewer-main to CI
+### Add reviewer-latest to CI
 
-If you want CI to run the latest `@main` reviewer image on internal PRs, add a non-blocking job like this:
+If you want CI to run the `:latest` reviewer image on internal PRs, add a non-blocking job like this:
 
 ```yaml
-reviewer-main:
+reviewer-latest:
   if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
   needs: [test, harness]
   runs-on: ubuntu-latest
@@ -110,28 +110,19 @@ reviewer-main:
     packages: read
   continue-on-error: true
   env:
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
   steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - name: Resolve reviewer image (prefer @main)
-      if: ${{ env.GEMINI_API_KEY != '' }}
-      id: reviewer-image
-      run: |
-        set -euo pipefail
-        main_image="ghcr.io/victorarias/shitty-reviewing-agent:main"
-        fallback_image="ghcr.io/victorarias/shitty-reviewing-agent:latest"
-        if docker pull "$main_image" >/dev/null 2>&1; then
-          echo "image=$main_image" >> "$GITHUB_OUTPUT"
-        elif docker pull "$fallback_image" >/dev/null 2>&1; then
-          echo "::warning::main image missing; using latest"
-          echo "image=$fallback_image" >> "$GITHUB_OUTPUT"
-        else
-          echo "image=" >> "$GITHUB_OUTPUT"
-        fi
-    - name: Run reviewer using resolved image
-      if: ${{ env.GEMINI_API_KEY != '' && steps.reviewer-image.outputs.image != '' }}
+    - name: Skip reviewer when VERTEX_AI_API_KEY is missing
+      if: ${{ env.VERTEX_AI_API_KEY == '' }}
+      run: echo "Skipping reviewer-latest (VERTEX_AI_API_KEY not configured)."
+    - name: Pull reviewer image (@latest)
+      if: ${{ env.VERTEX_AI_API_KEY != '' }}
+      run: docker pull ghcr.io/victorarias/shitty-reviewing-agent:latest
+    - name: Run reviewer using @latest image
+      if: ${{ env.VERTEX_AI_API_KEY != '' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -145,19 +136,18 @@ reviewer-main:
           -e GITHUB_REF_NAME \
           -e GITHUB_REF_TYPE \
           -e GITHUB_WORKSPACE \
-          -e INPUT_PROVIDER=google \
+          -e INPUT_PROVIDER=google-vertex \
           -e INPUT_MODEL=gemini-3-flash-preview \
           -e INPUT_REASONING=minimal \
-          -e "INPUT_API-KEY=${GEMINI_API_KEY}" \
+          -e "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
           -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
           -v "${GITHUB_EVENT_PATH}:${GITHUB_EVENT_PATH}:ro" \
           -w "${GITHUB_WORKSPACE}" \
-          "${{ steps.reviewer-image.outputs.image }}"
+          ghcr.io/victorarias/shitty-reviewing-agent:latest
 ```
 
 Notes:
 - Secrets cannot be used directly in job-level `if`; gate at step level with an env variable instead.
-- The job prefers `:main` and falls back to `:latest` if `:main` is not published yet.
 
 ## Tools
 
