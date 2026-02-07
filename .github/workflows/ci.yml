@@ -51,21 +51,28 @@ jobs:
         run: bun run build
 
   reviewer-main:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && secrets.GEMINI_API_KEY != '' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
     needs: [test, harness]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     continue-on-error: true
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Skip reviewer when GEMINI_API_KEY is missing
+        if: ${{ env.GEMINI_API_KEY == '' }}
+        run: echo "Skipping reviewer-main (GEMINI_API_KEY not configured)."
       - name: Run reviewer using @main image
-        uses: ghcr.io/victorarias/shitty-reviewing-agent:main
-        with:
-          provider: google
-          api-key: ${{ secrets.GEMINI_API_KEY }}
-          model: gemini-3-flash-preview
-          reasoning: minimal
+        if: ${{ env.GEMINI_API_KEY != '' }}
+        uses: docker://ghcr.io/victorarias/shitty-reviewing-agent:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PROVIDER: google
+          "INPUT_API-KEY": ${{ env.GEMINI_API_KEY }}
+          INPUT_MODEL: gemini-3-flash-preview
+          INPUT_REASONING: minimal

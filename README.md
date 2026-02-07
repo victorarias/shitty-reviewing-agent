@@ -95,6 +95,40 @@ Behavior when enabled:
 - If explainer output is missing/invalid/incomplete, posts an explicit failure signal comment and does not post synthetic explainer content.
 - Mermaid snippets can be checked with the `validate_mermaid` tool (parser-backed via Mermaid's parser).
 
+### Add reviewer-main to CI
+
+If you want CI to run the latest `@main` reviewer image on internal PRs, add a non-blocking job like this:
+
+```yaml
+reviewer-main:
+  if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+  needs: [test, harness]
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+    pull-requests: write
+  continue-on-error: true
+  env:
+    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Run reviewer using @main image
+      if: ${{ env.GEMINI_API_KEY != '' }}
+      uses: docker://ghcr.io/victorarias/shitty-reviewing-agent:main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        INPUT_PROVIDER: google
+        "INPUT_API-KEY": ${{ env.GEMINI_API_KEY }}
+        INPUT_MODEL: gemini-3-flash-preview
+        INPUT_REASONING: minimal
+```
+
+Notes:
+- `docker://` syntax is required when invoking the GHCR image directly in workflows.
+- Secrets cannot be used directly in job-level `if`; gate at step level with an env variable instead.
+
 ## Tools
 
 Tools are grouped by allowlist categories. Commands can further restrict via `tools.allow`.
