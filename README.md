@@ -97,7 +97,7 @@ Behavior when enabled:
 
 ### Add reviewer-latest to CI
 
-If you want CI to run the `:latest` reviewer image on internal PRs, add a non-blocking job like this:
+If you want CI to run the reviewer with this repository's patched dependencies (for example patched `@mariozechner/pi-ai`) on internal PRs, add a non-blocking job like this:
 
 ```yaml
 reviewer-latest:
@@ -107,7 +107,6 @@ reviewer-latest:
   permissions:
     contents: read
     pull-requests: write
-    packages: read
   continue-on-error: true
   env:
     VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
@@ -115,39 +114,37 @@ reviewer-latest:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
+    - uses: oven-sh/setup-bun@v1
+      if: ${{ env.VERTEX_AI_API_KEY != '' }}
+      with:
+        bun-version: "1.3.6"
     - name: Skip reviewer when VERTEX_AI_API_KEY is missing
       if: ${{ env.VERTEX_AI_API_KEY == '' }}
       run: echo "Skipping reviewer-latest (VERTEX_AI_API_KEY not configured)."
-    - name: Pull reviewer image (@latest)
+    - name: Install dependencies (apply local patches)
       if: ${{ env.VERTEX_AI_API_KEY != '' }}
-      run: docker pull ghcr.io/victorarias/shitty-reviewing-agent:latest
-    - name: Run reviewer using @latest image
+      run: bun install --frozen-lockfile
+    - name: Verify pi-ai patch is active
+      if: ${{ env.VERTEX_AI_API_KEY != '' }}
+      run: grep -n "VERTEX_AI_API_KEY" node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+    - name: Run reviewer from source (patched dependencies)
       if: ${{ env.VERTEX_AI_API_KEY != '' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        docker run --rm \
-          -e GITHUB_TOKEN \
-          -e GITHUB_EVENT_NAME \
-          -e GITHUB_EVENT_PATH \
-          -e GITHUB_REPOSITORY \
-          -e GITHUB_SHA \
-          -e GITHUB_REF \
-          -e GITHUB_REF_NAME \
-          -e GITHUB_REF_TYPE \
-          -e GITHUB_WORKSPACE \
-          -e INPUT_PROVIDER=google-vertex \
-          -e INPUT_MODEL=gemini-3-flash-preview \
-          -e INPUT_REASONING=minimal \
-          -e "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
-          -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
-          -v "${GITHUB_EVENT_PATH}:${GITHUB_EVENT_PATH}:ro" \
-          -w "${GITHUB_WORKSPACE}" \
-          ghcr.io/victorarias/shitty-reviewing-agent:latest
+        env \
+          GITHUB_TOKEN="${GITHUB_TOKEN}" \
+          INPUT_PROVIDER=google-vertex \
+          INPUT_MODEL=gemini-3-flash-preview \
+          INPUT_REASONING=minimal \
+          INPUT_DEBUG=true \
+          "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
+          bun src/index.ts
 ```
 
 Notes:
 - Secrets cannot be used directly in job-level `if`; gate at step level with an env variable instead.
+- This path is intended for this repo's CI, so local dependency patches in `patches/` are applied via `postinstall`.
 
 ## Tools
 
