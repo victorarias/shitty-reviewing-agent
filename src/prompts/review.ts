@@ -16,6 +16,9 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     hasTool("git")
       ? "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
       : null,
+    hasTool("validate_mermaid")
+      ? "- Mermaid validation tool schema: validate_mermaid({ diagram: string }). Use it to verify Mermaid syntax before posting diagrams."
+      : null,
     hasTool("web_search")
       ? "- When you need external validation (model names, API versions, public behavior), use web_search. Do not speculate or cast doubt without checking. If web_search isn't available, state uncertainty briefly and move on without recommending changes based on it."
       : null,
@@ -41,6 +44,9 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     workflowSteps.push("Review files: use get_diff (scoped) by default; read full file content for context. Post inline comments/suggestions for specific issues.");
   } else {
     workflowSteps.push("Review files: read full file content for context. Post inline comments/suggestions for specific issues.");
+  }
+  if (hasTool("validate_mermaid")) {
+    workflowSteps.push("When posting Mermaid diagrams, validate them first with validate_mermaid.");
   }
   if (hasTool("list_threads_for_location") || hasTool("update_comment") || hasTool("reply_comment") || hasTool("resolve_thread")) {
     let line = "Handle existing threads: reply to threads instead of duplicating when possible.";

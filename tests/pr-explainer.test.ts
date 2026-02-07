@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { buildFileGuideMarker, findPreferredInlineAnchor, maybePostPrExplainer, REVIEW_GUIDE_MARKER } from "../src/agent/pr-explainer.ts";
+import {
+  buildFileGuideMarker,
+  findPreferredInlineAnchor,
+  maybePostPrExplainer,
+  REVIEW_GUIDE_FAILURE_MARKER,
+  REVIEW_GUIDE_MARKER,
+} from "../src/agent/pr-explainer.ts";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig } from "../src/types.ts";
 
 function makeOctokitSpy() {
@@ -208,6 +214,84 @@ test("maybePostPrExplainer updates existing guide and file comments when markers
   expect(calls[0].args.comment_id).toBe(11);
   expect(calls[1].type).toBe("review_update");
   expect(calls[1].args.comment_id).toBe(22);
+});
+
+test("maybePostPrExplainer posts explicit failure signal when output is incomplete", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 1,
+      changes: 3,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => ({
+      reviewGuide: "Guide exists but file coverage is incomplete.",
+      fileComments: [],
+    }),
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_FAILURE_MARKER);
+  expect(calls[0].args.body).toContain("No synthetic explainer content was posted.");
+});
+
+test("maybePostPrExplainer posts explicit failure signal when output is missing", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const changedFiles: ChangedFile[] = [
+    {
+      filename: "src/index.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+      patch: "@@ -1,1 +1,2 @@\n const a = 1;\n+const b = 2;\n",
+    },
+  ];
+
+  await maybePostPrExplainer({
+    enabled: true,
+    model: { contextWindow: 1000 },
+    tools: [],
+    config: baseConfig,
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 7,
+    headSha: "head",
+    prInfo: basePrInfo,
+    changedFiles,
+    existingComments: [],
+    sequenceDiagram: null,
+    effectiveThinkingLevel: "off",
+    log: () => {},
+    generateFn: async () => null,
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_create");
+  expect(calls[0].args.body).toContain(REVIEW_GUIDE_FAILURE_MARKER);
 });
 
 test("findPreferredInlineAnchor prefers added RIGHT lines, then context, then deleted LEFT", () => {

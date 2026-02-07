@@ -93,3 +93,30 @@ test("read tool allows files starting with .. in repo root", async () => {
   const result = await readTool.execute("", { path: "..foo" });
   expect(result.content[0].text).toContain("ok");
 });
+
+test("validate_mermaid tool accepts valid sequence diagram", async () => {
+  const tools = createReadOnlyTools(process.cwd());
+  const validateTool = tools.find((tool) => tool.name === "validate_mermaid");
+  if (!validateTool) throw new Error("validate_mermaid tool missing");
+
+  const result = await validateTool.execute("", {
+    diagram: "sequenceDiagram\nA->>B: ping",
+  });
+
+  expect(result.details.valid).toBe(true);
+  expect(result.details.diagramType).toBe("sequenceDiagram");
+  expect(result.details.errors).toEqual([]);
+});
+
+test("validate_mermaid tool reports invalid diagram", async () => {
+  const tools = createReadOnlyTools(process.cwd());
+  const validateTool = tools.find((tool) => tool.name === "validate_mermaid");
+  if (!validateTool) throw new Error("validate_mermaid tool missing");
+
+  const result = await validateTool.execute("", {
+    diagram: "not-mermaid\nA->B",
+  });
+
+  expect(result.details.valid).toBe(false);
+  expect(result.details.errors.length).toBeGreaterThan(0);
+});

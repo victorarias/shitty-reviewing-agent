@@ -55,6 +55,11 @@ type AgentLike = {
   abort: () => void;
 };
 
+export function shouldGenerateLegacySequenceDiagram(config: ReviewConfig, directoryCount: number): boolean {
+  if (config.experimentalPrExplainer) return false;
+  return directoryCount > 3;
+}
+
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
   const log = (...args: unknown[]) => {
@@ -237,7 +242,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
   const sequenceDiagram = await maybeGenerateSequenceDiagram({
-    enabled: directoryCount > 3,
+    enabled: shouldGenerateLegacySequenceDiagram(config, directoryCount),
     model,
     tools: [...readTools, ...githubTools],
     config,

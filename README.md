@@ -72,7 +72,7 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 
 - `agent.subagent` (in-process delegation): `subagent`
 - `terminate` (run control; always available, not allowlist-gated)
-- `filesystem` (read-only): `read`, `grep`, `find`, `ls`
+- `filesystem` (read-only): `read`, `grep`, `find`, `ls`, `validate_mermaid`
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
 - `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only in PR mode; write-enabled in scheduled runs with restrictions)
 - `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google/Vertex only; Vertex requires `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`)
@@ -162,6 +162,7 @@ jobs:
 - When `experimental-pr-explainer` (or `review.experimental.prExplainer`) is enabled, the agent also posts:
   - one PR-level "Review Guide" comment
   - one explainer comment per changed file (inline when possible, issue-comment fallback for non-commentable/binary/large diffs)
+  - the legacy auto-generated summary sequence diagram is disabled
 - The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
 - Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.

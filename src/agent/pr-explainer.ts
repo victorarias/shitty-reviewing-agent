@@ -10,6 +10,7 @@ type Octokit = ReturnType<typeof getOctokit>;
 
 const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
 export const REVIEW_GUIDE_MARKER = "<!-- sri:review-guide -->";
+export const REVIEW_GUIDE_FAILURE_MARKER = "<!-- sri:review-guide-error -->";
 const FILE_GUIDE_MARKER_PREFIX = "<!-- sri:file-review-guide:path=";
 const FILE_GUIDE_MARKER_SUFFIX = " -->";
 
@@ -54,14 +55,23 @@ export async function maybePostPrExplainer(params: {
     })
     : await generatePrExplainerContent(params);
   if (!generated) {
-    params.log("pr explainer produced no usable output");
+    await upsertExplainerFailureComment(params, [
+      "Explainer output was missing or could not be parsed as required JSON.",
+    ]);
     return;
   }
 
-  const normalized = normalizePrExplainerContent(generated, params.prInfo, params.changedFiles, params.sequenceDiagram);
+  const validation = validatePrExplainerContent(generated, params.changedFiles);
+  if (validation.ok === false) {
+    await upsertExplainerFailureComment(params, validation.errors);
+    return;
+  }
+
+  const normalized = validation.value;
   await upsertReviewGuideComment(params, normalized.reviewGuide);
   for (const file of params.changedFiles) {
-    const body = normalized.fileCommentByPath.get(file.filename) ?? buildFallbackFileComment(file, params.prInfo);
+    const body = normalized.fileCommentByPath.get(file.filename);
+    if (!body) continue;
     await upsertFileGuideComment(params, file, body);
   }
 }
@@ -226,77 +236,108 @@ function toStringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function normalizePrExplainerContent(
+function validatePrExplainerContent(
   generated: PrExplainerContent,
-  prInfo: PullRequestInfo,
-  changedFiles: ChangedFile[],
-  sequenceDiagram?: string | null
-): { reviewGuide: string; fileCommentByPath: Map<string, string> } {
-  const changedPathSet = new Set(changedFiles.map((file) => file.filename));
-  const map = new Map<string, string>();
-  for (const entry of generated.fileComments) {
-    const resolved = resolveChangedPath(entry.path, changedPathSet);
-    if (!resolved) continue;
-    map.set(resolved, entry.body.trim());
+  changedFiles: ChangedFile[]
+): {
+  ok: true;
+  value: { reviewGuide: string; fileCommentByPath: Map<string, string> };
+} | {
+  ok: false;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const reviewGuide = generated.reviewGuide?.trim() ?? "";
+  if (!reviewGuide) {
+    errors.push("Missing non-empty `reviewGuide`.");
   }
+
+  const changedPathSet = new Set(changedFiles.map((file) => normalizePathForMatch(file.filename)));
+  const map = new Map<string, string>();
+  const unresolvedPaths: string[] = [];
+
+  for (const entry of generated.fileComments) {
+    const normalizedPath = normalizePathForMatch(entry.path);
+    if (!changedPathSet.has(normalizedPath)) {
+      unresolvedPaths.push(entry.path);
+      continue;
+    }
+    map.set(normalizedPath, entry.body.trim());
+  }
+
+  if (unresolvedPaths.length > 0) {
+    errors.push(`Returned file comments for unknown paths: ${unresolvedPaths.map((p) => `\`${p}\``).join(", ")}.`);
+  }
+
+  const missingFiles = changedFiles
+    .map((file) => normalizePathForMatch(file.filename))
+    .filter((path) => !map.has(path));
+  if (missingFiles.length > 0) {
+    errors.push(`Missing file comments for changed files: ${missingFiles.map((p) => `\`${p}\``).join(", ")}.`);
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+
+  const fileCommentByPath = new Map<string, string>();
   for (const file of changedFiles) {
-    if (!map.has(file.filename)) {
-      map.set(file.filename, buildFallbackFileComment(file, prInfo));
+    const key = normalizePathForMatch(file.filename);
+    const body = map.get(key);
+    if (body) {
+      fileCommentByPath.set(file.filename, body);
     }
   }
-  const reviewGuide = generated.reviewGuide?.trim()
-    ? generated.reviewGuide.trim()
-    : buildFallbackReviewGuide(prInfo, changedFiles, sequenceDiagram);
-  return { reviewGuide, fileCommentByPath: map };
+  return { ok: true, value: { reviewGuide, fileCommentByPath } };
 }
 
-function resolveChangedPath(rawPath: string, changedPathSet: Set<string>): string | null {
-  const normalized = rawPath.trim().replace(/^\.?\//, "");
-  if (changedPathSet.has(normalized)) return normalized;
-  const suffixMatches = [...changedPathSet].filter((path) => path.endsWith(normalized));
-  if (suffixMatches.length === 1) return suffixMatches[0];
-  return null;
+function normalizePathForMatch(path: string): string {
+  return path.trim().replace(/^\.\/+/, "");
 }
 
-function buildFallbackReviewGuide(prInfo: PullRequestInfo, changedFiles: ChangedFile[], sequenceDiagram?: string | null): string {
-  const bySize = [...changedFiles]
-    .sort((a, b) => b.changes - a.changes)
-    .slice(0, 5)
-    .map((file) => `- \`${file.filename}\` (+${file.additions}/-${file.deletions})`);
-  const sequenceSection = sequenceDiagram?.trim()
-    ? `\n\n<details><summary>Sequence diagram</summary>\n\n\`\`\`mermaid\n${sequenceDiagram.trim()}\n\`\`\`\n</details>`
-    : "";
-  return `## Review Guide
-
-PR: ${prInfo.title}
-
-### Suggested Review Order
-${changedFiles.map((file) => `- \`${file.filename}\``).join("\n")}
-
-### Highest-Churn Files
-${bySize.length > 0 ? bySize.join("\n") : "- None"}
-
-### Focus Areas
-- Confirm behavior changes match the PR description.
-- Validate error handling and edge cases on touched paths.
-- Check cross-file impacts in shared interfaces and call sites.${sequenceSection}`;
-}
-
-function buildFallbackFileComment(file: ChangedFile, prInfo: PullRequestInfo): string {
-  return `### What this file does
-- This file participates in the codepath affected by this PR; inspect surrounding modules to confirm exact role.
-
-### What changed
-- Status: \`${file.status}\`
-- Diff stats: +${file.additions} / -${file.deletions}
-
-### Why this changed
-- Intended to support the PR goal: "${prInfo.title}". Verify this against the PR description and call sites.
-
-### Review checklist (high-risk focus)
-- [ ] Validate behavior on edge cases and failure paths.
-- [ ] Confirm callers/consumers are updated if interfaces changed.
-- [ ] Check tests cover the new or changed behavior.`;
+async function upsertExplainerFailureComment(
+  params: {
+    octokit: Octokit;
+    owner: string;
+    repo: string;
+    pullNumber: number;
+    existingComments: ExistingComment[];
+  },
+  reasons: string[]
+): Promise<void> {
+  const body = ensureBotMarker([
+    "⚠️ Experimental PR explainer failed for this run.",
+    "",
+    "Reasons:",
+    ...reasons.map((reason) => `- ${reason}`),
+    "",
+    "No synthetic explainer content was posted.",
+    "",
+    REVIEW_GUIDE_FAILURE_MARKER,
+  ].join("\n"));
+  const existing = findLatestComment(
+    params.existingComments.filter(
+      (comment) =>
+        comment.type === "issue" &&
+        comment.body.includes(REVIEW_GUIDE_FAILURE_MARKER) &&
+        isBotComment(comment)
+    )
+  );
+  if (existing) {
+    await params.octokit.rest.issues.updateComment({
+      owner: params.owner,
+      repo: params.repo,
+      comment_id: existing.id,
+      body,
+    });
+    return;
+  }
+  await params.octokit.rest.issues.createComment({
+    owner: params.owner,
+    repo: params.repo,
+    issue_number: params.pullNumber,
+    body,
+  });
 }
 
 async function upsertReviewGuideComment(

@@ -372,6 +372,9 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
         ? "- Git tool schema: git({ args: string[] }) where args[0] is a supported subcommand. Write subcommands are allowed with strict rules: git add requires explicit file paths (no -A/--all/-u, no globs, no '.'); git commit requires -m/--message (no -a/--all/--amend); git checkout only allows -b/-B <branch>; git switch only allows -c/--create <branch>; git config only allows user.name/user.email. Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
         : "- Git tool schema: git({ args: string[] }) where args[0] is a read-only subcommand (e.g., log/show/diff). Disallowed flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index, and any --output/--config*/--git-dir*/--work-tree*/--exec-path*/--no-index* prefixes. Output is raw stdout."
       : null,
+    hasTool("validate_mermaid")
+      ? "- Mermaid validation tool schema: validate_mermaid({ diagram: string }). Use it to verify Mermaid syntax before posting diagrams."
+      : null,
   ]
     .filter(Boolean)
     .join("\n");
