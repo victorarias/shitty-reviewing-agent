@@ -25,6 +25,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     hasTool("web_search")
       ? "- When you need external validation (model names, API versions, public behavior), use web_search. Do not speculate or cast doubt without checking. If web_search isn't available, state uncertainty briefly and move on without recommending changes based on it."
       : null,
+    "- Never post a suggestion block that keeps code unchanged. Only suggest concrete edits that materially change behavior, correctness, performance, security, or maintainability.",
     "- For follow-up reviews (previous verdict is not \"(none)\" or last reviewed SHA is set): make it clear this is a follow-up. If your verdict changes, explain why and what new information drove the change. Reference the previous review URL as a label only. Keep the summary delta-focused: only mention issues/resolutions you can tie to the new changes. Do not restate unchanged prior findings.",
   ]
     .filter(Boolean)
@@ -129,8 +130,7 @@ Rules:
   </details>
 
 # Style
-- Tone: precise but light-hearted. Technical feedback must be unambiguous and actionable.
-- A brief farm-animal reference is fine if it fits naturally, but never at the expense of technical clarity.
+- Tone: precise, professional, and technical. No jokes, metaphors, mascots, or unrelated flavor text.
 - When replying to human responses, keep it short: "Makes sense, no changes needed." / "I see the rationale. Let's leave it as-is."`;
 }
 
