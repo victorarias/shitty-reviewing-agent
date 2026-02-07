@@ -277,7 +277,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     sequenceDiagram,
   });
 
-  if (config.experimentalPrExplainer) {
+  if (config.experimentalPrExplainer && feedbackAllowed) {
     try {
       await maybePostPrExplainer({
         enabled: true,
@@ -308,6 +308,8 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     } catch (error) {
       log("pr explainer failed", error);
     }
+  } else if (config.experimentalPrExplainer && !feedbackAllowed) {
+    log("experimental PR explainer skipped because github.pr.feedback tools are not allowlisted");
   }
 
   let abortedByLimit = false;

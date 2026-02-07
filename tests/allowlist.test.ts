@@ -214,3 +214,45 @@ test("runReview skips fallback summary when feedback tools are disallowed", asyn
 
   expect(calls.some((call) => call.type === "issue_comment")).toBe(false);
 });
+
+test("runReview skips experimental explainer when feedback tools are disallowed", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  let explainerCalled = false;
+  const config: ReviewConfig = {
+    ...baseConfig,
+    experimentalPrExplainer: true,
+  };
+
+  const agentFactory = () => ({
+    state: { error: null, messages: [] },
+    subscribe() {},
+    async prompt() {},
+    abort() {},
+  });
+
+  await runReview({
+    config,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    toolAllowlist: ["filesystem"],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+      prExplainerGenerateFn: async () => {
+        explainerCalled = true;
+        return {
+          reviewGuide: "Guide",
+          fileComments: [{ path: "src/index.ts", body: "File explanation" }],
+        };
+      },
+    },
+  });
+
+  expect(explainerCalled).toBe(false);
+  expect(calls.some((call) => call.type === "issue_comment" || call.type === "review_comment")).toBe(false);
+});
