@@ -104,7 +104,7 @@ test("validate_mermaid tool accepts valid sequence diagram", async () => {
   });
 
   expect(result.details.valid).toBe(true);
-  expect(result.details.diagramType).toBe("sequenceDiagram");
+  expect(["sequence", "sequenceDiagram"]).toContain(result.details.diagramType);
   expect(result.details.errors).toEqual([]);
 });
 

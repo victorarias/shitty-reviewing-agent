@@ -211,10 +211,10 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
   }> = {
     name: "validate_mermaid",
     label: "Validate Mermaid diagram",
-    description: "Validate Mermaid syntax with lightweight static checks.",
+    description: "Validate Mermaid syntax using Mermaid's parser plus lightweight structural checks.",
     parameters: ValidateMermaidSchema,
     execute: async (_id, params) => {
-      const result = validateMermaidDiagram(params.diagram);
+      const result = await validateMermaidDiagram(params.diagram);
       const summary = [
         `valid: ${result.valid}`,
         `diagram_type: ${result.diagramType ?? "unknown"}`,
@@ -325,12 +325,12 @@ function formatLsTime(isoTime: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-function validateMermaidDiagram(diagram: string): {
+async function validateMermaidDiagram(diagram: string): Promise<{
   valid: boolean;
   diagramType: string | null;
   errors: string[];
   warnings: string[];
-} {
+}> {
   const normalized = extractMermaidSource(diagram);
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -345,9 +345,13 @@ function validateMermaidDiagram(diagram: string): {
 
   const lines = normalized.split(/\r?\n/);
   const firstLine = lines.find((line) => line.trim().length > 0)?.trim() ?? "";
-  const diagramType = detectMermaidType(firstLine);
-  if (!diagramType) {
-    errors.push("Unable to detect Mermaid diagram type from first non-empty line.");
+  let diagramType = detectMermaidType(firstLine);
+  try {
+    const mermaid = await import("mermaid");
+    const parseResult = await mermaid.default.parse(normalized, { suppressErrors: false });
+    diagramType = parseResult?.diagramType ?? diagramType;
+  } catch (error: any) {
+    errors.push(formatMermaidParseError(error));
   }
 
   if (/\t/.test(normalized)) {
@@ -431,4 +435,9 @@ function checkBalancedPairs(input: string, openChar: string, closeChar: string, 
     return [`Unbalanced ${label}: missing '${closeChar}'.`];
   }
   return [];
+}
+
+function formatMermaidParseError(error: any): string {
+  const message = String(error?.message ?? error ?? "").trim();
+  return message || "Mermaid parser rejected the diagram.";
 }
