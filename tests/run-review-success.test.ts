@@ -138,3 +138,54 @@ test("runReview executes experimental PR explainer when enabled", async () => {
   expect(calls[2].type).toBe("issue_comment");
   expect(calls[2].args.body).toContain("**Verdict:** Approve");
 });
+
+test("runReview retries when agent records state.error after prompt", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  let promptCalls = 0;
+
+  const agentFactory = ({ initialState }: any) => {
+    const tools = initialState.tools as Array<any>;
+    const summaryTool = tools.find((tool) => tool.name === "post_summary");
+    if (!summaryTool) {
+      throw new Error("Missing post_summary tool");
+    }
+    const state = { error: null as unknown, messages: [] as any[] };
+    return {
+      state,
+      subscribe() {},
+      async prompt() {
+        promptCalls += 1;
+        if (promptCalls === 1) {
+          state.error = { message: "temporary upstream failure", status: 503 };
+          return;
+        }
+        await summaryTool.execute("", {
+          body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+        });
+      },
+      abort() {
+        state.error = state.error ?? "aborted";
+      },
+    };
+  };
+
+  await runReview({
+    config: baseConfig,
+    context: baseContext,
+    octokit: octokit as any,
+    prInfo: basePrInfo,
+    changedFiles: baseChangedFiles,
+    existingComments: [],
+    reviewThreads: [],
+    overrides: {
+      model: { contextWindow: 1000 } as any,
+      compactionModel: null,
+      agentFactory,
+    },
+  });
+
+  expect(promptCalls).toBe(2);
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_comment");
+  expect(calls[0].args.body).toContain("**Verdict:** Approve");
+});
