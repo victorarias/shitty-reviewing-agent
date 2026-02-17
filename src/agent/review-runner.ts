@@ -326,7 +326,12 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log("prompt start");
     await withRetries(
       async () => {
+        clearAgentError(agent);
         await agent.prompt(userPrompt);
+        if (!summaryState.posted && agent.state.error) {
+          log("agent state error after prompt", safeStringify(agent.state.error));
+          throw normalizeAgentError(agent.state.error);
+        }
       },
       3,
       (error) => !summaryState.abortedByLimit && !isCancellationError(error)
@@ -426,4 +431,46 @@ function isCancellationError(error: unknown): boolean {
     ? error
     : String((error as { message?: unknown })?.message ?? error);
   return /operation was canceled|cancell?ed|abort(ed)?/i.test(message);
+}
+
+function clearAgentError(agent: AgentLike): void {
+  if (agent.state && "error" in agent.state) {
+    agent.state.error = null;
+  }
+}
+
+function normalizeAgentError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const wrapped = new Error(errorMessage(error));
+  const wrappedWithExtras = wrapped as Error & Record<string, unknown>;
+  if (error && typeof error === "object") {
+    const source = error as Record<string, unknown>;
+    const passthroughKeys = [
+      "status",
+      "code",
+      "statusCode",
+      "retryAfter",
+      "retryAfterMs",
+      "retry_after",
+      "retry_after_ms",
+      "headers",
+      "response",
+      "error",
+    ];
+    for (const key of passthroughKeys) {
+      if (key in source) {
+        wrappedWithExtras[key] = source[key];
+      }
+    }
+  }
+  return wrapped;
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") {
+    return (error as { message: string }).message;
+  }
+  return safeStringify(error);
 }
