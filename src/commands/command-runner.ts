@@ -280,6 +280,7 @@ function buildTools(
         getBilling: () => summaryState.billing,
         existingComments: prInput.existingComments,
         reviewThreads: prInput.reviewThreads,
+        commentType: prInput.commentType,
         onSummaryPosted: () => {
           summaryState.posted = true;
         },

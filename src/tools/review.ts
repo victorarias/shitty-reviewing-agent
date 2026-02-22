@@ -3,7 +3,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
 import { createTerminateTool } from "./terminate.js";
-import type { ChangedFile, ExistingComment, ReviewThreadInfo } from "../types.js";
+import type { ChangedFile, CommentType, ExistingComment, ReviewThreadInfo } from "../types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -26,6 +26,7 @@ interface ReviewToolDeps {
   onInlineComment?: () => void;
   onSuggestion?: () => void;
   summaryPosted?: () => boolean;
+  commentType?: CommentType;
 }
 
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
@@ -310,6 +311,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     description: "Update an existing PR comment (review or issue comment).",
     parameters: UpdateSchema,
     execute: async (_id, params) => {
+      const mode = deps.commentType ?? "both";
       const existing = commentById.get(params.comment_id);
       const body = ensureBotMarker(params.body);
       const updateByType = async (type: "review" | "issue") => {
@@ -332,23 +334,47 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
       };
-      const preferredType = existing?.type === "issue" ? "issue" : "review";
-      const fallbackType = preferredType === "review" ? "issue" : "review";
-      try {
-        const response = await updateByType(preferredType);
+
+      if (existing && mode !== "both" && existing.type !== mode) {
         return {
-          content: [{ type: "text", text: `Comment updated: ${response.data.id}` }],
-          details: { id: response.data.id },
+          content: [
+            {
+              type: "text",
+              text: `Comment ${params.comment_id} is a ${existing.type} comment and cannot be updated in ${mode}-only mode.`,
+            },
+          ],
+          details: { id: -1 },
         };
-      } catch (error: any) {
-        if (!isLikelyWrongCommentType(error)) {
-          throw error;
+      }
+
+      const candidateTypes: ("review" | "issue")[] = [];
+      if (existing?.type) {
+        candidateTypes.push(existing.type);
+      } else if (mode === "review" || mode === "issue") {
+        candidateTypes.push(mode);
+      } else {
+        candidateTypes.push("review", "issue");
+      }
+
+      for (let i = 0; i < candidateTypes.length; i += 1) {
+        const type = candidateTypes[i];
+        try {
+          const response = await updateByType(type);
+          return {
+            content: [{ type: "text", text: `Comment updated: ${response.data.id}` }],
+            details: { id: response.data.id },
+          };
+        } catch (error: any) {
+          const canFallback = i < candidateTypes.length - 1;
+          if (!canFallback || !isLikelyWrongCommentType(error)) {
+            throw error;
+          }
         }
       }
-      const response = await updateByType(fallbackType);
+
       return {
-        content: [{ type: "text", text: `Comment updated: ${response.data.id}` }],
-        details: { id: response.data.id },
+        content: [{ type: "text", text: `Comment ${params.comment_id} could not be updated.` }],
+        details: { id: -1 },
       };
     },
   };

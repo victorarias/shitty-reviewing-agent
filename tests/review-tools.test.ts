@@ -765,6 +765,75 @@ test("update_comment updates review comment ids", async () => {
   expect(calls[0].args.comment_id).toBe(80);
 });
 
+test("update_comment rejects cross-type updates in issue-only mode", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 81,
+      author: "alice",
+      body: "Original inline",
+      url: "https://example.com/81",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+    commentType: "issue",
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  const result = await updateTool.execute("", {
+    comment_id: 81,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(0);
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("issue-only mode");
+});
+
+test("update_comment uses issue API directly in issue-only mode", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    commentType: "issue",
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  await updateTool.execute("", {
+    comment_id: 82,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_update");
+  expect(calls[0].args.comment_id).toBe(82);
+});
+
 test("update_comment falls back to issue comments when review update is wrong type", async () => {
   const { octokit, calls } = makeOctokitSpy();
   octokit.rest.pulls.updateReviewComment = async (args: any) => {
