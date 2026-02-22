@@ -94,7 +94,7 @@ ${subagentSection}${workflowSection}
 
 **Verdict:** Request Changes | Approve | Skipped
 
-**Preface:** <one sentence; see rules below>
+<one-sentence preface; see rules below>
 
 ### Issues Found
 
@@ -127,7 +127,7 @@ Rules:
 - If there are no items for a section, write "- None" (except Multi-file Suggestions and Still Open).
 - If there are no multi-file suggestions, omit the "Multi-file Suggestions" section entirely.
 - If there are no still-open items, omit the "Still Open" section entirely.
-- Preface: First review → "Here's my complete review of this PR." Follow-up → "Considering my initial review and the changes you made, here's what I found now:" (or similar).
+- Preface: A single plain sentence before the Issues Found table. No label prefix. First review → briefly state what you reviewed. Follow-up → briefly state what changed since the last review (e.g., number of new commits, what areas were touched). Never use a generic filler like "Here's my review" — ground it in specifics from the PR.
 - Follow-up reviews: replace "Key Findings" with the three follow-up sections (New Issues, Resolved, Still Open) and keep each to short bullets.
 - Follow-up reviews: "New Issues Since Last Review" should only list new issues found in the changed code. If none, use "- None".
 - Follow-up reviews: "Resolved Since Last Review" should only list issues clearly fixed by the new changes. If none, use "- None".
