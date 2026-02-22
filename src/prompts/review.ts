@@ -148,17 +148,28 @@ ${followUpSection}${toolNotesSection}${subagentSection}${workflowSection}
 - <finding>
 
 ### Key Files (first review only)
-<details><summary>📂 Key files to review</summary>
+Use a scan-first layout, but keep all four details for each file.
+
+| File | Why review this |
+|------|------------------|
+| \`path/to/file.ts\` | <highest-risk reason in one line> |
+
+<details><summary>📂 File details</summary>
 
 #### \`path/to/file.ts\`
-**What this file does:** <role in the codebase>
-**What changed:** <what was modified>
-**Why it changed:** <intent and rationale>
-**Review checklist:**
-- <specific thing to verify — edge cases, interactions, assumptions>
+| Aspect | Notes |
+|-------|-------|
+| What this file does | <role in the codebase> |
+| What changed | <what was modified> |
+| Why it changed | <intent and rationale> |
+| Review checklist | - <specific behavior/edge case to verify><br>- <integration or failure-mode check> |
+
+Optional for cross-file logic:
+- **Impact map:** \`api.ts → service.ts → repo.ts\`
 
 <!-- Include files with significant logic changes, risk, or cross-cutting impact.
-     Skip config/lockfiles/boilerplate. Order by review priority (highest first). -->
+     Skip config/lockfiles/boilerplate. Keep each cell concise (prefer one line).
+     Keep checklist items concrete and testable. -->
 </details>
 
 ### New Issues Since Last Review (follow-up only)
@@ -173,6 +184,7 @@ ${followUpSection}${toolNotesSection}${subagentSection}${workflowSection}
 **Section rules:**
 - Empty sections: write "- None" (except Still Open — omit if empty).
 - Follow-up reviews: replace Key Findings and Key Files with the three follow-up sections.
+- In Key Files: keep a compact top table, then include a per-file Aspect/Notes table with all four details.
 - Prebuilt sequence diagrams: add under a collapsible \`<details>\` section.
 
 # Style
