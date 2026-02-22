@@ -13,7 +13,13 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     "- If a read response is truncated or partial, fetch additional ranges before drawing conclusions.",
     "- Follow AGENTS.md / CLAUDE.md instructions when present. If new patterns should be documented, suggest updates.",
     hasTool("get_review_context")
-      ? "- Use get_review_context to understand prior summaries, threads, and commits since the last review. Focus on new or unresolved issues and respond to replies in existing threads."
+      ? `- Use get_review_context to understand prior summaries, threads, and commits since the last review.
+- For follow-up reviews, classify every prior bot-owned thread into one of these categories and act accordingly:
+  (a) RESOLVED: the issue was fixed by new commits → call resolve_thread with a brief explanation.
+  (b) HUMAN REPLIED: a human responded since the last review → reply to their comment (agree, clarify, or concede). Do NOT repeat the original feedback.
+  (c) UNRESOLVED + CODE CHANGED: the relevant code was modified but the issue persists → reply to the existing thread with an updated analysis referencing the new code. Do NOT open a new thread.
+  (d) UNRESOLVED + CODE UNCHANGED: the code was not touched → do NOT re-comment or re-post. Silently note it for the summary's "Still Open" section.
+- Never re-post the same feedback. If a prior bot thread already covers an issue and nothing changed, skip it entirely. The prior thread is still visible to the PR author.`
       : null,
     "- If a \"Review scope note\" is present in the user prompt, acknowledge it in the summary.",
     hasTool("git")
@@ -26,7 +32,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
       ? "- When you need external validation (model names, API versions, public behavior), use web_search. Do not speculate or cast doubt without checking. If web_search isn't available, state uncertainty briefly and move on without recommending changes based on it."
       : null,
     "- Never post a suggestion block that keeps code unchanged. Only suggest concrete edits that materially change behavior, correctness, performance, security, or maintainability.",
-    "- For follow-up reviews (previous verdict is not \"(none)\" or last reviewed SHA is set): make it clear this is a follow-up. If your verdict changes, explain why and what new information drove the change. Reference the previous review URL as a label only. Keep the summary delta-focused: only mention issues/resolutions you can tie to the new changes. Do not restate unchanged prior findings.",
+    "- For follow-up reviews (previous verdict is not \"(none)\" or last reviewed SHA is set): make it clear this is a follow-up. If your verdict changes, explain why and what new information drove the change. Reference the previous review URL as a label only. Keep the summary delta-focused: only mention issues/resolutions you can tie to the new changes. Do not restate unchanged prior findings. If prior issues remain open but untouched, list them briefly in a \"Still Open\" section without re-posting inline comments.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -53,7 +59,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     workflowSteps.push("When posting Mermaid diagrams, validate them first with validate_mermaid.");
   }
   if (hasTool("list_threads_for_location") || hasTool("update_comment") || hasTool("reply_comment") || hasTool("resolve_thread")) {
-    let line = "Handle existing threads: reply to threads instead of duplicating when possible.";
+    let line = "Handle existing threads: classify each prior bot thread (RESOLVED / HUMAN REPLIED / UNRESOLVED+CHANGED / UNRESOLVED+UNCHANGED) and act per the rules above. Never duplicate an existing thread.";
     if (hasTool("list_threads_for_location")) {
       line += " Use list_threads_for_location if unsure.";
     }
@@ -114,13 +120,18 @@ ${subagentSection}${workflowSection}
 - <resolved item 1>
 - <resolved item 2>
 
+### Still Open (follow-up only)
+- <unresolved item where code was not changed — no new inline comment posted>
+
 Rules:
-- If there are no items for a section, write "- None" (except Multi-file Suggestions).
+- If there are no items for a section, write "- None" (except Multi-file Suggestions and Still Open).
 - If there are no multi-file suggestions, omit the "Multi-file Suggestions" section entirely.
+- If there are no still-open items, omit the "Still Open" section entirely.
 - Preface: First review → "Here's my complete review of this PR." Follow-up → "Considering my initial review and the changes you made, here's what I found now:" (or similar).
-- Follow-up reviews: replace "Key Findings" with the two follow-up sections and keep each to short bullets.
+- Follow-up reviews: replace "Key Findings" with the three follow-up sections (New Issues, Resolved, Still Open) and keep each to short bullets.
 - Follow-up reviews: "New Issues Since Last Review" should only list new issues found in the changed code. If none, use "- None".
 - Follow-up reviews: "Resolved Since Last Review" should only list issues clearly fixed by the new changes. If none, use "- None".
+- Follow-up reviews: "Still Open" lists prior issues where the relevant code was not modified. Do not re-post inline comments for these — the original threads are still visible. Omit the section if empty.
 - If a prebuilt sequence diagram is provided in the user prompt, add it under a collapsible section like:
   <details><summary>Sequence diagram</summary>
   \`\`\`mermaid
