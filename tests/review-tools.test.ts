@@ -22,6 +22,10 @@ function makeOctokitSpy() {
       },
       issues: {
         createComment: async () => ({ data: { id: 303 } }),
+        updateComment: async (args: any) => {
+          calls.push({ type: "issue_update", args });
+          return { data: { id: args.comment_id } };
+        },
       },
     },
     graphql: async (query: string, args: any) => {
@@ -681,6 +685,188 @@ test("update_comment tool updates existing review comment", async () => {
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("update");
   expect(calls[0].args.comment_id).toBe(55);
+});
+
+test("update_comment tool updates issue comment", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 70,
+      author: "alice",
+      body: "Original summary",
+      url: "https://example.com/70",
+      type: "issue",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  await updateTool.execute("", {
+    comment_id: 70,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_update");
+  expect(calls[0].args.comment_id).toBe(70);
+  expect(calls[0].args.body).toContain("<!-- sri:bot-comment -->");
+});
+
+test("update_comment updates review comment ids", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 80,
+      author: "alice",
+      body: "Original inline",
+      url: "https://example.com/80",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  await updateTool.execute("", {
+    comment_id: 80,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("update");
+  expect(calls[0].args.comment_id).toBe(80);
+});
+
+test("update_comment rejects cross-type updates in issue-only mode", async () => {
+  const existingComments: ExistingComment[] = [
+    {
+      id: 81,
+      author: "alice",
+      body: "Original inline",
+      url: "https://example.com/81",
+      type: "review",
+      path: "src/index.ts",
+      line: 1,
+      side: "RIGHT",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+    commentType: "issue",
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  const result = await updateTool.execute("", {
+    comment_id: 81,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(0);
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("issue-only mode");
+});
+
+test("update_comment uses issue API directly in issue-only mode", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    commentType: "issue",
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  await updateTool.execute("", {
+    comment_id: 82,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("issue_update");
+  expect(calls[0].args.comment_id).toBe(82);
+});
+
+test("update_comment falls back to issue comments when review update is wrong type", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  octokit.rest.pulls.updateReviewComment = async (args: any) => {
+    calls.push({ type: "update_fail", args });
+    const error: any = new Error("Not Found");
+    error.status = 404;
+    throw error;
+  };
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const updateTool = getTool(tools, "update_comment");
+  await updateTool.execute("", {
+    comment_id: 99,
+    body: "Updated summary",
+  });
+
+  expect(calls.length).toBe(2);
+  expect(calls[0].type).toBe("update_fail");
+  expect(calls[1].type).toBe("issue_update");
+  expect(calls[1].args.comment_id).toBe(99);
+  expect(calls[1].args.body).toContain("<!-- sri:bot-comment -->");
 });
 
 test("comment tool rejects lines not in diff", async () => {
