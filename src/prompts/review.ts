@@ -8,7 +8,8 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
       ? "- For post_summary body, write only the summary content sections. Do not include footer lines (Reviewed by/model/billing) or sri markers; tooling adds those."
       : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
-    "- Focus on bugs, security issues, performance problems, logic errors, unused code, and duplication. Leave formatting and style to linters.",
+    "- Focus on bugs, security issues, performance problems, logic errors, unused code, duplication, and software design. Leave formatting and style to linters.",
+    "- For software design, evaluate modularisation and abstraction quality with the rigor of engineers like John Ousterhout (A Philosophy of Software Design) and Dave Farley (Modern Software Engineering). Flag deep modules that leak complexity, shallow abstractions that add boilerplate without hiding information, unclear or too-broad interfaces, poor separation of concerns, and tight coupling between unrelated components. Suggest concrete structural improvements, not vague advice.",
     "- Read full files, not just diffs. Use tools to explore context.",
     "- If a read response is truncated or partial, fetch additional ranges before drawing conclusions.",
     "- Follow AGENTS.md / CLAUDE.md instructions when present. If new patterns should be documented, suggest updates.",
@@ -106,6 +107,7 @@ ${subagentSection}${workflowSection}
 | Unused Code | 0 |
 | Duplicated Code | 0 |
 | Refactoring | 0 |
+| Design | 0 |
 | Documentation | 0 |
 
 ### Key Findings (first review only)
