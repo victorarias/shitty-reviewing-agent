@@ -1,0 +1,70 @@
+diff --git a/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js b/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
+index f7e3dc3..9bfff44 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
++++ b/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
+@@ -46,6 +46,10 @@ export function getEnvApiKey(provider) {
+     // Vertex AI uses Application Default Credentials, not API keys.
+     // Auth is configured via `gcloud auth application-default login`.
+     if (provider === "google-vertex") {
++        const vertexApiKey = process.env.VERTEX_AI_API_KEY;
++        if (vertexApiKey) {
++            return vertexApiKey;
++        }
+         const hasCredentials = hasVertexAdcCredentials();
+         const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+         const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
+diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+index 8bb617b..f6a32ed 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
++++ b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+@@ -35,9 +35,10 @@ export const streamGoogleVertex = (model, context, options) => {
+             timestamp: Date.now(),
+         };
+         try {
+-            const project = resolveProject(options);
+-            const location = resolveLocation(options);
+-            const client = createClient(model, project, location, options?.headers);
++            const apiKey = resolveApiKey(options);
++            const project = apiKey ? undefined : resolveProject(options);
++            const location = apiKey ? undefined : resolveLocation(options);
++            const client = createClient(model, project, location, options?.headers, apiKey);
+             const params = buildParams(model, context, options);
+             options?.onPayload?.(params);
+             const googleStream = await client.models.generateContentStream(params);
+@@ -241,7 +242,7 @@ export const streamSimpleGoogleVertex = (model, context, options) => {
+         },
+     });
+ };
+-function createClient(model, project, location, optionsHeaders) {
++function createClient(model, project, location, optionsHeaders, apiKey) {
+     const httpOptions = {};
+     if (model.headers || optionsHeaders) {
+         httpOptions.headers = { ...model.headers, ...optionsHeaders };
+@@ -251,21 +252,25 @@ function createClient(model, project, location, optionsHeaders) {
+         vertexai: true,
+         project,
+         location,
++        apiKey,
+         apiVersion: API_VERSION,
+         httpOptions: hasHttpOptions ? httpOptions : undefined,
+     });
+ }
++function resolveApiKey(options) {
++    return options?.apiKey || process.env.VERTEX_AI_API_KEY;
++}
+ function resolveProject(options) {
+     const project = options?.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+     if (!project) {
+-        throw new Error("Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options.");
++        throw new Error("Vertex AI requires a project ID unless using VERTEX_AI_API_KEY. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options.");
+     }
+     return project;
+ }
+ function resolveLocation(options) {
+     const location = options?.location || process.env.GOOGLE_CLOUD_LOCATION;
+     if (!location) {
+-        throw new Error("Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options.");
++        throw new Error("Vertex AI requires a location unless using VERTEX_AI_API_KEY. Set GOOGLE_CLOUD_LOCATION or pass location in options.");
+     }
+     return location;
+ }
