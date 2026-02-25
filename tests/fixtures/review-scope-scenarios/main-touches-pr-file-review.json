@@ -1,0 +1,42 @@
+{
+  "id": "main-touches-pr-file-review",
+  "description": "If main touches a PR file after review, prefer review over skip.",
+  "steps": [
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "feat: author edits shared file",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/shared.txt",
+          "content": "seed\nline-1\nfeature-middle\nline-3\nline-4\nline-5\n"
+        }
+      ]
+    },
+    { "op": "mark_last_reviewed" },
+    {
+      "op": "commit",
+      "branch": "main",
+      "message": "chore: main edits shared file",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/shared.txt",
+          "content": "seed\nline-1\nline-2\nline-3\nline-4\nmain-end\n"
+        }
+      ]
+    },
+    {
+      "op": "merge_main_into_feature",
+      "message": "merge main into feature"
+    }
+  ],
+  "expected": {
+    "decision": "review",
+    "reasonCode": "LOCAL_TWO_DOT_PR_FILE_CHANGES_REVIEW",
+    "files": [
+      ".scope-harness/shared.txt"
+    ]
+  }
+}

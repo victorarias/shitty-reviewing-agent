@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { runActionFlow } from "../src/app/flow.ts";
+import { REVIEW_SCOPE_DECISIONS, REVIEW_SCOPE_REASON_CODES } from "../src/app/pr-data.ts";
 import { buildUserPrompt } from "../src/prompts/review.ts";
 import type { ActionConfig, ReviewConfig, ReviewContext } from "../src/types.ts";
 
@@ -38,7 +39,13 @@ test("runActionFlow prompt snapshot matches fixture", async () => {
     octokit: {} as any,
     fetchPrDataFn: async () => ({ prInfo: fixture.prInfo, changedFiles: fixture.changedFiles }),
     fetchExistingCommentsFn: async () => ({ existingComments: fixture.existingComments, reviewThreads: [] }),
-    fetchChangesSinceReviewFn: async () => ({ files: fixture.changedFiles, warning: null }),
+    fetchChangesSinceReviewFn: async () => ({
+      files: fixture.changedFiles,
+      warning: null,
+      decision: REVIEW_SCOPE_DECISIONS.REVIEW,
+      reasonCode: REVIEW_SCOPE_REASON_CODES.SCOPED_REVIEW,
+      reason: "Scoped review",
+    }),
     runReviewFn: async (input) => {
       captured = input;
     },

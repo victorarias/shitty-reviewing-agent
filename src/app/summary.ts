@@ -22,3 +22,25 @@ export async function postSkipSummary(
     }),
   });
 }
+
+export async function postNoNewChangesSummary(
+  octokit: ReturnType<typeof github.getOctokit>,
+  context: ReviewContext,
+  modelId: string,
+  reviewSha: string,
+  reason?: string
+): Promise<void> {
+  await octokit.rest.issues.createComment({
+    owner: context.owner,
+    repo: context.repo,
+    issue_number: context.prNumber,
+    body: buildSummaryMarkdown({
+      verdict: "Skipped",
+      issues: [reason ?? "No new PR-authored changes detected since the last review."],
+      keyFindings: ["Push appears to contain only rebase/merge updates from base branch history."],
+      multiFileSuggestions: ["None"],
+      model: modelId,
+      reviewSha,
+    }),
+  });
+}

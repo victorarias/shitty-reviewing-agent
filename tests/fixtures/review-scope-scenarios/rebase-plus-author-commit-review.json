@@ -1,0 +1,51 @@
+{
+  "id": "rebase-plus-author-commit-review",
+  "description": "Rebase followed by an author commit should remain on review path.",
+  "steps": [
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "feat: author change v1",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rebase-plus-author-commit-review/author.txt",
+          "content": "author-v1\n"
+        }
+      ]
+    },
+    { "op": "mark_last_reviewed" },
+    {
+      "op": "commit",
+      "branch": "main",
+      "message": "chore: main only change",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rebase-plus-author-commit-review/main.txt",
+          "content": "main-v1\n"
+        }
+      ]
+    },
+    { "op": "rebase_feature_onto_main" },
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "feat: author change v2",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rebase-plus-author-commit-review/author.txt",
+          "content": "author-v2\n"
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "decision": "review",
+    "reasonCode": "LOCAL_TWO_DOT_PR_FILE_CHANGES_REVIEW",
+    "files": [
+      ".scope-harness/rebase-plus-author-commit-review/author.txt"
+    ]
+  }
+}
