@@ -1,0 +1,51 @@
+{
+  "id": "rename-after-rebase-review",
+  "description": "Renames after a rebase should stay reviewable and preserve path mapping.",
+  "steps": [
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "feat: add original file",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rename-after-rebase-review/original.txt",
+          "content": "original-v1\n"
+        }
+      ]
+    },
+    { "op": "mark_last_reviewed" },
+    {
+      "op": "commit",
+      "branch": "main",
+      "message": "chore: main only change",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rename-after-rebase-review/main.txt",
+          "content": "main-v1\n"
+        }
+      ]
+    },
+    { "op": "rebase_feature_onto_main" },
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "refactor: rename author file",
+      "changes": [
+        {
+          "action": "rename",
+          "from": ".scope-harness/rename-after-rebase-review/original.txt",
+          "to": ".scope-harness/rename-after-rebase-review/renamed.txt"
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "decision": "review",
+    "reasonCode": "LOCAL_TWO_DOT_PR_FILE_CHANGES_REVIEW",
+    "files": [
+      ".scope-harness/rename-after-rebase-review/renamed.txt"
+    ]
+  }
+}

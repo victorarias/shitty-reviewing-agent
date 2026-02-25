@@ -1,0 +1,37 @@
+{
+  "id": "rebase-only-skip",
+  "description": "Rebase that only pulls main changes after last review should skip confidently.",
+  "steps": [
+    {
+      "op": "commit",
+      "branch": "feature",
+      "message": "feat: author change",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rebase-only-skip/author.txt",
+          "content": "author-v1\n"
+        }
+      ]
+    },
+    { "op": "mark_last_reviewed" },
+    {
+      "op": "commit",
+      "branch": "main",
+      "message": "chore: main only change",
+      "changes": [
+        {
+          "action": "write",
+          "path": ".scope-harness/rebase-only-skip/main.txt",
+          "content": "main-v1\n"
+        }
+      ]
+    },
+    { "op": "rebase_feature_onto_main" }
+  ],
+  "expected": {
+    "decision": "skip_confident",
+    "reasonCode": "LOCAL_TWO_DOT_NO_PR_FILE_CHANGES_SKIP",
+    "files": []
+  }
+}

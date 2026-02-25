@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { postSkipSummary } from "../src/app/summary.ts";
+import { postNoNewChangesSummary, postSkipSummary } from "../src/app/summary.ts";
 
 function makeOctokitCapture() {
   const calls: Array<{ args: any }> = [];
@@ -23,4 +23,20 @@ test("postSkipSummary matches golden output", async () => {
   expect(calls.length).toBe(1);
   const expected = await Bun.file("tests/fixtures/harness/skip-summary.golden.md").text();
   expect(calls[0].args.body).toBe(expected);
+});
+
+test("postNoNewChangesSummary includes marker and reason", async () => {
+  const { octokit, calls } = makeOctokitCapture();
+  await postNoNewChangesSummary(
+    octokit as any,
+    { owner: "owner", repo: "repo", prNumber: 1 },
+    "model-skip",
+    "deadbeef",
+    "Push appears to be rebase/merge-only."
+  );
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].args.body).toContain("**Verdict:** Skipped");
+  expect(calls[0].args.body).toContain("rebase/merge-only");
+  expect(calls[0].args.body).toContain("sri:last-reviewed-sha:deadbeef");
 });
