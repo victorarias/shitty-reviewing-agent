@@ -242,7 +242,7 @@ test("buildAdaptiveSummaryMarkdown hides refs in visible text and keeps traceabi
   expect(summary).not.toContain("(ref: bug-retry-loop)");
   expect(summary).toContain("inline comments: src/retry.ts:88 (RIGHT, comment, comment 55)");
   expect(summary).not.toContain("(ref: design-boundary-leak)");
-  expect(summary).toContain("summary-only scope: No single line anchor in this update.");
+  expect(summary).toContain("No single line anchor in this update.");
   expect(summary).toContain("<!-- sri:traceability");
   expect(summary).toContain("ref=bug-retry-loop; category=Bug; severity=medium; status=new");
   expect(summary).toContain("ref=design-boundary-leak; category=Design; severity=low; status=still_open");

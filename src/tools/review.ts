@@ -27,9 +27,7 @@ const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\
 const SUMMARY_ONLY_REASON_HINT_PATTERNS = [
   /cross[- ]file/i,
   /multiple files/i,
-  /no single line/i,
   /no line-specific diff/i,
-  /not tied to a single line/i,
   /non-commentable/i,
   /binary/i,
   /too large to diff/i,
@@ -1458,7 +1456,6 @@ function validateSummaryFindings(
   const lineAnchoredSummaryOnly = findings.filter((finding) => {
     if (finding.status === "resolved") return false;
     if (finding.placement !== "summary_only") return false;
-    if (finding.severity === "low") return false;
     const findingRef = finding.findingRef ?? "";
     const links = findingLinksByRef.get(findingRef) ?? [];
     if (links.length > 0) return false;

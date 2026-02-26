@@ -1648,8 +1648,8 @@ test("post_summary rejects line-anchored unresolved summary-only finding without
   expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
 });
 
-test("post_summary allows low-severity line-anchored summary-only finding without inline link", async () => {
-  const { octokit, calls } = makeOctokitSpy();
+test("post_summary rejects low-severity line-anchored summary-only finding without inline link", async () => {
+  const { octokit } = makeOctokitSpy();
   const tools = createReviewTools({
     octokit: octokit as any,
     owner: "o",
@@ -1681,11 +1681,8 @@ test("post_summary allows low-severity line-anchored summary-only finding withou
     verdict: "Approve",
     preface: "No blocking issues found.",
   });
-  expect(result.details.id).toBeGreaterThan(0);
-  const summaryCall = calls.find((call) => call.type === "issue_comment");
-  expect(summaryCall).toBeTruthy();
-  expect(summaryCall?.args.body).not.toContain("(ref: perf-index-build)");
-  expect(summaryCall?.args.body).toContain("ref=perf-index-build; category=Performance; severity=low; status=new");
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
 });
 
 test("report_finding rejects summary_only placement without reason", async () => {

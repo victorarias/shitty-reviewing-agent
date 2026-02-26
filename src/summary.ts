@@ -468,8 +468,8 @@ function renderFindingLinkage(
   }
   if (finding.placement === "summary_only") {
     if (!options.verbose) return "summary-only";
-    if (finding.summaryOnlyReason) return `summary-only scope: ${toSingleLine(finding.summaryOnlyReason)}`;
-    return "summary-only scope";
+    if (finding.summaryOnlyReason) return toSingleLine(finding.summaryOnlyReason);
+    return "summary-only";
   }
   return "";
 }
