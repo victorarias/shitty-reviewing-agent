@@ -54,12 +54,13 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     : 'Note as resolved in summary "Resolved Since Last Review" section';
   const followUpSection = can.followUp
     ? `\n# Follow-up Reviews
-Call get_review_context first. When a previous review exists, classify every prior bot-owned thread:
+Call get_review_context first. Use both reviewThreads and issueCommentReplies. When a previous review exists, classify every prior bot-owned thread and PR-level reply:
 
 | Case | Condition | Action |
 |------|-----------|--------|
 | RESOLVED | Fixed by new commits | ${resolvedAction} |
-| HUMAN REPLIED | Human responded | Reply to their comment — do not repeat the original feedback |
+| HUMAN REPLIED (THREAD) | Human responded in a review thread | Reply to their comment — do not repeat the original feedback |
+| HUMAN REPLIED (PR COMMENT) | Human responded in issueCommentReplies (outside review threads) | Acknowledge their rationale in the next summary; do not ignore or restate unchanged feedback |
 | CODE CHANGED | Code modified, issue persists | Reply to existing thread with updated analysis — do not open a new one |
 | UNCHANGED | Code not touched | Do nothing inline — list in summary "Still Open" section only |
 
