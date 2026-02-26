@@ -211,3 +211,36 @@ test("buildAdaptiveSummaryMarkdown uses richer standard follow-up output", () =>
   expect(summary).toContain("evidence: src/retry.ts:88");
   expect(summary).toContain("action: Gate retries");
 });
+
+test("buildAdaptiveSummaryMarkdown renders finding refs and linkage details", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "bug-retry-loop",
+        category: "Bug",
+        severity: "medium",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/retry.ts:88 (RIGHT, comment, comment 55)"],
+        title: "Retry loop never stops on permanent 4xx responses",
+      },
+      {
+        findingRef: "design-boundary-leak",
+        category: "Design",
+        severity: "low",
+        status: "still_open",
+        placement: "summary_only",
+        summaryOnlyReason: "No single line anchor in this update.",
+        title: "Service boundary remains coupled to transport DTOs",
+      },
+    ],
+  });
+
+  expect(summary).toContain("(ref: bug-retry-loop)");
+  expect(summary).toContain("linked: src/retry.ts:88 (RIGHT, comment, comment 55)");
+  expect(summary).toContain("(ref: design-boundary-leak)");
+  expect(summary).toContain("summary-only: No single line anchor in this update.");
+});

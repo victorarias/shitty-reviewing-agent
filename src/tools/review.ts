@@ -14,11 +14,13 @@ import {
   summaryModeRank,
   type StructuredSummaryFinding,
   type SummaryMode,
+  type SummaryPlacement,
 } from "../summary.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
 const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
+const FINDING_REF_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,79}$/;
 const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread {\n      id\n      isResolved\n    }\n  }\n}`;
 interface SummaryPolicy {
   isFollowUp: boolean;
@@ -48,15 +50,47 @@ interface ReviewToolDeps {
   summaryPolicy?: SummaryPolicy;
 }
 
+interface FindingLink {
+  path: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+  commentId: number;
+  kind: "comment" | "suggestion";
+}
+
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById, threadLastActorById, threadLastCommentById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById, threadsByRootCommentId } = buildThreadIndex(deps.reviewThreads);
   const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
   const commentById = new Map(deps.existingComments.map((comment) => [comment.id, comment]));
   const summaryFindings: StructuredSummaryFinding[] = [];
+  const findingIndexByRef = new Map<string, number>();
+  const findingLinksByRef = new Map<string, FindingLink[]>();
   let summaryModeOverride: SummaryMode | null = null;
   let summaryModeReason = "";
   let summaryModeEvidence: string[] = [];
+
+  const recordFindingLink = (
+    findingRef: string | undefined,
+    location: { path: string; line: number; side: "LEFT" | "RIGHT" | undefined },
+    commentId: number,
+    kind: "comment" | "suggestion"
+  ) => {
+    if (!findingRef) return;
+    const side = location.side ?? "RIGHT";
+    const links = findingLinksByRef.get(findingRef) ?? [];
+    if (links.some((link) => link.path === location.path && link.line === location.line && link.side === side && link.commentId === commentId)) {
+      return;
+    }
+    links.push({
+      path: location.path,
+      line: location.line,
+      side,
+      commentId,
+      kind,
+    });
+    findingLinksByRef.set(findingRef, links);
+  };
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -79,7 +113,14 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const body = ensureBotMarker(params.body);
+      const findingRef = normalizeFindingRef(params.finding_ref);
+      if (params.finding_ref && !findingRef) {
+        return {
+          content: [{ type: "text", text: `Invalid finding_ref "${params.finding_ref}". Use lowercase letters/numbers with . _ : - only.` }],
+          details: { id: -1 },
+        };
+      }
+      const body = ensureBotMarker(ensureFindingRefMarker(params.body, findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -102,6 +143,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -141,6 +183,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onInlineComment?.();
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
             return {
               content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -175,6 +218,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -185,14 +229,15 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           owner: deps.owner,
           repo: deps.repo,
           pull_number: deps.pullNumber,
-        commit_id: deps.headSha,
-        path: params.path,
-        line: params.line,
-        side: side ?? "RIGHT",
-        body,
-      })
-    );
+          commit_id: deps.headSha,
+          path: params.path,
+          line: params.line,
+          side: side ?? "RIGHT",
+          body,
+        })
+      );
       deps.onInlineComment?.();
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -207,7 +252,14 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: SuggestSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const body = ensureBotMarker(wrapSuggestion(params.suggestion, params.comment));
+      const findingRef = normalizeFindingRef(params.finding_ref);
+      if (params.finding_ref && !findingRef) {
+        return {
+          content: [{ type: "text", text: `Invalid finding_ref "${params.finding_ref}". Use lowercase letters/numbers with . _ : - only.` }],
+          details: { id: -1 },
+        };
+      }
+      const body = ensureBotMarker(ensureFindingRefMarker(wrapSuggestion(params.suggestion, params.comment), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -230,6 +282,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -269,6 +322,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onSuggestion?.();
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
             return {
               content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -303,6 +357,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -321,6 +376,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         })
       );
       deps.onSuggestion?.();
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -510,27 +566,58 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     description: "Record a structured finding for deterministic summary rendering.",
     parameters: ReportFindingSchema,
     execute: async (_id, params) => {
+      const findingRef = normalizeFindingRef(params.finding_ref);
       const category = normalizeSummaryCategory(params.category);
       const severity = normalizeSummarySeverity(params.severity);
       const status = normalizeSummaryStatus(params.status ?? "new");
       const title = params.title?.trim();
-      if (!category || !severity || !status || !title) {
+      if (!findingRef || !category || !severity || !status || !title) {
         return {
-          content: [{ type: "text", text: "Invalid finding payload. Provide category, severity, status, and title." }],
+          content: [{
+            type: "text",
+            text:
+              "Invalid finding payload. Provide finding_ref, category, severity, status, and title.",
+          }],
           details: { count: summaryFindings.length },
         };
       }
-      summaryFindings.push({
+      const placement = normalizeFindingPlacement(params.placement, status);
+      const summaryOnlyReason = params.summary_only_reason?.trim() || undefined;
+      if (placement === "summary_only" && !summaryOnlyReason) {
+        return {
+          content: [{
+            type: "text",
+            text: `Finding ${findingRef} uses placement=summary_only and requires summary_only_reason.`,
+          }],
+          details: { count: summaryFindings.length },
+        };
+      }
+      const finding: StructuredSummaryFinding = {
+        findingRef,
         category,
         severity,
         status,
+        placement,
+        summaryOnlyReason,
         title,
         details: params.details?.trim() || undefined,
         evidence: (params.evidence ?? []).map((item) => item.trim()).filter(Boolean),
         action: params.action?.trim() || undefined,
-      });
+      };
+      const existingIndex = findingIndexByRef.get(findingRef);
+      if (existingIndex !== undefined) {
+        summaryFindings[existingIndex] = finding;
+      } else {
+        summaryFindings.push(finding);
+        findingIndexByRef.set(findingRef, summaryFindings.length - 1);
+      }
       return {
-        content: [{ type: "text", text: `Finding recorded (${summaryFindings.length}).` }],
+        content: [{
+          type: "text",
+          text: existingIndex !== undefined
+            ? `Finding updated (${findingRef}).`
+            : `Finding recorded (${summaryFindings.length}).`,
+        }],
         details: { count: summaryFindings.length },
       };
     },
@@ -600,19 +687,30 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
+      const summaryValidation = validateSummaryFindings(summaryFindings, findingLinksByRef);
+      if (!summaryValidation.ok) {
+        return {
+          content: [{ type: "text", text: summaryValidation.message }],
+          details: { id: -1 },
+        };
+      }
+      const findingsForSummary = summaryFindings.map((finding) => ({
+        ...finding,
+        linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
+      }));
       // Mark as posted immediately to prevent racing duplicate calls.
       deps.onSummaryPosted?.();
-      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(summaryFindings);
+      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(findingsForSummary);
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const derivedMode = summaryModeOverride ?? baseMode;
       const hintedRisk = Boolean(deps.summaryPolicy?.riskHints && deps.summaryPolicy.riskHints.length > 0);
-      const hasUnresolved = summaryFindings.some((finding) => finding.status !== "resolved");
+      const hasUnresolved = findingsForSummary.some((finding) => finding.status !== "resolved");
       const riskAwareMode = hintedRisk && hasUnresolved ? maxSummaryMode(derivedMode, "standard") : derivedMode;
-      const effectiveMode = hasHighRiskFindings(summaryFindings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      const effectiveMode = hasHighRiskFindings(findingsForSummary) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
       const summaryBody = buildAdaptiveSummaryMarkdown({
         verdict,
         preface: params.preface,
-        findings: summaryFindings,
+        findings: findingsForSummary,
         mode: effectiveMode,
         isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
         modeReason: summaryModeReason,
@@ -654,6 +752,12 @@ const CommentSchema = Type.Object({
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
   thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
   allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
+  finding_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional finding reference that links this inline comment to report_finding.",
+  })),
   body: Type.String({ description: "Markdown body" }),
 });
 
@@ -663,6 +767,12 @@ const SuggestSchema = Type.Object({
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
   thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
   allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
+  finding_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional finding reference that links this suggestion to report_finding.",
+  })),
   comment: Type.Optional(Type.String({ description: "Optional comment before suggestion" })),
   suggestion: Type.String({ description: "Replacement code for suggestion block" }),
 });
@@ -674,12 +784,23 @@ const ListThreadsSchema = Type.Object({
 });
 
 const ReportFindingSchema = Type.Object({
+  finding_ref: Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Stable reference id linking this finding to inline comments/suggestions.",
+  }),
   category: Type.String({
     description: "Finding category",
     enum: ["bug", "security", "performance", "unused_code", "duplicated_code", "refactoring", "design", "documentation"],
   }),
   severity: Type.String({ description: "Finding severity", enum: ["low", "medium", "high"] }),
   status: Type.Optional(Type.String({ description: "Finding lifecycle status", enum: ["new", "resolved", "still_open"] })),
+  placement: Type.Optional(Type.String({
+    description: "inline for file-thread findings, summary_only for cross-file/non-line-specific findings.",
+    enum: ["inline", "summary_only"],
+  })),
+  summary_only_reason: Type.Optional(Type.String({ description: "Required when placement is summary_only." })),
   title: Type.String({ description: "Short issue title." }),
   details: Type.Optional(Type.String({ description: "Optional one-line detail for context." })),
   evidence: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
@@ -725,6 +846,28 @@ function ensureBotMarker(body: string): string {
   const trimmed = body.trim();
   if (!trimmed) return BOT_COMMENT_MARKER;
   return `${body}\n\n${BOT_COMMENT_MARKER}`;
+}
+
+function ensureFindingRefMarker(body: string, findingRef: string | undefined): string {
+  if (!findingRef) return body;
+  const marker = `<!-- sri:finding-ref:${findingRef} -->`;
+  if (body.includes(marker)) return body;
+  return `${body}\n${marker}`;
+}
+
+function normalizeFindingRef(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || !FINDING_REF_PATTERN.test(normalized)) return undefined;
+  return normalized;
+}
+
+function normalizeFindingPlacement(
+  value: string | undefined,
+  status: StructuredSummaryFinding["status"]
+): SummaryPlacement {
+  if (value === "inline" || value === "summary_only") return value;
+  return status === "new" ? "inline" : "summary_only";
 }
 
 function isBotAuthor(author?: string, authorType?: string): boolean {
@@ -990,6 +1133,50 @@ function buildDuplicateUpdateResponse(
     }],
     details: { id: -1 },
   };
+}
+
+function validateSummaryFindings(
+  findings: StructuredSummaryFinding[],
+  findingLinksByRef: Map<string, FindingLink[]>
+): { ok: true } | { ok: false; message: string } {
+  const missingRefs = findings.filter((finding) => !finding.findingRef);
+  if (missingRefs.length > 0) {
+    return {
+      ok: false,
+      message: "Every report_finding entry must include finding_ref.",
+    };
+  }
+  const missingSummaryOnlyReason = findings.filter(
+    (finding) => finding.placement === "summary_only" && !finding.summaryOnlyReason?.trim()
+  );
+  if (missingSummaryOnlyReason.length > 0) {
+    const refs = missingSummaryOnlyReason.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message: `summary_only findings require summary_only_reason. Missing: ${refs || "unknown"}.`,
+    };
+  }
+  const missingInlineLinks = findings
+    .filter((finding) => finding.status !== "resolved" && finding.placement !== "summary_only")
+    .filter((finding) => {
+      const findingRef = finding.findingRef ?? "";
+      const links = findingLinksByRef.get(findingRef) ?? [];
+      return links.length === 0;
+    });
+  if (missingInlineLinks.length > 0) {
+    const refs = missingInlineLinks.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message:
+        `Unresolved inline findings are missing linked comments/suggestions. Add finding_ref to comment/suggest or mark placement=summary_only with summary_only_reason. Missing links: ${refs || "unknown"}.`,
+    };
+  }
+  return { ok: true };
+}
+
+function formatFindingLinks(links: FindingLink[] | undefined): string[] {
+  if (!links || links.length === 0) return [];
+  return links.map((link) => `${link.path}:${link.line} (${link.side}, ${link.kind}, comment ${link.commentId})`);
 }
 
 function normalizeVerdict(value: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {

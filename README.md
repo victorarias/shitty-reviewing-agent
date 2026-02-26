@@ -254,7 +254,8 @@ jobs:
   - the legacy auto-generated summary sequence diagram is disabled
 - Summary output suppresses empty sections/tables to reduce noise. Sparse findings are grouped by category without forcing a full counts table.
 - Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".
-- Summary rendering is deterministic: the agent reports structured findings (category/severity/status), and tooling renders compact/standard/alert formats to reduce noise.
+- Summary rendering is deterministic: the agent reports structured findings (`finding_ref`, category/severity/status, placement), and tooling renders compact/standard/alert formats to reduce noise.
+- Findings can be explicitly traced between inline comments and summary entries by reusing `finding_ref`; cross-file findings are supported with `placement=summary_only` plus `summary_only_reason`.
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~60 minutes total by default. Override via `LLM_RATE_LIMIT_MAX_WAIT_MS` and `LLM_RATE_LIMIT_MAX_ATTEMPTS`.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).

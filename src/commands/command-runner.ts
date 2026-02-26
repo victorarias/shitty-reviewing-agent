@@ -371,7 +371,7 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- Use set_summary_mode only to escalate verbosity/risk signaling when evidence warrants it."
       : null,
     hasTool("report_finding")
-      ? "- report_finding schema ties each finding to category/severity/status. Use it before post_summary."
+      ? "- report_finding schema requires finding_ref + category/severity/status. For unresolved line-specific findings, link inline comment/suggest with the same finding_ref; otherwise set placement=summary_only with summary_only_reason."
       : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     hasTool("subagent")

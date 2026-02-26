@@ -4,7 +4,11 @@ const TOOL_DOCS: Record<string, string> = {
   post_summary:
     "call exactly once near the end. Use verdict/preface after recording findings; tooling renders the summary and appends footer/markers automatically.",
   report_finding:
-    "`report_finding({ category, severity, status, title, details?, evidence?, action? })` — record every finding for deterministic rendering.",
+    "`report_finding({ finding_ref, category, severity, status, placement?, summary_only_reason?, title, details?, evidence?, action? })` — record every finding for deterministic rendering and comment/summary traceability.",
+  comment:
+    "`comment({ path, line, side, body, finding_ref? })` — when the comment maps to a finding, pass the same finding_ref used in report_finding.",
+  suggest:
+    "`suggest({ path, line, side, suggestion, comment?, finding_ref? })` — when the suggestion maps to a finding, pass the same finding_ref used in report_finding.",
   set_summary_mode:
     "`set_summary_mode({ mode, reason, evidence[] })` — escalate summary mode to standard/alert when risk justifies it. Never use for downgrades.",
   terminate: "call exactly once as your final action.",
@@ -31,6 +35,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     terminate: hasTool("terminate"),
     useDiff: hasTool("get_diff"),
     validateMermaid: hasTool("validate_mermaid"),
+    inlineFeedback: hasTool("comment") || hasTool("suggest"),
   };
 
   // --- What to review ---
@@ -95,11 +100,13 @@ Never re-post feedback that a prior thread already covers. If the verdict change
     workflowSteps.push(`Gather context: call ${toolList}${extra}.`);
   }
   if (can.useDiff) {
-    workflowSteps.push(
-      "Review files: use get_diff for targeted diffs; read full files for surrounding context. Post inline comments/suggestions for specific issues."
-    );
+    workflowSteps.push(can.inlineFeedback
+      ? "Review files: use get_diff for targeted diffs; read full files for surrounding context. For actionable line-specific issues, post inline comments/suggestions and include finding_ref."
+      : "Review files: use get_diff for targeted diffs; read full files for surrounding context. Capture line-specific findings in report_finding with placement=summary_only when inline feedback tools are unavailable.");
   } else {
-    workflowSteps.push("Review files: read full file content for context. Post inline comments/suggestions for specific issues.");
+    workflowSteps.push(can.inlineFeedback
+      ? "Review files: read full file content for context. For actionable line-specific issues, post inline comments/suggestions and include finding_ref."
+      : "Review files: read full file content for context. Capture findings in report_finding; use placement=summary_only when inline feedback tools are unavailable.");
   }
   if (can.validateMermaid) {
     workflowSteps.push("Validate Mermaid diagrams with validate_mermaid before posting.");
@@ -115,7 +122,7 @@ Never re-post feedback that a prior thread already covers. If the verdict change
     workflowSteps.push(parts.join(" "));
   }
   if (can.reportFinding) {
-    workflowSteps.push("Record each issue/resolution/still-open item with report_finding before posting summary.");
+    workflowSteps.push("Record each issue/resolution/still-open item with report_finding before posting summary. Use placement=summary_only + summary_only_reason for findings that are not tied to a specific file line.");
   }
   if (can.setSummaryMode) {
     workflowSteps.push("Use set_summary_mode only when evidence shows higher risk than the default summary mode.");
@@ -127,7 +134,7 @@ Never re-post feedback that a prior thread already covers. If the verdict change
     ? `\n# Workflow\n${workflowSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}\n`
     : "";
   const summaryFindingRecording = can.reportFinding
-    ? "Use report_finding for every issue/resolution/still-open item. Each finding must include category + severity + status."
+    ? "Use report_finding for every issue/resolution/still-open item. Each finding must include finding_ref + category + severity + status. Use placement=inline for line-specific findings (and link with comment/suggest finding_ref), or placement=summary_only with summary_only_reason for cross-file/non-line-specific findings."
     : "List each finding with category, severity, and status (new/resolved/still-open).";
   const summaryModeBehavior = can.setSummaryMode
     ? "- Use set_summary_mode only to escalate when evidence warrants it (never downgrade below candidate)."
@@ -135,6 +142,13 @@ Never re-post feedback that a prior thread already covers. If the verdict change
   const summaryPostUsage = can.postSummary
     ? `post_summary usage:
 - Call post_summary with verdict + preface only; tooling renders markdown from findings.`
+    : "";
+  const traceabilityRules = can.reportFinding
+    ? `Traceability rules:
+- Every finding_ref should map to exactly one summary item.
+- For line-specific unresolved findings, use comment/suggest with the same finding_ref.
+- For findings without a single file/line anchor, set placement=summary_only and provide summary_only_reason.
+${can.postSummary ? "- post_summary will fail if unresolved inline findings are missing linked inline comments/suggestions." : ""}`
     : "";
 
   return `# Role
@@ -162,6 +176,7 @@ Allowed categories:
 
 Allowed statuses:
 - new, resolved, still_open
+${traceabilityRules ? `\n${traceabilityRules}` : ""}
 
 Follow-up summaries are rendered into:
 - New Issues Since Last Review
