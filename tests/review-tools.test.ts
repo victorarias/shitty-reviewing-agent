@@ -214,6 +214,152 @@ test("comment tool appends bot marker to new comments", async () => {
   expect(calls[0].args.body).toContain("<!-- sri:bot-comment -->");
 });
 
+test("comment tool includes category label when finding_ref matches a recorded finding", async () => {
+  const existingComments: ExistingComment[] = [];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  await reportFindingTool.execute("", {
+    finding_ref: "design-api-boundary",
+    category: "design",
+    severity: "medium",
+    status: "new",
+    title: "API boundary leaks persistence details",
+  });
+
+  const commentTool = getTool(tools, "comment");
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "design-api-boundary",
+    body: "This interface should not expose storage-specific concerns.",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("comment");
+  expect(calls[0].args.body).toContain("**Category:** Design");
+  expect(calls[0].args.body).toContain("<!-- sri:finding-category:design -->");
+  expect(calls[0].args.body).toContain("<!-- sri:finding-ref:design-api-boundary -->");
+});
+
+test("suggest tool includes category label when finding_ref matches a recorded finding", async () => {
+  const existingComments: ExistingComment[] = [];
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments,
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-null-guard",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Null guard is missing on parse result",
+  });
+
+  const suggestTool = getTool(tools, "suggest");
+  await suggestTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-null-guard",
+    comment: "Add a guard before dereference.",
+    suggestion: "if (!parsed) return;",
+  });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].type).toBe("comment");
+  expect(calls[0].args.body).toContain("**Category:** Bug");
+  expect(calls[0].args.body).toContain("<!-- sri:finding-category:bug -->");
+  expect(calls[0].args.body).toContain("<!-- sri:finding-ref:bug-null-guard -->");
+});
+
+test("comment tool rejects unknown finding_ref", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  const result = await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-missing-check",
+    body: "Missing null check before dereference.",
+  });
+
+  expect(calls.length).toBe(0);
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("Unknown finding_ref");
+});
+
+test("suggest tool rejects unknown finding_ref", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const suggestTool = getTool(tools, "suggest");
+  const result = await suggestTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-missing-check",
+    comment: "Guard this path.",
+    suggestion: "if (!value) return;",
+  });
+
+  expect(calls.length).toBe(0);
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("Unknown finding_ref");
+});
+
 test("resolve_thread replies with explanation and resolves bot thread", async () => {
   const existingComments: ExistingComment[] = [
     {
@@ -1081,8 +1227,79 @@ test("post_summary renders structured findings and alert mode", async () => {
   expect(summaryCall?.args.body).toContain("HIGH-RISK CHANGE DETECTED");
   expect(summaryCall?.args.body).toContain("#### Security (1)");
   expect(summaryCall?.args.body).toContain("src/auth/token.ts:44");
-  expect(summaryCall?.args.body).toContain("(ref: security-token-signature)");
+  expect(summaryCall?.args.body).not.toContain("(ref: security-token-signature)");
   expect(summaryCall?.args.body).toContain("inline comments: 1");
+  expect(summaryCall?.args.body).toContain("<!-- sri:traceability");
+  expect(summaryCall?.args.body).toContain("ref=security-token-signature; category=Security; severity=high; status=new");
+});
+
+test("post_summary renders clickable inline links when comment URLs are available", async () => {
+  const calls: Array<{ type: string; args: any }> = [];
+  const octokit = {
+    rest: {
+      pulls: {
+        createReviewComment: async (args: any) => {
+          calls.push({ type: "comment", args });
+          return { data: { id: 202, html_url: "https://example.com/review-comment/202" } };
+        },
+      },
+      issues: {
+        createComment: async (args: any) => {
+          calls.push({ type: "issue_comment", args });
+          return { data: { id: 303 } };
+        },
+      },
+    },
+    graphql: async () => ({ resolveReviewThread: { thread: { id: "T", isResolved: true } } }),
+  };
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/retry.ts", status: "modified", additions: 2, deletions: 1, changes: 3, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 1,
+      changedLineCount: 3,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const commentTool = getTool(tools, "comment");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-retry-loop",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Retry loop never stops on permanent 4xx responses",
+  });
+  await commentTool.execute("", {
+    path: "src/retry.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-retry-loop",
+    body: "This branch should stop retrying on terminal client errors.",
+  });
+  await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Retry termination logic should be corrected.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("inline comments: [src/retry.ts:1 (RIGHT, comment)](https://example.com/review-comment/202)");
+  expect(summaryCall?.args.body).toContain("linked=[src/retry.ts:1 (RIGHT, comment)](https://example.com/review-comment/202)");
 });
 
 test("post_summary rejects unresolved inline finding without linked comment", async () => {
@@ -1170,8 +1387,9 @@ test("post_summary accepts summary-only findings with reason", async () => {
 
   const summaryCall = calls.find((call) => call.type === "issue_comment");
   expect(summaryCall).toBeTruthy();
-  expect(summaryCall?.args.body).toContain("(ref: design-boundary-leak)");
+  expect(summaryCall?.args.body).not.toContain("(ref: design-boundary-leak)");
   expect(summaryCall?.args.body).toContain("summary-only");
+  expect(summaryCall?.args.body).toContain("ref=design-boundary-leak; category=Design; severity=low; status=still_open");
 });
 
 test("post_summary rejects summary-only unresolved finding with bookkeeping reason", async () => {
@@ -1291,7 +1509,8 @@ test("post_summary allows low-severity line-anchored summary-only finding withou
   expect(result.details.id).toBeGreaterThan(0);
   const summaryCall = calls.find((call) => call.type === "issue_comment");
   expect(summaryCall).toBeTruthy();
-  expect(summaryCall?.args.body).toContain("(ref: perf-index-build)");
+  expect(summaryCall?.args.body).not.toContain("(ref: perf-index-build)");
+  expect(summaryCall?.args.body).toContain("ref=perf-index-build; category=Performance; severity=low; status=new");
 });
 
 test("report_finding rejects summary_only placement without reason", async () => {

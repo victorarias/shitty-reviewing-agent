@@ -4,11 +4,11 @@ const TOOL_DOCS: Record<string, string> = {
   post_summary:
     "call exactly once near the end. Use verdict/preface after recording findings; tooling renders the summary and appends footer/markers automatically.",
   report_finding:
-    "`report_finding({ finding_ref, category, severity, status, placement?, summary_only_reason?, title, details?, evidence?, action? })` — record every finding for deterministic rendering and comment/summary traceability. Write human-readable issue statements (not review-task bookkeeping).",
+    "`report_finding({ finding_ref, category, severity, status, placement?, summary_only_reason?, title, details?, evidence?, action? })` — record every finding for deterministic rendering and comment/summary traceability. Write human-readable issue statements (not review-task bookkeeping). Never use for praise-only or verification-complete notes.",
   comment:
-    "`comment({ path, line, side, body, finding_ref? })` — when the comment maps to a finding, pass the same finding_ref used in report_finding.",
+    "`comment({ path, line, side, body, finding_ref? })` — for actionable issues only. Never post praise-only comments. When the comment maps to a finding, pass the same finding_ref used in report_finding.",
   suggest:
-    "`suggest({ path, line, side, suggestion, comment?, finding_ref? })` — when the suggestion maps to a finding, pass the same finding_ref used in report_finding.",
+    "`suggest({ path, line, side, suggestion, comment?, finding_ref? })` — for actionable issues only. Never post praise-only comments. When the suggestion maps to a finding, pass the same finding_ref used in report_finding.",
   set_summary_mode:
     "`set_summary_mode({ mode, reason, evidence[] })` — escalate summary mode to standard/alert when risk justifies it. Never use for downgrades.",
   terminate: "call exactly once as your final action.",
@@ -52,6 +52,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     "- Follow AGENTS.md / CLAUDE.md when present. Suggest updates if new patterns should be documented.",
     "- Only post suggestions that materially change behavior, correctness, performance, security, design, or maintainability. Never post a no-op suggestion block.",
     "- Do not report positive confirmations or 'verification completed' notes as findings. Findings should describe concrete issues/risk or lifecycle changes of prior issues.",
+    "- Do not post praise-only inline comments (for example, 'looks good', 'good refactor', or verification-only acknowledgements). Inline comments must call out a problem or required action.",
     can.searchWeb
       ? "- Use web_search to validate external facts (API versions, public behavior). Do not speculate without checking."
       : null,
@@ -102,11 +103,11 @@ Never re-post feedback that a prior thread already covers. If the verdict change
   }
   if (can.useDiff) {
     workflowSteps.push(can.inlineFeedback
-      ? "Review files: use get_diff for targeted diffs; read full files for surrounding context. For actionable line-specific issues, post inline comments/suggestions and include finding_ref."
+      ? "Review files: use get_diff for targeted diffs; read full files for surrounding context. For each actionable line-specific issue, call report_finding first, then post inline comment/suggestion with the same finding_ref."
       : "Review files: use get_diff for targeted diffs; read full files for surrounding context. Capture line-specific findings in report_finding with placement=summary_only when inline feedback tools are unavailable.");
   } else {
     workflowSteps.push(can.inlineFeedback
-      ? "Review files: read full file content for context. For actionable line-specific issues, post inline comments/suggestions and include finding_ref."
+      ? "Review files: read full file content for context. For each actionable line-specific issue, call report_finding first, then post inline comment/suggestion with the same finding_ref."
       : "Review files: read full file content for context. Capture findings in report_finding; use placement=summary_only when inline feedback tools are unavailable.");
   }
   if (can.validateMermaid) {

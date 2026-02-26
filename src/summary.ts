@@ -148,11 +148,17 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
 
   if (input.isFollowUp && sections.newIssues.length === 0 && sections.resolved.length === 0 && sections.stillOpen.length === 0) {
     const message = preface || "No new issues, resolutions, or still-open items to report since the last review.";
-    return `## Review Summary\n\n**Verdict:** ${input.verdict}\n\n${message}`;
+    return appendTraceabilityComment(
+      `## Review Summary\n\n**Verdict:** ${input.verdict}\n\n${message}`,
+      findings
+    );
   }
 
   if (effectiveMode === "alert") {
-    return renderAlertSummary(input.verdict, preface, findings, input.modeReason, input.modeEvidence);
+    return appendTraceabilityComment(
+      renderAlertSummary(input.verdict, preface, findings, input.modeReason, input.modeEvidence),
+      findings
+    );
   }
 
   const lines: string[] = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, ""];
@@ -177,7 +183,7 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
     lines.push("### Findings");
     lines.push("");
     lines.push(renderGroupedFindings(findings, { verbose: effectiveMode === "standard" }));
-    return lines.join("\n");
+    return appendTraceabilityComment(lines.join("\n"), findings);
   }
 
   if (effectiveMode === "standard" && shouldShowFollowUpCategoryTable(findings)) {
@@ -212,7 +218,7 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
     lines.push("");
     lines.push(renderGroupedFindings(sections.stillOpen, { verbose: effectiveMode === "standard" }));
   }
-  return lines.join("\n");
+  return appendTraceabilityComment(lines.join("\n"), findings);
 }
 
 function sanitizeFindings(findings: StructuredSummaryFinding[]): StructuredSummaryFinding[] {
@@ -366,14 +372,12 @@ function renderGroupedFindings(findings: StructuredSummaryFinding[], options?: {
 
 function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean): string {
   const displayTitle = deriveDisplayTitle(finding.title, finding.details);
-  const findingRef = finding.findingRef?.trim();
-  const refPart = findingRef ? ` (ref: ${findingRef})` : "";
   const linkPart = renderFindingLinkage(finding, { verbose });
   if (!verbose) {
-    const concise = `[${finding.severity}] ${displayTitle}${refPart}`;
+    const concise = `[${finding.severity}] ${displayTitle}`;
     return linkPart ? `${concise} | ${linkPart}` : concise;
   }
-  const parts = [`[${finding.severity}] ${displayTitle}${refPart}`];
+  const parts = [`[${finding.severity}] ${displayTitle}`];
   if (finding.details) {
     parts.push(`${CATEGORY_DETAIL_LABEL[finding.category]}: ${toSingleLine(firstSentence(finding.details, 220))}`);
   }
@@ -391,6 +395,9 @@ function renderFindingLinkage(
 ): string {
   const linked = (finding.linkedLocations ?? []).filter(Boolean);
   if (linked.length > 0) {
+    if (!options.verbose && linked.length === 1 && isMarkdownLink(linked[0])) {
+      return `inline comment: ${linked[0]}`;
+    }
     return options.verbose
       ? `inline comments: ${linked.slice(0, 3).join("; ")}`
       : `inline comments: ${linked.length}`;
@@ -422,6 +429,38 @@ function firstSentence(value: string, maxLength: number): string {
 
 function toSingleLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function appendTraceabilityComment(markdown: string, findings: StructuredSummaryFinding[]): string {
+  const block = renderTraceabilityComment(findings);
+  if (!block) return markdown;
+  return `${markdown}\n\n${block}`;
+}
+
+function renderTraceabilityComment(findings: StructuredSummaryFinding[]): string {
+  const lines: string[] = [];
+  for (const finding of findings) {
+    const ref = finding.findingRef?.trim();
+    if (!ref) continue;
+    const linked = (finding.linkedLocations ?? []).filter(Boolean);
+    const placement = finding.placement ?? "inline";
+    const reason = finding.summaryOnlyReason ? toSingleLine(firstSentence(finding.summaryOnlyReason, 140)) : "";
+    const linkedSummary = linked.length > 0 ? linked.join(" || ") : "none";
+    const reasonPart = reason ? `; summary_only_reason=${reason}` : "";
+    lines.push(
+      `- ref=${escapeHtmlCommentValue(ref)}; category=${escapeHtmlCommentValue(finding.category)}; severity=${escapeHtmlCommentValue(finding.severity)}; status=${escapeHtmlCommentValue(finding.status)}; placement=${escapeHtmlCommentValue(placement)}; linked=${escapeHtmlCommentValue(linkedSummary)}${reasonPart ? `; summary_only_reason=${escapeHtmlCommentValue(reason)}` : ""}`
+    );
+  }
+  if (lines.length === 0) return "";
+  return `<!-- sri:traceability\n${lines.join("\n")}\n-->`;
+}
+
+function isMarkdownLink(value: string): boolean {
+  return /^\[[^\]]+\]\([^)]+\)$/.test(value.trim());
+}
+
+function escapeHtmlCommentValue(value: string): string {
+  return value.replace(/-->/g, "-- >").replace(/\r?\n/g, " ");
 }
 
 function shouldShowFollowUpCategoryTable(findings: StructuredSummaryFinding[]): boolean {

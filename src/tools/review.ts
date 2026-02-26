@@ -75,6 +75,7 @@ interface FindingLink {
   line: number;
   side: "LEFT" | "RIGHT";
   commentId: number;
+  commentUrl?: string;
   kind: "comment" | "suggestion";
 }
 
@@ -94,7 +95,8 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     findingRef: string | undefined,
     location: { path: string; line: number; side: "LEFT" | "RIGHT" | undefined },
     commentId: number,
-    kind: "comment" | "suggestion"
+    kind: "comment" | "suggestion",
+    commentUrl?: string
   ) => {
     if (!findingRef) return;
     const side = location.side ?? "RIGHT";
@@ -107,9 +109,16 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       line: location.line,
       side,
       commentId,
+      commentUrl,
       kind,
     });
     findingLinksByRef.set(findingRef, links);
+  };
+  const getFindingByRef = (findingRef: string | undefined): StructuredSummaryFinding | undefined => {
+    if (!findingRef) return undefined;
+    const index = findingIndexByRef.get(findingRef);
+    if (index === undefined) return undefined;
+    return summaryFindings[index];
   };
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
@@ -140,7 +149,17 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      const body = ensureBotMarker(ensureFindingRefMarker(params.body, findingRef));
+      const finding = getFindingByRef(findingRef);
+      if (findingRef && !finding) {
+        return {
+          content: [{
+            type: "text",
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+          }],
+          details: { id: -1 },
+        };
+      }
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(params.body, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -163,7 +182,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
-        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -203,7 +222,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onInlineComment?.();
-            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
             return {
               content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -238,7 +257,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
-        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -257,7 +276,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         })
       );
       deps.onInlineComment?.();
-      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment");
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -279,7 +298,18 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      const body = ensureBotMarker(ensureFindingRefMarker(wrapSuggestion(params.suggestion, params.comment), findingRef));
+      const finding = getFindingByRef(findingRef);
+      if (findingRef && !finding) {
+        return {
+          content: [{
+            type: "text",
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+          }],
+          details: { id: -1 },
+        };
+      }
+      const suggestionBody = wrapSuggestion(params.suggestion, params.comment);
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(suggestionBody, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -302,7 +332,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
-        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -342,7 +372,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onSuggestion?.();
-            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
             return {
               content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -377,7 +407,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
-        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -396,7 +426,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         })
       );
       deps.onSuggestion?.();
-      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion");
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -877,6 +907,19 @@ function ensureFindingRefMarker(body: string, findingRef: string | undefined): s
   return `${body}\n${marker}`;
 }
 
+function ensureFindingCategoryLabel(body: string, finding: StructuredSummaryFinding | undefined): string {
+  if (!finding) return body;
+  const slug = finding.category.toLowerCase().replace(/\s+/g, "_");
+  const marker = `<!-- sri:finding-category:${slug} -->`;
+  if (body.includes(marker)) return body;
+  const trimmed = body.trim();
+  const categoryLine = `**Category:** ${finding.category}`;
+  if (!trimmed) {
+    return `${categoryLine}\n${marker}`;
+  }
+  return `${categoryLine}\n\n${trimmed}\n${marker}`;
+}
+
 function normalizeFindingRef(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase();
@@ -1261,7 +1304,11 @@ function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: str
 
 function formatFindingLinks(links: FindingLink[] | undefined): string[] {
   if (!links || links.length === 0) return [];
-  return links.map((link) => `${link.path}:${link.line} (${link.side}, ${link.kind}, comment ${link.commentId})`);
+  return links.map((link) => {
+    const label = `${link.path}:${link.line} (${link.side}, ${link.kind})`;
+    if (link.commentUrl) return `[${label}](${link.commentUrl})`;
+    return `${label}, comment ${link.commentId}`;
+  });
 }
 
 function normalizeVerdict(value: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {

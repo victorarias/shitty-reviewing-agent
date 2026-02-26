@@ -212,7 +212,7 @@ test("buildAdaptiveSummaryMarkdown uses richer standard follow-up output", () =>
   expect(summary).toContain("next step: Gate retries");
 });
 
-test("buildAdaptiveSummaryMarkdown renders finding refs and linkage details", () => {
+test("buildAdaptiveSummaryMarkdown hides refs in visible text and keeps traceability metadata", () => {
   const summary = buildAdaptiveSummaryMarkdown({
     verdict: "Request Changes",
     mode: "standard",
@@ -239,10 +239,13 @@ test("buildAdaptiveSummaryMarkdown renders finding refs and linkage details", ()
     ],
   });
 
-  expect(summary).toContain("(ref: bug-retry-loop)");
+  expect(summary).not.toContain("(ref: bug-retry-loop)");
   expect(summary).toContain("inline comments: src/retry.ts:88 (RIGHT, comment, comment 55)");
-  expect(summary).toContain("(ref: design-boundary-leak)");
+  expect(summary).not.toContain("(ref: design-boundary-leak)");
   expect(summary).toContain("summary-only scope: No single line anchor in this update.");
+  expect(summary).toContain("<!-- sri:traceability");
+  expect(summary).toContain("ref=bug-retry-loop; category=Bug; severity=medium; status=new");
+  expect(summary).toContain("ref=design-boundary-leak; category=Design; severity=low; status=still_open");
 });
 
 test("buildAdaptiveSummaryMarkdown favors details for verification-style titles", () => {
@@ -266,4 +269,27 @@ test("buildAdaptiveSummaryMarkdown favors details for verification-style titles"
 
   expect(summary).toContain("[low] Upsert collisions can overwrite prior findings when refs are reused.");
   expect(summary).toContain("Design impact: Upsert collisions can overwrite prior findings when refs are reused.");
+});
+
+test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compact finding", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "compact",
+    isFollowUp: true,
+    findings: [
+      {
+        findingRef: "bug-retry-loop",
+        category: "Bug",
+        severity: "medium",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["[src/retry.ts:88 (RIGHT, comment)](https://example.com/comment/88)"],
+        title: "Retry loop never stops on permanent 4xx responses",
+      },
+    ],
+  });
+
+  expect(summary).toContain("inline comment: [src/retry.ts:88 (RIGHT, comment)](https://example.com/comment/88)");
+  expect(summary).toContain("<!-- sri:traceability");
+  expect(summary).toContain("ref=bug-retry-loop");
 });
