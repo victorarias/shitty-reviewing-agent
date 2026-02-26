@@ -748,6 +748,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         ...finding,
         linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
       }));
+      const keyFiles = selectKeyFilesForSummary(deps.changedFiles, findingsForSummary);
       // Mark as posted immediately to prevent racing duplicate calls.
       deps.onSummaryPosted?.();
       const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(findingsForSummary);
@@ -763,6 +764,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         verdict,
         preface: params.preface,
         findings: findingsForSummary,
+        keyFiles,
         mode: effectiveMode,
         isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
         modeReason: summaryModeReason,
@@ -1300,6 +1302,67 @@ function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: str
     anchors.push({ path: match[1], line });
   }
   return anchors;
+}
+
+function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): string[] {
+  if (changedFiles.length === 0) return [];
+  const byPath = new Map(changedFiles.map((file) => [file.filename, file]));
+  const orderedPaths: string[] = [];
+  const seenPaths = new Set<string>();
+  const pushPath = (path: string | null | undefined) => {
+    if (!path) return;
+    if (seenPaths.has(path)) return;
+    if (!byPath.has(path)) return;
+    seenPaths.add(path);
+    orderedPaths.push(path);
+  };
+
+  for (const finding of findings) {
+    const evidenceAnchors = parseEvidenceAnchors(finding.evidence);
+    for (const anchor of evidenceAnchors) {
+      pushPath(anchor.path);
+    }
+    for (const location of finding.linkedLocations ?? []) {
+      pushPath(parsePathFromLinkedLocation(location));
+    }
+  }
+
+  const byChangeVolume = [...changedFiles].sort((a, b) => {
+    const aChanges = Number.isFinite(a.changes) ? a.changes : 0;
+    const bChanges = Number.isFinite(b.changes) ? b.changes : 0;
+    if (bChanges !== aChanges) return bChanges - aChanges;
+    const aAdditions = Number.isFinite(a.additions) ? a.additions : 0;
+    const bAdditions = Number.isFinite(b.additions) ? b.additions : 0;
+    if (bAdditions !== aAdditions) return bAdditions - aAdditions;
+    return a.filename.localeCompare(b.filename);
+  });
+  for (const file of byChangeVolume) {
+    pushPath(file.filename);
+  }
+
+  return orderedPaths
+    .slice(0, 6)
+    .map((path) => formatKeyFileSummary(byPath.get(path)!));
+}
+
+function parsePathFromLinkedLocation(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const labelMatch = trimmed.match(/^\[([^\]]+)\]\([^)]+\)$/);
+  const candidate = labelMatch ? labelMatch[1] : trimmed;
+  const anchorMatch = candidate.match(EVIDENCE_FILE_LINE_PATTERN);
+  if (anchorMatch) return anchorMatch[1];
+  return null;
+}
+
+function formatKeyFileSummary(file: ChangedFile): string {
+  const additions = Number.isFinite(file.additions) ? file.additions : 0;
+  const deletions = Number.isFinite(file.deletions) ? file.deletions : 0;
+  const summary = `${file.filename} (+${additions}/-${deletions})`;
+  if (file.status === "renamed" && file.previous_filename) {
+    return `${summary} renamed from ${file.previous_filename}`;
+  }
+  return summary;
 }
 
 function formatFindingLinks(links: FindingLink[] | undefined): string[] {

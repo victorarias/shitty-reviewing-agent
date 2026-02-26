@@ -208,7 +208,7 @@ test("buildAdaptiveSummaryMarkdown uses richer standard follow-up output", () =>
   });
 
   expect(summary).toContain("### Issue Categories");
-  expect(summary).toContain("evidence: src/retry.ts:88");
+  expect(summary).not.toContain("evidence:");
   expect(summary).toContain("next step: Gate retries");
 });
 
@@ -289,7 +289,29 @@ test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compac
     ],
   });
 
-  expect(summary).toContain("inline comment: [src/retry.ts:88 (RIGHT, comment)](https://example.com/comment/88)");
+  expect(summary).toContain("[medium] [Retry loop never stops on permanent 4xx responses](https://example.com/comment/88)");
+  expect(summary).not.toContain("inline comment:");
   expect(summary).toContain("<!-- sri:traceability");
   expect(summary).toContain("ref=bug-retry-loop");
+});
+
+test("buildAdaptiveSummaryMarkdown includes key files section when provided", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    keyFiles: ["src/tools/review.ts (+42/-15)", "src/summary.ts (+18/-6)"],
+    findings: [
+      {
+        category: "Design",
+        severity: "low",
+        status: "new",
+        title: "Service boundary remains coupled to transport DTOs",
+      },
+    ],
+  });
+
+  expect(summary).toContain("### Key Files");
+  expect(summary).toContain("- `src/tools/review.ts (+42/-15)`");
+  expect(summary).toContain("- `src/summary.ts (+18/-6)`");
 });

@@ -48,6 +48,7 @@ export interface AdaptiveSummaryInput {
   verdict: string;
   preface?: string;
   findings: StructuredSummaryFinding[];
+  keyFiles?: string[];
   mode: SummaryMode;
   isFollowUp: boolean;
   modeReason?: string;
@@ -142,21 +143,24 @@ export function hasHighRiskFindings(findings: StructuredSummaryFinding[]): boole
 
 export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): string {
   const findings = sanitizeFindings(input.findings);
+  const keyFiles = sanitizeKeyFiles(input.keyFiles);
   const preface = sanitizeText(input.preface);
   const effectiveMode = hasHighRiskFindings(findings) ? "alert" : input.mode;
   const sections = partitionFindings(findings);
 
   if (input.isFollowUp && sections.newIssues.length === 0 && sections.resolved.length === 0 && sections.stillOpen.length === 0) {
     const message = preface || "No new issues, resolutions, or still-open items to report since the last review.";
+    const lines = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, "", message];
+    appendKeyFilesSection(lines, keyFiles);
     return appendTraceabilityComment(
-      `## Review Summary\n\n**Verdict:** ${input.verdict}\n\n${message}`,
+      lines.join("\n"),
       findings
     );
   }
 
   if (effectiveMode === "alert") {
     return appendTraceabilityComment(
-      renderAlertSummary(input.verdict, preface, findings, input.modeReason, input.modeEvidence),
+      renderAlertSummary(input.verdict, preface, findings, input.modeReason, input.modeEvidence, keyFiles),
       findings
     );
   }
@@ -164,11 +168,12 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
   const lines: string[] = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, ""];
   lines.push(preface || defaultPreface(input.isFollowUp, findings.length > 0));
   lines.push("");
+  appendKeyFilesSection(lines, keyFiles);
 
   if (!input.isFollowUp) {
     if (findings.length === 0) {
       lines.push("### Findings", "", "- None");
-      return lines.join("\n");
+      return appendTraceabilityComment(lines.join("\n"), findings);
     }
     if (shouldShowCategoryTable(findings, effectiveMode)) {
       lines.push("### Issue Categories");
@@ -284,7 +289,8 @@ function renderAlertSummary(
   preface: string,
   findings: StructuredSummaryFinding[],
   modeReason?: string,
-  modeEvidence?: string[]
+  modeEvidence?: string[],
+  keyFiles?: string[]
 ): string {
   const risky = findings.filter((finding) => finding.severity === "high" && finding.status !== "resolved");
   const focus = (risky.length > 0 ? risky : findings).slice(0, 3);
@@ -301,6 +307,7 @@ function renderAlertSummary(
     "",
     focus.length > 0 ? renderGroupedFindings(focus) : "- None",
   ];
+  appendKeyFilesSection(lines, keyFiles ?? []);
   const actions = focus
     .map((finding) => finding.action)
     .filter((value): value is string => Boolean(value))
@@ -372,29 +379,29 @@ function renderGroupedFindings(findings: StructuredSummaryFinding[], options?: {
 
 function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean): string {
   const displayTitle = deriveDisplayTitle(finding.title, finding.details);
-  const linkPart = renderFindingLinkage(finding, { verbose });
+  const linkedTitle = withPrimaryLink(displayTitle, finding.linkedLocations);
+  const linkPart = renderFindingLinkage(finding, { verbose, titleLinked: linkedTitle !== displayTitle });
   if (!verbose) {
-    const concise = `[${finding.severity}] ${displayTitle}`;
+    const concise = `[${finding.severity}] ${linkedTitle}`;
     return linkPart ? `${concise} | ${linkPart}` : concise;
   }
-  const parts = [`[${finding.severity}] ${displayTitle}`];
+  const parts = [`[${finding.severity}] ${linkedTitle}`];
   if (finding.details) {
     parts.push(`${CATEGORY_DETAIL_LABEL[finding.category]}: ${toSingleLine(firstSentence(finding.details, 220))}`);
   }
-  if (finding.evidence && finding.evidence.length > 0) {
-    parts.push(`evidence: ${finding.evidence.slice(0, 3).join("; ")}`);
-  }
   if (finding.action) parts.push(`next step: ${toSingleLine(firstSentence(finding.action, 220))}`);
   if (linkPart) parts.push(linkPart);
-  return parts.join("; ");
+  return parts.join(". ");
 }
 
 function renderFindingLinkage(
   finding: StructuredSummaryFinding,
-  options: { verbose: boolean }
+  options: { verbose: boolean; titleLinked: boolean }
 ): string {
   const linked = (finding.linkedLocations ?? []).filter(Boolean);
   if (linked.length > 0) {
+    if (options.titleLinked && linked.length === 1) return "";
+    if (options.titleLinked) return `inline comments: ${linked.length}`;
     if (!options.verbose && linked.length === 1 && isMarkdownLink(linked[0])) {
       return `inline comment: ${linked[0]}`;
     }
@@ -477,4 +484,35 @@ function defaultPreface(isFollowUp: boolean, hasFindings: boolean): string {
   return isFollowUp
     ? "Follow-up review focused on incremental changes since the last review."
     : "Review findings are grouped by category and severity below.";
+}
+
+function sanitizeKeyFiles(value: string[] | undefined): string[] {
+  if (!value || value.length === 0) return [];
+  return value.map((item) => sanitizeText(item)).filter(Boolean).slice(0, 8);
+}
+
+function appendKeyFilesSection(lines: string[], keyFiles: string[]): void {
+  if (keyFiles.length === 0) return;
+  lines.push("### Key Files");
+  lines.push("");
+  for (const file of keyFiles) {
+    lines.push(`- \`${file}\``);
+  }
+  lines.push("");
+}
+
+function withPrimaryLink(title: string, linkedLocations: string[] | undefined): string {
+  const primaryUrl = findPrimaryLinkUrl(linkedLocations);
+  if (!primaryUrl) return title;
+  const escaped = title.replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+  return `[${escaped}](${primaryUrl})`;
+}
+
+function findPrimaryLinkUrl(linkedLocations: string[] | undefined): string | null {
+  if (!linkedLocations || linkedLocations.length === 0) return null;
+  for (const linked of linkedLocations) {
+    const match = linked.match(/^\[[^\]]+\]\(([^)]+)\)$/);
+    if (match && match[1]) return match[1];
+  }
+  return null;
 }
