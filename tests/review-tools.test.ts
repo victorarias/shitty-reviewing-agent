@@ -21,7 +21,10 @@ function makeOctokitSpy() {
         },
       },
       issues: {
-        createComment: async () => ({ data: { id: 303 } }),
+        createComment: async (args: any) => {
+          calls.push({ type: "issue_comment", args });
+          return { data: { id: 303 } };
+        },
         updateComment: async (args: any) => {
           calls.push({ type: "issue_update", args });
           return { data: { id: args.comment_id } };
@@ -1017,4 +1020,134 @@ test("suggest tool allows replies by thread_id even when line not in diff", asyn
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("reply");
   expect(calls[0].args.comment_id).toBe(501);
+});
+
+test("post_summary renders structured findings and alert mode", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/auth/token.ts", status: "modified", additions: 5, deletions: 1, changes: 6, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: true,
+      modeCandidate: "compact",
+      changedFileCount: 1,
+      changedLineCount: 6,
+      riskHints: ["authentication/authorization surface: src/auth/token.ts"],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const setSummaryModeTool = getTool(tools, "set_summary_mode");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    category: "security",
+    severity: "high",
+    status: "new",
+    title: "Token validation bypasses signature check",
+    evidence: ["src/auth/token.ts:44"],
+    action: "Require signature verification before accepting bearer tokens.",
+  });
+  await setSummaryModeTool.execute("", {
+    mode: "alert",
+    reason: "Authentication boundary changed in a high-risk area.",
+    evidence: ["src/auth/token.ts:44"],
+  });
+  await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Auth path changed in a way that can bypass enforcement.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("HIGH-RISK CHANGE DETECTED");
+  expect(summaryCall?.args.body).toContain("#### Security (1)");
+  expect(summaryCall?.args.body).toContain("src/auth/token.ts:44");
+});
+
+test("set_summary_mode rejects downgrade and alert without evidence", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 1,
+      changedLineCount: 2,
+      riskHints: [],
+    },
+  });
+
+  const setSummaryModeTool = getTool(tools, "set_summary_mode");
+  const downgrade = await setSummaryModeTool.execute("", {
+    mode: "compact",
+    reason: "Trying to compress output.",
+  });
+  expect(downgrade.content[0].text).toContain("Refusing to downgrade");
+
+  const missingEvidence = await setSummaryModeTool.execute("", {
+    mode: "alert",
+    reason: "This should fail",
+  });
+  expect(missingEvidence.content[0].text).toContain("requires evidence");
+});
+
+test("post_summary preserves legacy body when no structured findings were reported", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/auth/token.ts", status: "modified", additions: 5, deletions: 1, changes: 6, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: true,
+      modeCandidate: "compact",
+      changedFileCount: 1,
+      changedLineCount: 6,
+      riskHints: ["authentication/authorization surface: src/auth/token.ts"],
+    },
+  });
+
+  const setSummaryModeTool = getTool(tools, "set_summary_mode");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await setSummaryModeTool.execute("", {
+    mode: "alert",
+    reason: "Escalating signal due auth surface changes.",
+    evidence: ["src/auth/token.ts:44"],
+  });
+  await summaryTool.execute("", {
+    body: "## Review Summary\n\n**Verdict:** Request Changes\n\nCustom legacy body content.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("Custom legacy body content.");
+  expect(summaryCall?.args.body).not.toContain("No new issues, resolutions, or still-open items");
 });

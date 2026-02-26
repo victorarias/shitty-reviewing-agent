@@ -66,6 +66,16 @@ export function shouldRequireExplainerDiagrams(config: ReviewConfig, directoryCo
   return directoryCount > 3;
 }
 
+const COMPACT_FOLLOW_UP_MAX_FILES = 3;
+const COMPACT_FOLLOW_UP_MAX_CHANGED_LINES = 40;
+const RISKY_PATH_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /(^|\/)\.github\/workflows\//i, label: "CI/workflow changes" },
+  { pattern: /(auth|oauth|jwt|token|session|permission|rbac|acl)/i, label: "authentication/authorization surface" },
+  { pattern: /(security|crypto|encrypt|decrypt|secret|password)/i, label: "security-sensitive code" },
+  { pattern: /(migrations?|schema|ddl|database|db\/)/i, label: "database schema/data path" },
+  { pattern: /(billing|payment|invoice|checkout)/i, label: "billing/payment path" },
+];
+
 export async function runReview(input: ReviewRunInput): Promise<void> {
   const { config, context, octokit } = input;
   const log = (...args: unknown[]) => {
@@ -112,6 +122,19 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     changedFiles: input.changedFiles,
   };
 
+  const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
+  const explainerFiles = filterIgnoredFiles(input.fullPrChangedFiles ?? input.changedFiles, config.ignorePatterns);
+  const changedLineCount = filteredFiles.reduce((sum, file) => sum + (Number.isFinite(file.changes) ? file.changes : 0), 0);
+  const isFollowUp =
+    Boolean(input.lastReviewedSha) ||
+    Boolean(input.previousVerdict && input.previousVerdict !== "Skipped");
+  const summaryModeCandidate =
+    isFollowUp && filteredFiles.length <= COMPACT_FOLLOW_UP_MAX_FILES && changedLineCount <= COMPACT_FOLLOW_UP_MAX_CHANGED_LINES
+      ? "compact"
+      : "standard";
+  const summaryRiskHints = detectSummaryRiskHints(filteredFiles);
+  log(`filtered files: ${filteredFiles.length}`);
+
   const readTools = createReadOnlyTools(config.repoRoot);
   const githubTools = createGithubTools({
     octokit,
@@ -141,6 +164,13 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     },
     onSuggestion: () => {
       summaryState.suggestions += 1;
+    },
+    summaryPolicy: {
+      isFollowUp,
+      modeCandidate: summaryModeCandidate,
+      changedFileCount: filteredFiles.length,
+      changedLineCount,
+      riskHints: summaryRiskHints,
     },
   });
   const webSearchTools = createWebSearchTool({
@@ -243,9 +273,6 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
   });
 
-  const filteredFiles = filterIgnoredFiles(input.changedFiles, config.ignorePatterns);
-  const explainerFiles = filterIgnoredFiles(input.fullPrChangedFiles ?? input.changedFiles, config.ignorePatterns);
-  log(`filtered files: ${filteredFiles.length}`);
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
   const requireExplainerDiagrams = shouldRequireExplainerDiagrams(config, directoryCount);
@@ -283,6 +310,9 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     previousReviewAt: input.previousReviewAt ?? null,
     previousReviewBody: input.previousReviewBody ?? null,
     sequenceDiagram,
+    changedLineCount,
+    summaryModeCandidate,
+    riskHints: summaryRiskHints,
   });
 
   if (config.experimentalPrExplainer && feedbackAllowed) {
@@ -415,6 +445,19 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       reviewSha: input.prInfo.headSha,
     });
   }
+}
+
+function detectSummaryRiskHints(files: ChangedFile[]): string[] {
+  const hints = new Set<string>();
+  for (const file of files) {
+    const path = file.filename ?? "";
+    for (const { pattern, label } of RISKY_PATH_PATTERNS) {
+      if (pattern.test(path)) {
+        hints.add(`${label}: ${path}`);
+      }
+    }
+  }
+  return [...hints].slice(0, 6);
 }
 
 function safeStringify(value: unknown): string {

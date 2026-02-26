@@ -11,6 +11,10 @@ Metadata:
 - Last reviewed SHA: abcdef1
 - Current head SHA: head
 - Distinct directories touched: 1
+- Scoped delta after ignore: 2 file(s), 18 changed line(s)
+- Deterministic summary mode candidate: compact
+- Deterministic risk hints:
+  - None
 
 
 # Previous Review
@@ -27,6 +31,8 @@ Previous summary:
 <!-- sri:last-reviewed-sha:abcdef1 -->
 
 Note: This is a follow-up review. Focus only on changes since the last review; do not restate unchanged findings.
+
+Note: For follow-ups, you may call set_summary_mode only to escalate above the candidate mode when evidence justifies it.
 
 # Constraints
 - Max files allowed: 5

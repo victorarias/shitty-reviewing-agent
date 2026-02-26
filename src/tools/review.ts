@@ -4,11 +4,29 @@ import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
 import { createTerminateTool } from "./terminate.js";
 import type { ChangedFile, CommentType, ExistingComment, ReviewThreadInfo } from "../types.js";
+import {
+  buildAdaptiveSummaryMarkdown,
+  hasHighRiskFindings,
+  maxSummaryMode,
+  normalizeSummaryCategory,
+  normalizeSummarySeverity,
+  normalizeSummaryStatus,
+  summaryModeRank,
+  type StructuredSummaryFinding,
+  type SummaryMode,
+} from "../summary.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
 const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
 const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread {\n      id\n      isResolved\n    }\n  }\n}`;
+interface SummaryPolicy {
+  isFollowUp: boolean;
+  modeCandidate: SummaryMode;
+  changedFileCount: number;
+  changedLineCount: number;
+  riskHints: string[];
+}
 
 interface ReviewToolDeps {
   octokit: Octokit;
@@ -27,6 +45,7 @@ interface ReviewToolDeps {
   onSuggestion?: () => void;
   summaryPosted?: () => boolean;
   commentType?: CommentType;
+  summaryPolicy?: SummaryPolicy;
 }
 
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
@@ -34,6 +53,10 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { threadsByLocation, threadsById, threadsByRootCommentId } = buildThreadIndex(deps.reviewThreads);
   const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
   const commentById = new Map(deps.existingComments.map((comment) => [comment.id, comment]));
+  const summaryFindings: StructuredSummaryFinding[] = [];
+  let summaryModeOverride: SummaryMode | null = null;
+  let summaryModeReason = "";
+  let summaryModeEvidence: string[] = [];
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -481,6 +504,80 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
+  const reportFindingTool: AgentTool<typeof ReportFindingSchema, { count: number }> = {
+    name: "report_finding",
+    label: "Report finding",
+    description: "Record a structured finding for deterministic summary rendering.",
+    parameters: ReportFindingSchema,
+    execute: async (_id, params) => {
+      const category = normalizeSummaryCategory(params.category);
+      const severity = normalizeSummarySeverity(params.severity);
+      const status = normalizeSummaryStatus(params.status ?? "new");
+      const title = params.title?.trim();
+      if (!category || !severity || !status || !title) {
+        return {
+          content: [{ type: "text", text: "Invalid finding payload. Provide category, severity, status, and title." }],
+          details: { count: summaryFindings.length },
+        };
+      }
+      summaryFindings.push({
+        category,
+        severity,
+        status,
+        title,
+        details: params.details?.trim() || undefined,
+        evidence: (params.evidence ?? []).map((item) => item.trim()).filter(Boolean),
+        action: params.action?.trim() || undefined,
+      });
+      return {
+        content: [{ type: "text", text: `Finding recorded (${summaryFindings.length}).` }],
+        details: { count: summaryFindings.length },
+      };
+    },
+  };
+
+  const setSummaryModeTool: AgentTool<typeof SetSummaryModeSchema, { mode: SummaryMode }> = {
+    name: "set_summary_mode",
+    label: "Set summary mode",
+    description: "Escalate summary verbosity mode when risk is higher than deterministic scope suggests.",
+    parameters: SetSummaryModeSchema,
+    execute: async (_id, params) => {
+      const requestedMode = params.mode as SummaryMode;
+      const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
+      const currentMode = summaryModeOverride ?? baseMode;
+
+      if (summaryModeRank(requestedMode) < summaryModeRank(baseMode)) {
+        return {
+          content: [{ type: "text", text: `Refusing to downgrade below deterministic mode ${baseMode}.` }],
+          details: { mode: currentMode },
+        };
+      }
+
+      if (summaryModeRank(requestedMode) < summaryModeRank(currentMode)) {
+        return {
+          content: [{ type: "text", text: `Ignoring downgrade request. Current mode is ${currentMode}.` }],
+          details: { mode: currentMode },
+        };
+      }
+
+      const evidence = (params.evidence ?? []).map((item) => item.trim()).filter(Boolean);
+      if (requestedMode === "alert" && evidence.length === 0) {
+        return {
+          content: [{ type: "text", text: "Alert mode requires evidence entries (file/line or thread references)." }],
+          details: { mode: currentMode },
+        };
+      }
+
+      summaryModeOverride = requestedMode;
+      summaryModeReason = params.reason.trim();
+      summaryModeEvidence = evidence;
+      return {
+        content: [{ type: "text", text: `Summary mode set to ${requestedMode}.` }],
+        details: { mode: requestedMode },
+      };
+    },
+  };
+
   const summaryTool: AgentTool<typeof SummarySchema, { id: number }> = {
     name: "post_summary",
     label: "Post summary",
@@ -495,7 +592,27 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       }
       // Mark as posted immediately to prevent racing duplicate calls.
       deps.onSummaryPosted?.();
-      const body = ensureSummaryFooter(params.body, deps.modelId, deps.getBilling(), deps.reviewSha);
+      const verdict = normalizeVerdict(params.verdict) ?? parseVerdictFromBody(params.body) ?? inferVerdict(summaryFindings);
+      const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
+      const derivedMode = summaryModeOverride ?? baseMode;
+      const hintedRisk = Boolean(deps.summaryPolicy?.riskHints && deps.summaryPolicy.riskHints.length > 0);
+      const hasUnresolved = summaryFindings.some((finding) => finding.status !== "resolved");
+      const riskAwareMode = hintedRisk && hasUnresolved ? maxSummaryMode(derivedMode, "standard") : derivedMode;
+      const effectiveMode = hasHighRiskFindings(summaryFindings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      const hasLegacyBody = Boolean(params.body?.trim());
+      const shouldRenderStructured = summaryFindings.length > 0 || !hasLegacyBody;
+      const summaryBody = shouldRenderStructured
+        ? buildAdaptiveSummaryMarkdown({
+            verdict,
+            preface: params.preface,
+            findings: summaryFindings,
+            mode: effectiveMode,
+            isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
+            modeReason: summaryModeReason,
+            modeEvidence: summaryModeEvidence,
+          })
+        : params.body!;
+      const body = ensureSummaryFooter(summaryBody, deps.modelId, deps.getBilling(), deps.reviewSha);
       const response = await safeCall(() =>
         deps.octokit.rest.issues.createComment({
           owner: deps.owner,
@@ -518,6 +635,8 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     updateTool,
     replyTool,
     resolveTool,
+    reportFindingTool,
+    setSummaryModeTool,
     summaryTool,
     createTerminateTool(),
   ];
@@ -548,9 +667,30 @@ const ListThreadsSchema = Type.Object({
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
 });
 
-const SummarySchema = Type.Object({
-  body: Type.String({ description: "Markdown summary" }),
+const ReportFindingSchema = Type.Object({
+  category: Type.String({
+    description: "Finding category",
+    enum: ["bug", "security", "performance", "unused_code", "duplicated_code", "refactoring", "design", "documentation"],
+  }),
+  severity: Type.String({ description: "Finding severity", enum: ["low", "medium", "high"] }),
+  status: Type.Optional(Type.String({ description: "Finding lifecycle status", enum: ["new", "resolved", "still_open"] })),
+  title: Type.String({ description: "Short issue title." }),
+  details: Type.Optional(Type.String({ description: "Optional one-line detail for context." })),
+  evidence: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+  action: Type.Optional(Type.String({ description: "Optional requested reviewer action." })),
 });
+
+const SetSummaryModeSchema = Type.Object({
+  mode: Type.String({ enum: ["compact", "standard", "alert"] }),
+  reason: Type.String({ minLength: 1 }),
+  evidence: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+});
+
+const SummarySchema = Type.Object({
+  verdict: Type.Optional(Type.String({ enum: ["Request Changes", "Approve", "Skipped"] })),
+  preface: Type.Optional(Type.String({ description: "Optional one-sentence summary preface." })),
+  body: Type.Optional(Type.String({ description: "Legacy markdown summary. Prefer report_finding + verdict/preface." })),
+}, { minProperties: 1 });
 
 const ReplySchema = Type.Object({
   comment_id: Type.Integer({ minimum: 1 }),
@@ -842,6 +982,28 @@ function buildDuplicateUpdateResponse(
     }],
     details: { id: -1 },
   };
+}
+
+function normalizeVerdict(value: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "request changes") return "Request Changes";
+  if (normalized === "approve") return "Approve";
+  if (normalized === "skipped") return "Skipped";
+  return null;
+}
+
+function parseVerdictFromBody(body: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {
+  if (!body) return null;
+  const match = body.match(/\*\*Verdict:\*\*\s*(Request Changes|Approve|Skipped)/i);
+  return normalizeVerdict(match?.[1]);
+}
+
+function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" | "Approve" {
+  if (findings.some((finding) => finding.status !== "resolved")) {
+    return "Request Changes";
+  }
+  return "Approve";
 }
 
 async function safeCall<T>(fn: () => Promise<T>): Promise<T> {

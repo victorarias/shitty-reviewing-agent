@@ -164,7 +164,7 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
 - `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only in PR mode; write-enabled in scheduled runs with restrictions)
 - `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google/Vertex only; Vertex requires `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`)
-- `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `post_summary`
+- `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `report_finding`, `set_summary_mode`, `post_summary`
 - `github.pr.manage` (PR creation): `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
 - `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
 - `terminate` is always available and should be called exactly once as the final action.
@@ -252,8 +252,9 @@ jobs:
   - for larger PRs (>3 distinct non-test/non-generated directories), the review guide includes both a Mermaid component relationship diagram and a Mermaid sequence diagram
   - selective explainer comments for meaningful changed files (inline when possible, issue-comment fallback for non-commentable/binary/large diffs)
   - the legacy auto-generated summary sequence diagram is disabled
-- The reviewer tracks issues via tools to populate summary counts; if no issues are recorded, the table will show zeros.
+- Summary output suppresses empty sections/tables to reduce noise. Sparse findings are grouped by category without forcing a full counts table.
 - Follow-up reviews keep the summary delta-focused on new changes; unchanged prior findings are not repeated. Follow-up summaries split findings into "New Issues Since Last Review" and "Resolved Since Last Review".
+- Summary rendering is deterministic: the agent reports structured findings (category/severity/status), and tooling renders compact/standard/alert formats to reduce noise.
 - For large reviews, the agent may prune earlier context and inject a short context summary to stay within model limits.
 - LLM calls automatically retry with exponential backoff on rate limits (including 429/RESOURCE_EXHAUSTED), respecting Retry-After when present and waiting up to ~60 minutes total by default. Override via `LLM_RATE_LIMIT_MAX_WAIT_MS` and `LLM_RATE_LIMIT_MAX_ATTEMPTS`.
 - Comment-triggered commands use `!command` or `@bot command` in PR comments (requires `issue_comment` workflow).

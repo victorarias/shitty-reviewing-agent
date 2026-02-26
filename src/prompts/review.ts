@@ -2,7 +2,11 @@
 // when the tool is present — no need to add hasTool() checks elsewhere.
 const TOOL_DOCS: Record<string, string> = {
   post_summary:
-    "call exactly once near the end. Write only summary content — footer (model/billing/markers) is added automatically.",
+    "call exactly once near the end. Prefer verdict/preface with recorded findings; footer (model/billing/markers) is added automatically.",
+  report_finding:
+    "`report_finding({ category, severity, status, title, details?, evidence?, action? })` — record every finding for deterministic rendering.",
+  set_summary_mode:
+    "`set_summary_mode({ mode, reason, evidence[] })` — escalate summary mode to standard/alert when risk justifies it. Never use for downgrades.",
   terminate: "call exactly once as your final action.",
   git: "`git({ args: string[] })` — read-only subcommands only (log/show/diff). Blocked flags: -C, --git-dir, --work-tree, --exec-path, -c, --config, --config-env, --no-index.",
   validate_mermaid: "`validate_mermaid({ diagram: string })` — validate Mermaid syntax before posting.",
@@ -22,6 +26,8 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     searchWeb: hasTool("web_search"),
     useSubagent: hasTool("subagent"),
     postSummary: hasTool("post_summary"),
+    reportFinding: hasTool("report_finding"),
+    setSummaryMode: hasTool("set_summary_mode"),
     terminate: hasTool("terminate"),
     useDiff: hasTool("get_diff"),
     validateMermaid: hasTool("validate_mermaid"),
@@ -108,11 +114,28 @@ Never re-post feedback that a prior thread already covers. If the verdict change
     if (hasTool("resolve_thread")) parts.push("Use resolve_thread for fixed bot-owned threads.");
     workflowSteps.push(parts.join(" "));
   }
+  if (can.reportFinding) {
+    workflowSteps.push("Record each issue/resolution/still-open item with report_finding before posting summary.");
+  }
+  if (can.setSummaryMode) {
+    workflowSteps.push("Use set_summary_mode only when evidence shows higher risk than the default summary mode.");
+  }
   if (can.postSummary) workflowSteps.push("Post summary exactly once.");
   if (can.terminate) workflowSteps.push("Call terminate, then stop.");
 
   const workflowSection = workflowSteps.length
     ? `\n# Workflow\n${workflowSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}\n`
+    : "";
+  const summaryFindingRecording = can.reportFinding
+    ? "Use report_finding for every issue/resolution/still-open item. Each finding must include category + severity + status."
+    : "List each finding with category, severity, and status (new/resolved/still-open).";
+  const summaryModeBehavior = can.setSummaryMode
+    ? "- Use set_summary_mode only to escalate when evidence warrants it (never downgrade below candidate)."
+    : "- If risk is clearly high, increase signal in the summary and make required action explicit.";
+  const summaryPostUsage = can.postSummary
+    ? `post_summary usage:
+- Preferred: call post_summary with verdict + preface only; tooling renders markdown from findings.
+- Legacy fallback: if you provide post_summary.body directly, keep it concise and do not add footer/markers.`
     : "";
 
   return `# Role
@@ -132,61 +155,32 @@ ${followUpSection}${toolNotesSection}${subagentSection}${workflowSection}
 
 <one-sentence preface grounded in PR specifics — no label prefix, no generic filler>
 
-### Issues Found
+### Findings by Category
+${summaryFindingRecording}
 
-| Category | Count |
-|----------|-------|
-| Bug | 0 |
-| Security | 0 |
-| Performance | 0 |
-| Unused Code | 0 |
-| Duplicated Code | 0 |
-| Refactoring | 0 |
-| Design | 0 |
-| Documentation | 0 |
+Allowed categories:
+- bug, security, performance, unused_code, duplicated_code, refactoring, design, documentation
 
-### Key Findings (first review only)
-- <finding>
+Allowed statuses:
+- new, resolved, still_open
 
-### Key Files (first review only)
-Use a scan-first layout, but keep all four details for each file.
+Follow-up summaries are rendered into:
+- New Issues Since Last Review
+- Resolved Since Last Review
+- Still Open (omit when empty)
 
-| File | Why review this |
-|------|------------------|
-| \`path/to/file.ts\` | <highest-risk reason in one line> |
+Rendering is deterministic in tooling:
+- If 1-2 findings, skip category table.
+- If findings are sparse/empty, omit empty sections.
+- If follow-up has no new/resolved/still-open items, tooling posts a short status summary.
+- If risk is high, tooling switches to alert mode and makes risk signal explicit.
 
-<details><summary>📂 File details</summary>
+Summary mode behavior:
+- User prompt provides a deterministic summary mode candidate (compact or standard) and risk hints.
+${summaryModeBehavior}
+- Alert mode requires evidence (file/line, thread, or concrete risk rationale).
 
-#### \`path/to/file.ts\`
-| Aspect | Notes |
-|-------|-------|
-| What this file does | <role in the codebase> |
-| What changed | <what was modified> |
-| Why it changed | <intent and rationale> |
-| Review checklist | - <specific behavior/edge case to verify><br>- <integration or failure-mode check> |
-
-Optional for cross-file logic:
-- **Impact map:** \`api.ts → service.ts → repo.ts\`
-
-<!-- Include files with significant logic changes, risk, or cross-cutting impact.
-     Skip config/lockfiles/boilerplate. Keep each cell concise (prefer one line).
-     Keep checklist items concrete and testable. -->
-</details>
-
-### New Issues Since Last Review (follow-up only)
-- <new issue found in changed code>
-
-### Resolved Since Last Review (follow-up only)
-- <issue fixed by new commits>
-
-### Still Open (follow-up only)
-- <prior issue where code was not changed — no inline comment re-posted>
-
-**Section rules:**
-- Empty sections: write "- None" (except Still Open — omit if empty).
-- Follow-up reviews: replace Key Findings and Key Files with the three follow-up sections.
-- In Key Files: keep a compact top table, then include a per-file Aspect/Notes table with all four details.
-- Prebuilt sequence diagrams: add under a collapsible \`<details>\` section.
+${summaryPostUsage}
 
 # Style
 - Precise, professional, technical. No jokes, metaphors, or filler.
@@ -209,6 +203,9 @@ export function buildUserPrompt(params: {
   previousReviewAt?: string | null;
   previousReviewBody?: string | null;
   sequenceDiagram?: string | null;
+  changedLineCount?: number;
+  summaryModeCandidate?: "compact" | "standard";
+  riskHints?: string[];
 }): string {
   const body = params.prBody?.trim() ? params.prBody.trim() : "(no description)";
   const files = params.changedFiles.length > 0 ? params.changedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
@@ -222,6 +219,9 @@ export function buildUserPrompt(params: {
   const previousReviewUrl = params.previousReviewUrl ? params.previousReviewUrl : "(unknown)";
   const previousReviewBody = params.previousReviewBody ? params.previousReviewBody : "";
   const directoryCount = params.directoryCount ?? 0;
+  const changedLineCount = Number.isFinite(params.changedLineCount) ? Math.max(0, Math.trunc(params.changedLineCount as number)) : "(unknown)";
+  const summaryModeCandidate = params.summaryModeCandidate ?? "standard";
+  const riskHints = params.riskHints && params.riskHints.length > 0 ? params.riskHints.map((hint) => `  - ${hint}`).join("\n") : "  - None";
   const hasSequenceDiagram = params.sequenceDiagram && params.sequenceDiagram.trim().length > 0;
   const isFollowUp =
     Boolean(params.lastReviewedSha) ||
@@ -239,6 +239,10 @@ Metadata:
 - Last reviewed SHA: ${lastReview}
 - Current head SHA: ${headSha}
 - Distinct directories touched: ${directoryCount}
+- Scoped delta after ignore: ${params.changedFiles.length} file(s), ${changedLineCount} changed line(s)
+- Deterministic summary mode candidate: ${summaryModeCandidate}
+- Deterministic risk hints:
+${riskHints}
 ${scopeWarning ? `- Review scope note: ${scopeWarning}` : ""}
 
 # Previous Review
@@ -251,6 +255,7 @@ ${
     ? "\nNote: This is a follow-up review. Focus only on changes since the last review; do not restate unchanged findings."
     : ""
 }
+${isFollowUp ? "\nNote: For follow-ups, you may call set_summary_mode only to escalate above the candidate mode when evidence justifies it." : ""}
 
 # Constraints
 - Max files allowed: ${params.maxFiles}
