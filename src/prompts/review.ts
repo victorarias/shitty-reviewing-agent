@@ -2,7 +2,7 @@
 // when the tool is present — no need to add hasTool() checks elsewhere.
 const TOOL_DOCS: Record<string, string> = {
   post_summary:
-    "call exactly once near the end. Prefer verdict/preface with recorded findings; footer (model/billing/markers) is added automatically.",
+    "call exactly once near the end. Use verdict/preface after recording findings; tooling renders the summary and appends footer/markers automatically.",
   report_finding:
     "`report_finding({ category, severity, status, title, details?, evidence?, action? })` — record every finding for deterministic rendering.",
   set_summary_mode:
@@ -134,8 +134,7 @@ Never re-post feedback that a prior thread already covers. If the verdict change
     : "- If risk is clearly high, increase signal in the summary and make required action explicit.";
   const summaryPostUsage = can.postSummary
     ? `post_summary usage:
-- Preferred: call post_summary with verdict + preface only; tooling renders markdown from findings.
-- Legacy fallback: if you provide post_summary.body directly, keep it concise and do not add footer/markers.`
+- Call post_summary with verdict + preface only; tooling renders markdown from findings.`
     : "";
 
   return `# Role

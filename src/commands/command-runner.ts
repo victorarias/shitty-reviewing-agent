@@ -365,7 +365,7 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
     hasTool("post_summary")
-      ? "- Preferred summary flow: call report_finding for each issue, then post_summary with verdict/preface. If using post_summary body directly, do not include footer lines (Reviewed by/model/billing) or sri markers; tooling appends them."
+      ? "- Preferred summary flow: call report_finding for each issue, then call post_summary with verdict/preface. Tooling renders the summary and appends footer lines/markers."
       : null,
     hasTool("set_summary_mode")
       ? "- Use set_summary_mode only to escalate verbosity/risk signaling when evidence warrants it."

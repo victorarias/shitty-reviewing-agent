@@ -1111,7 +1111,7 @@ test("set_summary_mode rejects downgrade and alert without evidence", async () =
   expect(missingEvidence.content[0].text).toContain("requires evidence");
 });
 
-test("post_summary preserves legacy body when no structured findings were reported", async () => {
+test("post_summary rejects legacy body input", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
     octokit: octokit as any,
@@ -1126,28 +1126,23 @@ test("post_summary preserves legacy body when no structured findings were report
     existingComments: [],
     reviewThreads: [],
     summaryPolicy: {
-      isFollowUp: true,
-      modeCandidate: "compact",
+      isFollowUp: false,
+      modeCandidate: "standard",
       changedFileCount: 1,
       changedLineCount: 6,
-      riskHints: ["authentication/authorization surface: src/auth/token.ts"],
+      riskHints: [],
     },
   });
 
-  const setSummaryModeTool = getTool(tools, "set_summary_mode");
   const summaryTool = getTool(tools, "post_summary");
-
-  await setSummaryModeTool.execute("", {
-    mode: "alert",
-    reason: "Escalating signal due auth surface changes.",
-    evidence: ["src/auth/token.ts:44"],
-  });
-  await summaryTool.execute("", {
+  const result = await summaryTool.execute("", {
+    verdict: "Approve",
+    preface: "No material review findings were identified.",
     body: "## Review Summary\n\n**Verdict:** Request Changes\n\nCustom legacy body content.",
-  });
+  } as any);
 
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("no longer supported");
   const summaryCall = calls.find((call) => call.type === "issue_comment");
-  expect(summaryCall).toBeTruthy();
-  expect(summaryCall?.args.body).toContain("Custom legacy body content.");
-  expect(summaryCall?.args.body).not.toContain("No new issues, resolutions, or still-open items");
+  expect(summaryCall).toBeUndefined();
 });

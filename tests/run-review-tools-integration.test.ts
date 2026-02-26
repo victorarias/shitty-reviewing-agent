@@ -75,7 +75,8 @@ test("runReview tool integration posts comment and suggestion", async () => {
           suggestion: "const a = 3;",
         });
         await summaryTool.execute("", {
-          body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          verdict: "Approve",
+          preface: "No material review findings were identified.",
         });
       },
       abort() {},
