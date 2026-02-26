@@ -56,7 +56,8 @@ test("runReview filters tools by allowlist", async () => {
       async prompt() {
         if (summaryTool) {
           await summaryTool.execute("", {
-            body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+            verdict: "Approve",
+            preface: "No material review findings were identified.",
           });
         }
       },
@@ -98,7 +99,8 @@ test("runReview includes subagent tool when allowlisted", async () => {
       async prompt() {
         if (summaryTool) {
           await summaryTool.execute("", {
-            body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+            verdict: "Approve",
+            preface: "No material review findings were identified.",
           });
         }
       },

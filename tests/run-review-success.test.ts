@@ -58,7 +58,8 @@ test("runReview success path posts summary via tool", async () => {
       subscribe() {},
       async prompt() {
         await summaryTool.execute("", {
-          body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          verdict: "Approve",
+          preface: "No material review findings were identified.",
         });
       },
       abort() {},
@@ -104,7 +105,8 @@ test("runReview executes experimental PR explainer when enabled", async () => {
       subscribe() {},
       async prompt() {
         await summaryTool.execute("", {
-          body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          verdict: "Approve",
+          preface: "No material review findings were identified.",
         });
       },
       abort() {},
@@ -160,7 +162,8 @@ test("runReview retries when agent records state.error after prompt", async () =
           return;
         }
         await summaryTool.execute("", {
-          body: "## Review Summary\n\n**Verdict:** Approve\n\n### Issues Found\n\n- None\n\n### Key Findings\n\n- None",
+          verdict: "Approve",
+          preface: "No material review findings were identified.",
         });
       },
       abort() {

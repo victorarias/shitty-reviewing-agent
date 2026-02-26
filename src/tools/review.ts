@@ -581,9 +581,19 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const summaryTool: AgentTool<typeof SummarySchema, { id: number }> = {
     name: "post_summary",
     label: "Post summary",
-    description: "Post the final review summary as a PR comment.",
+    description: "Post the final review summary as a PR comment using structured findings.",
     parameters: SummarySchema,
     execute: async (_id, params) => {
+      const legacyBody = (params as Record<string, unknown>).body;
+      if (typeof legacyBody === "string" && legacyBody.trim()) {
+        return {
+          content: [{
+            type: "text",
+            text: "post_summary.body is no longer supported. Use report_finding + post_summary({ verdict, preface }).",
+          }],
+          details: { id: -1 },
+        };
+      }
       if (deps.summaryPosted?.()) {
         return {
           content: [{ type: "text", text: "Summary already posted. Skipping duplicate." }],
@@ -592,26 +602,22 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       }
       // Mark as posted immediately to prevent racing duplicate calls.
       deps.onSummaryPosted?.();
-      const verdict = normalizeVerdict(params.verdict) ?? parseVerdictFromBody(params.body) ?? inferVerdict(summaryFindings);
+      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(summaryFindings);
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const derivedMode = summaryModeOverride ?? baseMode;
       const hintedRisk = Boolean(deps.summaryPolicy?.riskHints && deps.summaryPolicy.riskHints.length > 0);
       const hasUnresolved = summaryFindings.some((finding) => finding.status !== "resolved");
       const riskAwareMode = hintedRisk && hasUnresolved ? maxSummaryMode(derivedMode, "standard") : derivedMode;
       const effectiveMode = hasHighRiskFindings(summaryFindings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
-      const hasLegacyBody = Boolean(params.body?.trim());
-      const shouldRenderStructured = summaryFindings.length > 0 || !hasLegacyBody;
-      const summaryBody = shouldRenderStructured
-        ? buildAdaptiveSummaryMarkdown({
-            verdict,
-            preface: params.preface,
-            findings: summaryFindings,
-            mode: effectiveMode,
-            isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
-            modeReason: summaryModeReason,
-            modeEvidence: summaryModeEvidence,
-          })
-        : params.body!;
+      const summaryBody = buildAdaptiveSummaryMarkdown({
+        verdict,
+        preface: params.preface,
+        findings: summaryFindings,
+        mode: effectiveMode,
+        isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
+        modeReason: summaryModeReason,
+        modeEvidence: summaryModeEvidence,
+      });
       const body = ensureSummaryFooter(summaryBody, deps.modelId, deps.getBilling(), deps.reviewSha);
       const response = await safeCall(() =>
         deps.octokit.rest.issues.createComment({
@@ -689,8 +695,10 @@ const SetSummaryModeSchema = Type.Object({
 const SummarySchema = Type.Object({
   verdict: Type.Optional(Type.String({ enum: ["Request Changes", "Approve", "Skipped"] })),
   preface: Type.Optional(Type.String({ description: "Optional one-sentence summary preface." })),
-  body: Type.Optional(Type.String({ description: "Legacy markdown summary. Prefer report_finding + verdict/preface." })),
-}, { minProperties: 1 });
+}, {
+  additionalProperties: false,
+  minProperties: 1,
+});
 
 const ReplySchema = Type.Object({
   comment_id: Type.Integer({ minimum: 1 }),
@@ -991,12 +999,6 @@ function normalizeVerdict(value: string | undefined): "Request Changes" | "Appro
   if (normalized === "approve") return "Approve";
   if (normalized === "skipped") return "Skipped";
   return null;
-}
-
-function parseVerdictFromBody(body: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {
-  if (!body) return null;
-  const match = body.match(/\*\*Verdict:\*\*\s*(Request Changes|Approve|Skipped)/i);
-  return normalizeVerdict(match?.[1]);
 }
 
 function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" | "Approve" {
