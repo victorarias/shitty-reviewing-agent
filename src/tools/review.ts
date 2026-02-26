@@ -1196,6 +1196,7 @@ function validateSummaryFindings(
   const lineAnchoredSummaryOnly = findings.filter((finding) => {
     if (finding.status === "resolved") return false;
     if (finding.placement !== "summary_only") return false;
+    if (finding.severity === "low") return false;
     const findingRef = finding.findingRef ?? "";
     const links = findingLinksByRef.get(findingRef) ?? [];
     if (links.length > 0) return false;

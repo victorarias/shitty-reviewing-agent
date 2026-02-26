@@ -1255,6 +1255,45 @@ test("post_summary rejects line-anchored unresolved summary-only finding without
   expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
 });
 
+test("post_summary allows low-severity line-anchored summary-only finding without inline link", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/retry.ts", status: "modified", additions: 2, deletions: 0, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+  await reportFindingTool.execute("", {
+    finding_ref: "perf-index-build",
+    category: "performance",
+    severity: "low",
+    status: "new",
+    placement: "summary_only",
+    summary_only_reason: "Performance observation on initialization logic.",
+    title: "Index building cost should be monitored as file count grows",
+    evidence: ["src/retry.ts:88"],
+  });
+
+  const result = await summaryTool.execute("", {
+    verdict: "Approve",
+    preface: "No blocking issues found.",
+  });
+  expect(result.details.id).toBeGreaterThan(0);
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("(ref: perf-index-build)");
+});
+
 test("report_finding rejects summary_only placement without reason", async () => {
   const { octokit } = makeOctokitSpy();
   const tools = createReviewTools({
