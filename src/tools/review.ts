@@ -1512,6 +1512,9 @@ function resolveSummaryKeyFiles(
       impactMap: reported.impactMap?.trim() || undefined,
     });
   }
+  if (merged.length > 0) {
+    return merged.slice(0, 6);
+  }
 
   const inferred = selectKeyFilesForSummary(changedFiles, findings);
   for (const item of inferred) {

@@ -444,9 +444,9 @@ function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean):
   }
   const parts = [`[${finding.severity}] ${linkedTitle}`];
   if (finding.details) {
-    parts.push(`${CATEGORY_DETAIL_LABEL[finding.category]}: ${toSingleLine(firstSentence(finding.details, 220))}`);
+    parts.push(`${CATEGORY_DETAIL_LABEL[finding.category]}: ${toSingleLine(finding.details)}`);
   }
-  if (finding.action) parts.push(`next step: ${toSingleLine(firstSentence(finding.action, 220))}`);
+  if (finding.action) parts.push(`next step: ${toSingleLine(finding.action)}`);
   if (linkPart) parts.push(linkPart);
   return parts.join(". ");
 }
@@ -468,7 +468,7 @@ function renderFindingLinkage(
   }
   if (finding.placement === "summary_only") {
     if (!options.verbose) return "summary-only";
-    if (finding.summaryOnlyReason) return `summary-only scope: ${toSingleLine(firstSentence(finding.summaryOnlyReason, 220))}`;
+    if (finding.summaryOnlyReason) return `summary-only scope: ${toSingleLine(finding.summaryOnlyReason)}`;
     return "summary-only scope";
   }
   return "";
@@ -478,7 +478,7 @@ function deriveDisplayTitle(title: string, details?: string): string {
   const cleanedTitle = toSingleLine(title);
   const isMetaVerificationTitle = /^(verify|validation|check|confirm)\b/i.test(cleanedTitle);
   if (isMetaVerificationTitle && details) {
-    return toSingleLine(firstSentence(details, 140));
+    return toSingleLine(details);
   }
   return cleanedTitle;
 }
@@ -608,7 +608,7 @@ function appendObservationsSection(lines: string[], observations: SummaryObserva
     const categoryLabel = observation.category[0].toUpperCase() + observation.category.slice(1);
     const title = toSingleLine(observation.title);
     if (observation.details) {
-      lines.push(`- **${title}** (${categoryLabel}): ${toSingleLine(firstSentence(observation.details, 280))}`);
+      lines.push(`- **${title}** (${categoryLabel}): ${toSingleLine(observation.details)}`);
     } else {
       lines.push(`- **${title}** (${categoryLabel})`);
     }

@@ -1370,6 +1370,66 @@ test("post_summary uses explicit key file details reported by the model", async 
   );
 });
 
+test("post_summary does not auto-add inferred key files when explicit key files are reported", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [
+      { filename: "src/retry.ts", status: "modified", additions: 2, deletions: 1, changes: 3, patch },
+      { filename: "src/summary.ts", status: "modified", additions: 4, deletions: 1, changes: 5, patch },
+    ],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 2,
+      changedLineCount: 8,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const commentTool = getTool(tools, "comment");
+  const reportKeyFileTool = getTool(tools, "report_key_file");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-retry-loop",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Retry loop never stops on permanent 4xx responses",
+  });
+  await commentTool.execute("", {
+    path: "src/retry.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-retry-loop",
+    body: "This branch should stop retrying on terminal client errors.",
+  });
+  await reportKeyFileTool.execute("", {
+    path: "src/retry.ts",
+    why_review: "Retry termination behavior changed.",
+  });
+  await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Retry policy needs one correction before merge.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("| `src/retry.ts` | Retry termination behavior changed. |");
+  expect(summaryCall?.args.body).not.toContain("| `src/summary.ts` |");
+});
+
 test("post_summary includes report_observation output in key findings", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({

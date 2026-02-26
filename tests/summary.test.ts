@@ -271,6 +271,31 @@ test("buildAdaptiveSummaryMarkdown favors details for verification-style titles"
   expect(summary).toContain("Design impact: Upsert collisions can overwrite prior findings when refs are reused.");
 });
 
+test("buildAdaptiveSummaryMarkdown does not truncate long finding details with ellipsis", () => {
+  const longDetails =
+    "This is a deliberately long detail text that should remain fully visible in the summary output without any truncation marker because reviewers asked for complete detail visibility even when the string is long and contains no sentence terminator";
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "long-detail-check",
+        category: "Design",
+        severity: "low",
+        status: "new",
+        placement: "summary_only",
+        summaryOnlyReason: "Cross-file concern.",
+        title: "Long detail should remain fully visible",
+        details: longDetails,
+      },
+    ],
+  });
+
+  expect(summary).toContain(`Design impact: ${longDetails}`);
+  expect(summary).not.toContain("…");
+});
+
 test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compact finding", () => {
   const summary = buildAdaptiveSummaryMarkdown({
     verdict: "Request Changes",
