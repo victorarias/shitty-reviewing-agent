@@ -154,7 +154,7 @@ jobs:
         run: echo "Skipping baseline reviewer (GEMINI_API_KEY not configured)."
       - name: Run baseline reviewer v0.2.8
         if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.GEMINI_API_KEY != '' }}
-        uses: ghcr.io/victorarias/shitty-reviewing-agent:v0.2.8
+        uses: victorarias/shitty-reviewing-agent@v0.2.8
         with:
           provider: google
           api-key: ${{ secrets.GEMINI_API_KEY }}
