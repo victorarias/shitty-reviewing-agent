@@ -130,7 +130,7 @@ jobs:
       pull-requests: write
     continue-on-error: true
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      BASELINE_API_KEY: ${{ secrets.GEMINI_API_KEY != '' && secrets.GEMINI_API_KEY || secrets.VERTEX_AI_API_KEY }}
     steps:
       - name: Check compare-baseline label (live)
         id: compare_baseline_gate
@@ -149,15 +149,15 @@ jobs:
         run: echo "Skipping baseline reviewer (compare-baseline label is not set)."
       - uses: actions/checkout@v4
         if: ${{ steps.compare_baseline_gate.outputs.run == 'true' }}
-      - name: Skip baseline reviewer when GEMINI_API_KEY is missing
-        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.GEMINI_API_KEY == '' }}
-        run: echo "Skipping baseline reviewer (GEMINI_API_KEY not configured)."
+      - name: Skip baseline reviewer when API key is missing
+        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.BASELINE_API_KEY == '' }}
+        run: echo "Skipping baseline reviewer (configure GEMINI_API_KEY or VERTEX_AI_API_KEY)."
       - name: Run baseline reviewer v0.2.8
-        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.GEMINI_API_KEY != '' }}
+        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.BASELINE_API_KEY != '' }}
         uses: victorarias/shitty-reviewing-agent@v0.2.8
         with:
-          provider: google
-          api-key: ${{ secrets.GEMINI_API_KEY }}
+          provider: ${{ secrets.GEMINI_API_KEY != '' && 'google' || 'google-vertex' }}
+          api-key: ${{ env.BASELINE_API_KEY }}
           model: gemini-3-flash-preview
           reasoning: minimal
           debug: true
