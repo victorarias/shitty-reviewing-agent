@@ -142,7 +142,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       ...finding,
       linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
     }));
-    const keyFiles = resolveSummaryKeyFiles(deps.changedFiles, findings, [...keyFilesByPath.values()]);
+    const keyFiles = resolveSummaryKeyFiles(deps.changedFiles, [...keyFilesByPath.values()]);
     return {
       findings,
       observations: [...summaryObservations],
@@ -1492,7 +1492,6 @@ function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: str
 
 function resolveSummaryKeyFiles(
   changedFiles: ChangedFile[],
-  findings: StructuredSummaryFinding[],
   reportedKeyFiles: KeyFileSummary[]
 ): KeyFileSummary[] {
   const validPaths = new Set(changedFiles.map((file) => file.filename));
@@ -1512,99 +1511,7 @@ function resolveSummaryKeyFiles(
       impactMap: reported.impactMap?.trim() || undefined,
     });
   }
-  if (merged.length > 0) {
-    return merged.slice(0, 6);
-  }
-
-  const inferred = selectKeyFilesForSummary(changedFiles, findings);
-  for (const item of inferred) {
-    if (seen.has(item.path)) continue;
-    merged.push(item);
-    seen.add(item.path);
-    if (merged.length >= 6) break;
-  }
   return merged.slice(0, 6);
-}
-
-function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): KeyFileSummary[] {
-  if (changedFiles.length === 0) return [];
-  const byPath = new Map(changedFiles.map((file) => [file.filename, file]));
-  const orderedPaths: string[] = [];
-  const seenPaths = new Set<string>();
-  const categoriesByPath = new Map<string, Set<string>>();
-  const pushPath = (path: string | null | undefined) => {
-    if (!path) return;
-    if (seenPaths.has(path)) return;
-    if (!byPath.has(path)) return;
-    seenPaths.add(path);
-    orderedPaths.push(path);
-  };
-  const recordCategory = (path: string | null | undefined, category: string) => {
-    if (!path) return;
-    if (!byPath.has(path)) return;
-    const set = categoriesByPath.get(path) ?? new Set<string>();
-    set.add(category);
-    categoriesByPath.set(path, set);
-  };
-
-  for (const finding of findings) {
-    const evidenceAnchors = parseEvidenceAnchors(finding.evidence);
-    for (const anchor of evidenceAnchors) {
-      pushPath(anchor.path);
-      recordCategory(anchor.path, finding.category);
-    }
-    for (const location of finding.linkedLocations ?? []) {
-      const path = parsePathFromLinkedLocation(location);
-      pushPath(path);
-      recordCategory(path, finding.category);
-    }
-  }
-
-  const byChangeVolume = [...changedFiles].sort((a, b) => {
-    const aChanges = Number.isFinite(a.changes) ? a.changes : 0;
-    const bChanges = Number.isFinite(b.changes) ? b.changes : 0;
-    if (bChanges !== aChanges) return bChanges - aChanges;
-    const aAdditions = Number.isFinite(a.additions) ? a.additions : 0;
-    const bAdditions = Number.isFinite(b.additions) ? b.additions : 0;
-    if (bAdditions !== aAdditions) return bAdditions - aAdditions;
-    return a.filename.localeCompare(b.filename);
-  });
-  for (const file of byChangeVolume) {
-    pushPath(file.filename);
-  }
-
-  return orderedPaths
-    .slice(0, 6)
-    .map((path) => buildKeyFileSummary(byPath.get(path)!, categoriesByPath.get(path)));
-}
-
-function parsePathFromLinkedLocation(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const labelMatch = trimmed.match(/^\[([^\]]+)\]\([^)]+\)$/);
-  const candidate = labelMatch ? labelMatch[1] : trimmed;
-  const anchorMatch = candidate.match(EVIDENCE_FILE_LINE_PATTERN);
-  if (anchorMatch) return anchorMatch[1];
-  return null;
-}
-
-function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefined): KeyFileSummary {
-  const categoryList = categories ? [...categories].sort((a, b) => a.localeCompare(b)) : [];
-  const whyReview = categoryList.length > 0
-    ? `Related findings: ${categoryList.join(", ")}.`
-    : "n/a";
-  const summary: KeyFileSummary = {
-    path: file.filename,
-    whyReview,
-    whatFileDoes: "n/a",
-    whatChanged: buildAutoKeyFileSummary([file], file.filename),
-    whyChanged: "n/a",
-    reviewChecklist: [],
-  };
-  if (file.status === "renamed" && file.previous_filename) {
-    summary.impactMap = `${file.previous_filename} -> ${file.filename}`;
-  }
-  return summary;
 }
 
 function buildAutoKeyFileSummary(changedFiles: ChangedFile[], path: string): string {

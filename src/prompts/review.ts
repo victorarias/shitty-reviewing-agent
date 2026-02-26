@@ -203,7 +203,7 @@ Rendering is deterministic in tooling:
 - If follow-up has no new/resolved/still-open items, tooling posts a short status summary.
 - If risk is high, tooling switches to alert mode and makes risk signal explicit.
 - Key Findings are rendered from report_observation entries (non-issue context).
-- Key Files are rendered from report_key_file entries (with deterministic fallback when omitted).
+- Key Files are rendered only from report_key_file entries (omitted when none are reported).
 
 Summary mode behavior:
 - User prompt provides a deterministic summary mode candidate (compact or standard) and risk hints.

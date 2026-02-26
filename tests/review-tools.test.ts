@@ -1299,9 +1299,7 @@ test("post_summary renders clickable inline links when comment URLs are availabl
   const summaryCall = calls.find((call) => call.type === "issue_comment");
   expect(summaryCall).toBeTruthy();
   expect(summaryCall?.args.body).toContain("[medium] [Retry loop never stops on permanent 4xx responses](https://example.com/review-comment/202)");
-  expect(summaryCall?.args.body).toContain("### Key Files");
-  expect(summaryCall?.args.body).toContain("| `src/retry.ts` | Related findings: Bug. |");
-  expect(summaryCall?.args.body).toContain("| What changed | modified (+2/-1) |");
+  expect(summaryCall?.args.body).not.toContain("### Key Files");
   expect(summaryCall?.args.body).toContain("linked=[src/retry.ts:1 (RIGHT, comment)](https://example.com/review-comment/202)");
 });
 
