@@ -116,6 +116,10 @@ export function maxSummaryMode(a: SummaryMode, b: SummaryMode): SummaryMode {
   return MODE_RANK[a] >= MODE_RANK[b] ? a : b;
 }
 
+export function summaryModeRank(mode: SummaryMode): number {
+  return MODE_RANK[mode];
+}
+
 export function hasHighRiskFindings(findings: StructuredSummaryFinding[]): boolean {
   return findings.some((finding) => finding.severity === "high" && finding.status !== "resolved");
 }
@@ -215,7 +219,12 @@ function sanitizeFindings(findings: StructuredSummaryFinding[]): StructuredSumma
 
 function sanitizeText(value: string | undefined): string {
   if (!value) return "";
-  return value.replace(/\s+/g, " ").trim();
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function partitionFindings(findings: StructuredSummaryFinding[]): {

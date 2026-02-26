@@ -11,6 +11,7 @@ import {
   normalizeSummaryCategory,
   normalizeSummarySeverity,
   normalizeSummaryStatus,
+  summaryModeRank,
   type StructuredSummaryFinding,
   type SummaryMode,
 } from "../summary.js";
@@ -19,12 +20,6 @@ type Octokit = ReturnType<typeof getOctokit>;
 
 const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
 const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread {\n      id\n      isResolved\n    }\n  }\n}`;
-const SUMMARY_MODE_RANK: Record<SummaryMode, number> = {
-  compact: 0,
-  standard: 1,
-  alert: 2,
-};
-
 interface SummaryPolicy {
   isFollowUp: boolean;
   modeCandidate: SummaryMode;
@@ -551,14 +546,14 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const currentMode = summaryModeOverride ?? baseMode;
 
-      if (SUMMARY_MODE_RANK[requestedMode] < SUMMARY_MODE_RANK[baseMode]) {
+      if (summaryModeRank(requestedMode) < summaryModeRank(baseMode)) {
         return {
           content: [{ type: "text", text: `Refusing to downgrade below deterministic mode ${baseMode}.` }],
           details: { mode: currentMode },
         };
       }
 
-      if (SUMMARY_MODE_RANK[requestedMode] < SUMMARY_MODE_RANK[currentMode]) {
+      if (summaryModeRank(requestedMode) < summaryModeRank(currentMode)) {
         return {
           content: [{ type: "text", text: `Ignoring downgrade request. Current mode is ${currentMode}.` }],
           details: { mode: currentMode },
@@ -604,7 +599,8 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       const hasUnresolved = summaryFindings.some((finding) => finding.status !== "resolved");
       const riskAwareMode = hintedRisk && hasUnresolved ? maxSummaryMode(derivedMode, "standard") : derivedMode;
       const effectiveMode = hasHighRiskFindings(summaryFindings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
-      const shouldRenderStructured = summaryFindings.length > 0 || summaryModeOverride !== null || !params.body?.trim();
+      const hasLegacyBody = Boolean(params.body?.trim());
+      const shouldRenderStructured = summaryFindings.length > 0 || !hasLegacyBody;
       const summaryBody = shouldRenderStructured
         ? buildAdaptiveSummaryMarkdown({
             verdict,
@@ -1003,12 +999,9 @@ function parseVerdictFromBody(body: string | undefined): "Request Changes" | "Ap
   return normalizeVerdict(match?.[1]);
 }
 
-function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" | "Approve" | "Skipped" {
+function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" | "Approve" {
   if (findings.some((finding) => finding.status !== "resolved")) {
     return "Request Changes";
-  }
-  if (findings.length > 0) {
-    return "Approve";
   }
   return "Approve";
 }
