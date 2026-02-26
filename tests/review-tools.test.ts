@@ -252,6 +252,7 @@ test("comment tool includes category label when finding_ref matches a recorded f
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
   expect(calls[0].args.body).toContain("**Category:** Design");
+  expect(calls[0].args.body).toContain("**Why this category:**");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:design -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:design-api-boundary -->");
 });
@@ -295,6 +296,7 @@ test("suggest tool includes category label when finding_ref matches a recorded f
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
   expect(calls[0].args.body).toContain("**Category:** Bug");
+  expect(calls[0].args.body).toContain("**Why this category:**");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:bug -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:bug-null-guard -->");
 });

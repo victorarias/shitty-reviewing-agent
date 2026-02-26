@@ -49,6 +49,16 @@ const PRAISE_ONLY_PATTERN =
 const ISSUE_SIGNAL_PATTERN =
   /\b(bug|error|fail|failing|missing|incorrect|bypass|leak|race|insecure|broken|regression|coupl|duplica|unused|slow|latency|risk|vulnerab|crash|panic|deadlock|impact)\b/i;
 const EVIDENCE_FILE_LINE_PATTERN = /^([^\s:][^:]*?):(\d+)(?::\d+)?(?:\b|$)/;
+const CATEGORY_EXPLANATION_BY_NAME: Record<StructuredSummaryFinding["category"], string> = {
+  Bug: "This can impact behavior or correctness.",
+  Security: "This can introduce a security risk.",
+  Performance: "This can degrade performance or resource efficiency.",
+  "Unused Code": "This increases maintenance surface without clear value.",
+  "Duplicated Code": "This increases divergence and maintenance cost.",
+  Refactoring: "This indicates maintainability or structure can be improved.",
+  Design: "This affects boundaries, responsibilities, or coupling.",
+  Documentation: "This can cause misunderstanding or incorrect usage.",
+};
 interface SummaryPolicy {
   isFollowUp: boolean;
   modeCandidate: SummaryMode;
@@ -1075,10 +1085,23 @@ function ensureFindingCategoryLabel(body: string, finding: StructuredSummaryFind
   if (body.includes(marker)) return body;
   const trimmed = body.trim();
   const categoryLine = `**Category:** ${finding.category}`;
+  const rationaleLine = `**Why this category:** ${deriveFindingCategoryExplanation(finding)}`;
   if (!trimmed) {
-    return `${categoryLine}\n${marker}`;
+    return `${categoryLine}\n${rationaleLine}\n${marker}`;
   }
-  return `${categoryLine}\n\n${trimmed}\n${marker}`;
+  return `${categoryLine}\n${rationaleLine}\n\n${trimmed}\n${marker}`;
+}
+
+function deriveFindingCategoryExplanation(finding: StructuredSummaryFinding): string {
+  const details = (finding.details ?? "").trim();
+  if (details) {
+    const firstLine = details
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+    if (firstLine) return firstLine;
+  }
+  return CATEGORY_EXPLANATION_BY_NAME[finding.category];
 }
 
 function normalizeFindingRef(value: string | undefined): string | undefined {
