@@ -164,7 +164,7 @@ Tools are grouped by allowlist categories. Commands can further restrict via `to
 - `git.read` (PR diffs): `get_changed_files`, `get_full_changed_files`, `get_diff`, `get_full_diff`
 - `git.history` (repo history): `git_log`, `git_diff_range`, `git` (read-only in PR mode; write-enabled in scheduled runs with restrictions)
 - `github.pr.read` (PR metadata + context): `get_pr_info`, `get_review_context`, `list_threads_for_location`, `web_search` (Gemini/Google/Vertex only; Vertex requires `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`)
-- `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `report_finding`, `set_summary_mode`, `post_summary`
+- `github.pr.feedback` (PR feedback): `comment`, `suggest`, `update_comment`, `reply_comment`, `resolve_thread`, `report_finding`, `report_key_file`, `report_observation`, `set_summary_mode`, `post_summary`
 - `github.pr.manage` (PR creation): `push_pr` (schedule mode always; PR mode only if `allow-pr-tools` is true)
 - `repo.write` (file edits): `write_file`, `apply_patch`, `delete_file`, `mkdir`
 - `terminate` is always available and should be called exactly once as the final action.
