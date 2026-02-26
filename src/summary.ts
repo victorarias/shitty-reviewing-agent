@@ -28,11 +28,16 @@ export type SummaryCategory = (typeof SUMMARY_CATEGORIES)[number];
 export type SummarySeverity = "low" | "medium" | "high";
 export type SummaryStatus = "new" | "resolved" | "still_open";
 export type SummaryMode = "compact" | "standard" | "alert";
+export type SummaryPlacement = "inline" | "summary_only";
 
 export interface StructuredSummaryFinding {
+  findingRef?: string;
   category: SummaryCategory;
   severity: SummarySeverity;
   status: SummaryStatus;
+  placement?: SummaryPlacement;
+  summaryOnlyReason?: string;
+  linkedLocations?: string[];
   title: string;
   details?: string;
   evidence?: string[];
@@ -68,6 +73,17 @@ const MODE_RANK: Record<SummaryMode, number> = {
   compact: 0,
   standard: 1,
   alert: 2,
+};
+
+const CATEGORY_DETAIL_LABEL: Record<SummaryCategory, string> = {
+  Bug: "Behavior impact",
+  Security: "Security risk",
+  Performance: "Performance impact",
+  "Unused Code": "Maintenance impact",
+  "Duplicated Code": "Duplication impact",
+  Refactoring: "Refactoring impact",
+  Design: "Design impact",
+  Documentation: "Documentation impact",
 };
 
 export function buildSummaryMarkdown(content: SummaryContent): string {
@@ -204,10 +220,18 @@ function sanitizeFindings(findings: StructuredSummaryFinding[]): StructuredSumma
   for (const finding of findings) {
     const title = sanitizeText(finding.title);
     if (!title) continue;
+    const findingRef = sanitizeFindingRef(finding.findingRef);
+    const placement = normalizePlacement(finding.placement);
+    const summaryOnlyReason = sanitizeText(finding.summaryOnlyReason) || undefined;
+    const linkedLocations = (finding.linkedLocations ?? []).map((item) => sanitizeText(item)).filter(Boolean);
     cleaned.push({
+      findingRef,
       category: finding.category,
       severity: finding.severity,
       status: finding.status,
+      placement,
+      summaryOnlyReason,
+      linkedLocations,
       title,
       details: sanitizeText(finding.details),
       action: sanitizeText(finding.action),
@@ -225,6 +249,16 @@ function sanitizeText(value: string | undefined): string {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function sanitizeFindingRef(value: string | undefined): string | undefined {
+  const normalized = sanitizeText(value);
+  return normalized || undefined;
+}
+
+function normalizePlacement(value: SummaryPlacement | undefined): SummaryPlacement | undefined {
+  if (value === "inline" || value === "summary_only") return value;
+  return undefined;
 }
 
 function partitionFindings(findings: StructuredSummaryFinding[]): {
@@ -331,16 +365,63 @@ function renderGroupedFindings(findings: StructuredSummaryFinding[], options?: {
 }
 
 function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean): string {
+  const displayTitle = deriveDisplayTitle(finding.title, finding.details);
+  const findingRef = finding.findingRef?.trim();
+  const refPart = findingRef ? ` (ref: ${findingRef})` : "";
+  const linkPart = renderFindingLinkage(finding, { verbose });
   if (!verbose) {
-    return `[${finding.severity}] ${finding.title}`;
+    const concise = `[${finding.severity}] ${displayTitle}${refPart}`;
+    return linkPart ? `${concise} | ${linkPart}` : concise;
   }
-  const parts = [`[${finding.severity}] ${finding.title}`];
-  if (finding.details) parts.push(finding.details);
+  const parts = [`[${finding.severity}] ${displayTitle}${refPart}`];
+  if (finding.details) {
+    parts.push(`${CATEGORY_DETAIL_LABEL[finding.category]}: ${toSingleLine(firstSentence(finding.details, 220))}`);
+  }
   if (finding.evidence && finding.evidence.length > 0) {
-    parts.push(`evidence: ${finding.evidence.join("; ")}`);
+    parts.push(`evidence: ${finding.evidence.slice(0, 3).join("; ")}`);
   }
-  if (finding.action) parts.push(`action: ${finding.action}`);
-  return parts.join(" | ");
+  if (finding.action) parts.push(`next step: ${toSingleLine(firstSentence(finding.action, 220))}`);
+  if (linkPart) parts.push(linkPart);
+  return parts.join("; ");
+}
+
+function renderFindingLinkage(
+  finding: StructuredSummaryFinding,
+  options: { verbose: boolean }
+): string {
+  const linked = (finding.linkedLocations ?? []).filter(Boolean);
+  if (linked.length > 0) {
+    return options.verbose
+      ? `inline comments: ${linked.slice(0, 3).join("; ")}`
+      : `inline comments: ${linked.length}`;
+  }
+  if (finding.placement === "summary_only") {
+    if (!options.verbose) return "summary-only";
+    if (finding.summaryOnlyReason) return `summary-only scope: ${toSingleLine(firstSentence(finding.summaryOnlyReason, 220))}`;
+    return "summary-only scope";
+  }
+  return "";
+}
+
+function deriveDisplayTitle(title: string, details?: string): string {
+  const cleanedTitle = toSingleLine(title);
+  const isMetaVerificationTitle = /^(verify|validation|check|confirm)\b/i.test(cleanedTitle);
+  if (isMetaVerificationTitle && details) {
+    return toSingleLine(firstSentence(details, 140));
+  }
+  return cleanedTitle;
+}
+
+function firstSentence(value: string, maxLength: number): string {
+  const cleaned = toSingleLine(value);
+  const sentenceMatch = cleaned.match(/^(.+?[.?!])(\s|$)/);
+  const sentence = sentenceMatch ? sentenceMatch[1] : cleaned;
+  if (sentence.length <= maxLength) return sentence;
+  return `${sentence.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function toSingleLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function shouldShowFollowUpCategoryTable(findings: StructuredSummaryFinding[]): boolean {

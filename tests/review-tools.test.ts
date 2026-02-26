@@ -1046,16 +1046,25 @@ test("post_summary renders structured findings and alert mode", async () => {
   });
 
   const reportFindingTool = getTool(tools, "report_finding");
+  const commentTool = getTool(tools, "comment");
   const setSummaryModeTool = getTool(tools, "set_summary_mode");
   const summaryTool = getTool(tools, "post_summary");
 
   await reportFindingTool.execute("", {
+    finding_ref: "security-token-signature",
     category: "security",
     severity: "high",
     status: "new",
     title: "Token validation bypasses signature check",
     evidence: ["src/auth/token.ts:44"],
     action: "Require signature verification before accepting bearer tokens.",
+  });
+  await commentTool.execute("", {
+    path: "src/auth/token.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "security-token-signature",
+    body: "Signature validation must run before accepting the token.",
   });
   await setSummaryModeTool.execute("", {
     mode: "alert",
@@ -1072,6 +1081,207 @@ test("post_summary renders structured findings and alert mode", async () => {
   expect(summaryCall?.args.body).toContain("HIGH-RISK CHANGE DETECTED");
   expect(summaryCall?.args.body).toContain("#### Security (1)");
   expect(summaryCall?.args.body).toContain("src/auth/token.ts:44");
+  expect(summaryCall?.args.body).toContain("(ref: security-token-signature)");
+  expect(summaryCall?.args.body).toContain("inline comments: 1");
+});
+
+test("post_summary rejects unresolved inline finding without linked comment", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/auth/token.ts", status: "modified", additions: 5, deletions: 1, changes: 6, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 1,
+      changedLineCount: 6,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-retry-loop",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Retry loop never stops on permanent 4xx responses",
+  });
+  const result = await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Retry behavior needs correction.",
+  });
+
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("missing linked comments/suggestions");
+  expect(calls.find((call) => call.type === "issue_comment")).toBeUndefined();
+});
+
+test("post_summary accepts summary-only findings with reason", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/architecture.md", status: "modified", additions: 2, deletions: 0, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: true,
+      modeCandidate: "compact",
+      changedFileCount: 1,
+      changedLineCount: 2,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "design-boundary-leak",
+    category: "design",
+    severity: "low",
+    status: "still_open",
+    placement: "summary_only",
+    summary_only_reason: "Still open from prior review; no new line-specific diff in this update.",
+    title: "Service boundary remains coupled to transport DTOs",
+  });
+  await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "One prior design issue remains open.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("(ref: design-boundary-leak)");
+  expect(summaryCall?.args.body).toContain("summary-only");
+});
+
+test("post_summary rejects summary-only unresolved finding with bookkeeping reason", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/tools/review.ts", status: "modified", additions: 4, deletions: 0, changes: 4, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: true,
+      modeCandidate: "compact",
+      changedFileCount: 1,
+      changedLineCount: 4,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+  await reportFindingTool.execute("", {
+    finding_ref: "resolved-finding-validation-check",
+    category: "bug",
+    severity: "low",
+    status: "still_open",
+    placement: "summary_only",
+    summary_only_reason: "Verification of specific logic requested by previous file-level review guide.",
+    title: "Verify resolved findings bypass inline link validation",
+    evidence: ["src/tools/review.ts:1152"],
+  });
+
+  const result = await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "One issue remains.",
+  });
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("not verification bookkeeping");
+});
+
+test("post_summary rejects line-anchored unresolved summary-only finding without inline link", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/retry.ts", status: "modified", additions: 2, deletions: 0, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-retry-loop",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    placement: "summary_only",
+    summary_only_reason: "Needs follow-up.",
+    title: "Retry loop never stops on permanent 4xx responses",
+    evidence: ["src/retry.ts:88"],
+  });
+
+  const result = await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Retry behavior needs correction.",
+  });
+  expect(result.details.id).toBe(-1);
+  expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
+});
+
+test("report_finding rejects summary_only placement without reason", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const result = await reportFindingTool.execute("", {
+    finding_ref: "design-coupling",
+    category: "design",
+    severity: "medium",
+    status: "still_open",
+    placement: "summary_only",
+    title: "Interface couples transport and domain concerns",
+  });
+
+  expect(result.content[0].text).toContain("requires summary_only_reason");
 });
 
 test("set_summary_mode rejects downgrade and alert without evidence", async () => {
