@@ -1,8 +1,10 @@
 import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
-import type { ChangedFile, ExistingComment, PullRequestInfo } from "../types.js";
+import type { ChangedFile, PullRequestInfo } from "../types.js";
 import { fetchReviewThreadsGraphQL } from "../github-api.js";
+
+const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
 
 export class RateLimitError extends Error {
   constructor(message: string) {
@@ -203,7 +205,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
   const getReviewContext: AgentTool<typeof ReviewContextSchema, ReviewContextPayload> = {
     name: "get_review_context",
     label: "Get review context",
-    description: "Get prior review summaries, review threads, and commits since the last review summary.",
+    description: "Get prior review summaries, review threads, PR comment replies, and commits since the last review summary.",
     parameters: ReviewContextSchema,
     execute: async () => {
       if (!deps.cache.reviewContext) {
@@ -218,15 +220,28 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
           ),
         ]);
 
-        const summaries = comments
-          .filter((comment) => comment.body?.includes("Reviewed by shitty-reviewing-agent"))
+        const normalizedIssueComments = comments.map((comment) => ({
+          id: comment.id,
+          author: comment.user?.login ?? "unknown",
+          authorType: comment.user?.type ?? "",
+          authorAssociation: comment.author_association ?? undefined,
+          body: comment.body ?? "",
+          createdAt: comment.created_at ?? "",
+          updatedAt: comment.updated_at ?? comment.created_at ?? "",
+          url: comment.html_url ?? "",
+          isReviewerBot: isReviewerBotComment(comment.body ?? ""),
+          isSummary: isReviewerSummaryComment(comment.body ?? ""),
+        }));
+
+        const summaries = normalizedIssueComments
+          .filter((comment) => comment.isSummary)
           .map((comment) => ({
             id: comment.id,
-            author: comment.user?.login ?? "unknown",
-            createdAt: comment.created_at ?? "",
-            url: comment.html_url ?? "",
-            body: comment.body ?? "",
-            timestamp: parseTimestamp(comment.created_at ?? ""),
+            author: comment.author,
+            createdAt: comment.createdAt,
+            url: comment.url,
+            body: comment.body,
+            timestamp: parseTimestamp(comment.createdAt),
           }))
           .filter((summary) => summary.timestamp !== null)
           .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
@@ -234,6 +249,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
 
         const lastReviewAt = summaries.length > 0 ? summaries[0].createdAt : null;
         const lastReviewTime = parseTimestamp(lastReviewAt) ?? null;
+        const issueCommentReplies = buildIssueCommentReplies(normalizedIssueComments, lastReviewTime);
 
         const threads = await safeCall(() =>
           fetchReviewThreadsGraphQL(deps.octokit, {
@@ -312,6 +328,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
           lastReviewAt,
           previousSummaries: summaries,
           reviewThreads,
+          issueCommentReplies,
           commitsSinceLastReview,
         };
       }
@@ -365,6 +382,18 @@ interface ReviewContextPayload {
       side?: "LEFT" | "RIGHT";
     }>;
   }>;
+  issueCommentReplies: Array<{
+    id: number;
+    author: string;
+    authorAssociation?: string;
+    body: string;
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+    replyToBotCommentId: number;
+    replyToBotSummary: boolean;
+    hasNewActivitySinceLastReview: boolean;
+  }>;
   commitsSinceLastReview: Array<{
     sha: string;
     message: string;
@@ -380,6 +409,69 @@ function parseTimestamp(value: string | null | undefined): number | null {
   return Number.isFinite(time) ? time : null;
 }
 
+function isReviewerSummaryComment(body: string): boolean {
+  return body.includes("Reviewed by shitty-reviewing-agent");
+}
+
+function isReviewerBotComment(body: string): boolean {
+  if (body.includes(BOT_COMMENT_MARKER)) return true;
+  if (isReviewerSummaryComment(body)) return true;
+  return false;
+}
+
+function buildIssueCommentReplies(
+  comments: Array<{
+    id: number;
+    author: string;
+    authorType: string;
+    authorAssociation?: string;
+    body: string;
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+    isReviewerBot: boolean;
+    isSummary: boolean;
+  }>,
+  lastReviewTime: number | null
+): ReviewContextPayload["issueCommentReplies"] {
+  const chronological = [...comments].sort((a, b) => {
+    const aTs = parseTimestamp(a.createdAt) ?? 0;
+    const bTs = parseTimestamp(b.createdAt) ?? 0;
+    return aTs - bTs;
+  });
+  let lastReviewerBot: { id: number; isSummary: boolean } | null = null;
+  const replies: ReviewContextPayload["issueCommentReplies"] = [];
+
+  for (const comment of chronological) {
+    if (comment.isReviewerBot) {
+      lastReviewerBot = { id: comment.id, isSummary: comment.isSummary };
+      continue;
+    }
+    if (comment.authorType.toLowerCase() === "bot") continue;
+    if (!lastReviewerBot) continue;
+    const lastActivityTime = parseTimestamp(comment.updatedAt);
+    replies.push({
+      id: comment.id,
+      author: comment.author,
+      authorAssociation: comment.authorAssociation,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      url: comment.url,
+      replyToBotCommentId: lastReviewerBot.id,
+      replyToBotSummary: lastReviewerBot.isSummary,
+      hasNewActivitySinceLastReview:
+        lastReviewTime !== null && lastActivityTime !== null ? lastActivityTime > lastReviewTime : false,
+    });
+  }
+
+  return replies.sort((a, b) => {
+    const aTs = parseTimestamp(a.updatedAt) ?? 0;
+    const bTs = parseTimestamp(b.updatedAt) ?? 0;
+    return bTs - aTs;
+  }).slice(0, 20);
+}
+
 async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
@@ -388,13 +480,5 @@ async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
       throw new RateLimitError("GitHub API rate limit exceeded.");
     }
     throw error;
-  }
-}
-
-async function safeOptional<T>(fn: () => Promise<T>): Promise<T | null> {
-  try {
-    return await fn();
-  } catch (error: any) {
-    return null;
   }
 }

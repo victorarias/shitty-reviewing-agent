@@ -123,7 +123,7 @@ reviewer-latest:
     - uses: oven-sh/setup-bun@v1
       if: ${{ env.VERTEX_AI_API_KEY != '' }}
       with:
-        bun-version: "1.3.6"
+        bun-version: "1.3.9"
     - name: Skip reviewer when VERTEX_AI_API_KEY is missing
       if: ${{ env.VERTEX_AI_API_KEY == '' }}
       run: echo "Skipping reviewer-latest (VERTEX_AI_API_KEY not configured)."
@@ -329,7 +329,7 @@ By default, the action uses the implicit `GITHUB_TOKEN`. If you want to authenti
 Requires `bun` installed locally.
 
 ```bash
-node scripts/smoke.mjs --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
+bun run smoke --provider openrouter --api-key "$OPENROUTER_KEY" --model anthropic/claude-sonnet-4 --repo owner/name --pr 123 --token "$GITHUB_TOKEN" --reasoning low --temperature 0.2
 ```
 
 ## Release

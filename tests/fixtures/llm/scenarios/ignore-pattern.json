@@ -7,11 +7,11 @@
     "temperature": 0,
     "reasoning": "low",
     "maxFiles": 5,
-    "ignorePatterns": ["package-lock.json"]
+    "ignorePatterns": ["bun.lock"]
   },
   "changedFiles": [
     {
-      "filename": "package-lock.json",
+      "filename": "bun.lock",
       "status": "modified",
       "additions": 1,
       "deletions": 1,

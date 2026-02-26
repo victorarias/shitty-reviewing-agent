@@ -47,6 +47,8 @@ test("thread classification step requires follow-up context", () => {
   expect(withContext).toContain("Follow-up Reviews");
   expect(withContext).toContain("RESOLVED");
   expect(withContext).toContain("resolve_thread");
+  expect(withContext).toContain("issueCommentReplies");
+  expect(withContext).toContain("HUMAN REPLIED (PR COMMENT)");
 
   // Follow-up context WITHOUT resolve_thread → fallback action in RESOLVED row
   const withoutResolve = buildSystemPrompt(["get_review_context"]);

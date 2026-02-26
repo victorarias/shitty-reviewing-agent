@@ -1,7 +1,7 @@
 import { test, expect, afterEach } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createReadOnlyTools } from "../src/tools/fs.ts";
+import { createReadOnlyTools, validateMermaidDiagram } from "../src/tools/fs.ts";
 
 const tempDir = path.join(process.cwd(), "data");
 const tempPath = path.join(tempDir, "tmp-read-test.txt");
@@ -119,4 +119,28 @@ test("validate_mermaid tool reports invalid diagram", async () => {
 
   expect(result.details.valid).toBe(false);
   expect(result.details.errors.length).toBeGreaterThan(0);
+});
+
+test("validateMermaidDiagram tolerates DOMPurify runtime parser errors with structural fallback", async () => {
+  const result = await validateMermaidDiagram("sequenceDiagram\nA->>B: ping", {
+    parseWithMermaid: async () => {
+      throw new Error("DOMPurify.addHook is not a function");
+    },
+  });
+
+  expect(result.valid).toBe(true);
+  expect(result.diagramType).toBe("sequenceDiagram");
+  expect(result.errors).toEqual([]);
+  expect(result.warnings.some((warning) => warning.includes("falling back to structural validation"))).toBe(true);
+});
+
+test("validateMermaidDiagram still fails unknown diagrams when parser is unavailable", async () => {
+  const result = await validateMermaidDiagram("not-a-real-diagram\nA->B", {
+    parseWithMermaid: async () => {
+      throw new Error("DOMPurify.addHook is not a function");
+    },
+  });
+
+  expect(result.valid).toBe(false);
+  expect(result.errors.some((error) => error.includes("Unknown Mermaid diagram type"))).toBe(true);
 });

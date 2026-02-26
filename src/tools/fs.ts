@@ -325,7 +325,22 @@ function formatLsTime(isoTime: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-export async function validateMermaidDiagram(diagram: string): Promise<{
+export async function validateMermaidDiagram(
+  diagram: string,
+  options?: { parseWithMermaid?: (source: string) => Promise<{ diagramType?: string | null }> }
+): Promise<{
+  valid: boolean;
+  diagramType: string | null;
+  errors: string[];
+  warnings: string[];
+}> {
+  return validateMermaidDiagramInternal(diagram, options);
+}
+
+async function validateMermaidDiagramInternal(
+  diagram: string,
+  options?: { parseWithMermaid?: (source: string) => Promise<{ diagramType?: string | null }> }
+): Promise<{
   valid: boolean;
   diagramType: string | null;
   errors: string[];
@@ -347,11 +362,18 @@ export async function validateMermaidDiagram(diagram: string): Promise<{
   const firstLine = lines.find((line) => line.trim().length > 0)?.trim() ?? "";
   let diagramType = detectMermaidType(firstLine);
   try {
-    const mermaid = await import("mermaid");
-    const parseResult = await mermaid.default.parse(normalized, { suppressErrors: false });
+    const parseWithMermaid = options?.parseWithMermaid ?? parseMermaidWithLibrary;
+    const parseResult = await parseWithMermaid(normalized);
     diagramType = parseResult?.diagramType ?? diagramType;
   } catch (error: any) {
-    errors.push(formatMermaidParseError(error));
+    const parserError = formatMermaidParseError(error);
+    if (isBenignMermaidRuntimeError(parserError)) {
+      warnings.push(
+        `Mermaid runtime parser unavailable in this environment (${parserError}); falling back to structural validation.`
+      );
+    } else {
+      errors.push(parserError);
+    }
   }
 
   if (/\t/.test(normalized)) {
@@ -361,6 +383,12 @@ export async function validateMermaidDiagram(diagram: string): Promise<{
   errors.push(...checkBalancedPairs(normalized, "(", ")", "parentheses"));
   errors.push(...checkBalancedPairs(normalized, "[", "]", "square brackets"));
   errors.push(...checkBalancedPairs(normalized, "{", "}", "curly braces"));
+
+  if (!diagramType) {
+    errors.push(
+      "Unknown Mermaid diagram type. Start the first non-empty line with a valid declaration (for example: flowchart, sequenceDiagram, classDiagram)."
+    );
+  }
 
   if (diagramType === "sequenceDiagram" && !/(->>|-->>|->|-->|<--|<<--|x->|->x)/.test(normalized)) {
     warnings.push("Sequence diagram has no obvious message arrows.");
@@ -440,4 +468,14 @@ function checkBalancedPairs(input: string, openChar: string, closeChar: string, 
 function formatMermaidParseError(error: any): string {
   const message = String(error?.message ?? error ?? "").trim();
   return message || "Mermaid parser rejected the diagram.";
+}
+
+function isBenignMermaidRuntimeError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("dompurify.addhook is not a function") || normalized.includes("dompurify.addhook is undefined");
+}
+
+async function parseMermaidWithLibrary(source: string): Promise<{ diagramType?: string | null }> {
+  const mermaid = await import("mermaid");
+  return mermaid.default.parse(source, { suppressErrors: false });
 }

@@ -14,12 +14,12 @@ A GitHub Action that reviews PRs using an LLM-powered agent. The agent reads ful
 bun test                # Run tests
 bun test tests/foo.test.ts  # Run single test file
 bun src/index.ts        # Run the agent directly
-npm run build           # Compile TypeScript to dist/
+bun run build           # Compile TypeScript to dist/
 ```
 
 **Local smoke test:**
 ```bash
-node scripts/smoke.mjs \
+bun scripts/smoke.mjs \
   --provider openrouter \
   --api-key "$OPENROUTER_KEY" \
   --model anthropic/claude-sonnet-4 \

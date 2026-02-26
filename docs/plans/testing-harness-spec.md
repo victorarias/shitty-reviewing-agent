@@ -28,7 +28,7 @@ The harness targets this repository and its current architecture (Bun tests, fak
 ## Overview
 The harness consists of three layers:
 
-1) Offline deterministic tests (default `npm test`).
+1) Offline deterministic tests (default `bun test`).
 2) Live LLM snapshot tests (every PR, internal only).
 3) Optional local scenario runner for ad-hoc diffs.
 
@@ -93,8 +93,8 @@ Additions:
 - `scripts/record-llm.ts`: regenerates golden snapshots.
 
 Package scripts:
-- `npm run test:llm` -> `RUN_LLM_SNAPSHOTS=1 bun test tests/llm-snapshots.test.ts`
-- `npm run record:llm` -> `RUN_LLM_SNAPSHOTS=1 bun scripts/record-llm.ts`
+- `bun run test:llm` -> `RUN_LLM_SNAPSHOTS=1 bun test tests/llm-snapshots.test.ts`
+- `bun run record:llm` -> `RUN_LLM_SNAPSHOTS=1 bun scripts/record-llm.ts`
 
 ## Scenario Fixtures (Repo-Specific)
 
@@ -126,7 +126,7 @@ Recommended initial scenarios:
   - Comments reference valid lines in the patch.
 
 ### Scenario C: Ignore pattern
-- Files: `package-lock.json` or `*.generated.*`
+- Files: `bun.lock` or `*.generated.*`
 - Patch: trivial change.
 - Expected:
   - No inline comments.
@@ -158,7 +158,7 @@ Optional local-only helper:
 ## CI Requirements
 
 ### Workflow Rules
-- Always run deterministic tests (`npm test`).
+- Always run deterministic tests (`bun test`).
 - Run live LLM snapshot tests on every PR for internal branches (set `RUN_LLM_SNAPSHOTS=1`).
 - Skip live LLM snapshot tests for fork PRs.
 
@@ -182,27 +182,27 @@ Note: Fork PRs do not have access to secrets; they will skip live LLM snapshot t
 1) Run deterministic tests:
 
 ```
-npm test
+bun test
 ```
 
 2) Run live LLM snapshot tests (requires `VERTEX_AI_API_KEY` or ADC):
 
 ```
 export VERTEX_AI_API_KEY=... 
-npm run test:llm
+bun run test:llm
 ```
 
 3) Regenerate snapshots (when expected changes occur):
 
 ```
 export VERTEX_AI_API_KEY=...
-npm run record:llm
+bun run record:llm
 ```
 
 ### CI Verification
 Automated checks on every PR:
-- `npm test` must pass.
-- `npm run test:llm` must pass (internal PRs only).
+- `bun test` must pass.
+- `bun run test:llm` must pass (internal PRs only).
 
 Success criteria:
 - CI passes for deterministic tests.
@@ -217,7 +217,7 @@ If snapshots diverge:
 - [ ] Add scenario fixtures under `tests/fixtures/llm/scenarios/`.
 - [ ] Add `tests/llm-snapshots.test.ts` and harness utilities.
 - [ ] Add `scripts/record-llm.ts`.
-- [ ] Add `npm run test:llm` and `npm run record:llm` scripts.
+- [ ] Add `bun run test:llm` and `bun run record:llm` scripts.
 - [ ] Update CI workflow to run live snapshot tests for internal PRs.
 
 ## Acceptance Criteria

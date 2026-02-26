@@ -3,12 +3,13 @@
   "version": "0.2.6",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.9",
   "main": "src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "smoke": "node scripts/smoke.mjs",
+    "smoke": "bun scripts/smoke.mjs",
     "start": "bun src/index.ts",
-    "postinstall": "node scripts/postinstall.mjs",
+    "postinstall": "bun scripts/postinstall.mjs",
     "test": "bun test",
     "test:llm": "RUN_LLM_SNAPSHOTS=1 bun test tests/llm-snapshots.test.ts",
     "test:llm:replay": "LLM_SNAPSHOT_REPLAY=1 bun test tests/llm-snapshots.test.ts",
@@ -17,7 +18,8 @@
     "validate:reviewerc": "bun scripts/validate-reviewerc.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "bun": ">=1.3.9"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
