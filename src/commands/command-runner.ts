@@ -348,10 +348,16 @@ function buildTools(
 function filterReviewToolsByCommentType(tools: any[], commentType: CommentType): any[] {
   if (commentType === "both") return tools;
   if (commentType === "issue") {
-    return tools.filter((tool) => ["post_summary", "update_comment", "report_finding", "set_summary_mode"].includes(tool.name));
+    return tools.filter((tool) =>
+      ["post_summary", "update_comment", "report_finding", "report_key_file", "report_observation", "set_summary_mode"].includes(
+        tool.name
+      )
+    );
   }
   if (commentType === "review") {
-    return tools.filter((tool) => !["post_summary", "report_finding", "set_summary_mode"].includes(tool.name));
+    return tools.filter(
+      (tool) => !["post_summary", "report_finding", "report_key_file", "report_observation", "set_summary_mode"].includes(tool.name)
+    );
   }
   return tools;
 }
@@ -372,6 +378,12 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       : null,
     hasTool("report_finding")
       ? "- report_finding schema requires finding_ref + category/severity/status. Use human-readable issue statements (not verification bookkeeping). For unresolved line-specific findings, link inline comment/suggest with the same finding_ref; use placement=summary_only only when a single inline anchor is not possible, with a concrete summary_only_reason."
+      : null,
+    hasTool("report_key_file")
+      ? "- report_key_file is for reviewer context only (file role/change intent/checklist), not issue reporting."
+      : null,
+    hasTool("report_observation")
+      ? "- report_observation is for non-issue context that should appear in Key Findings; do not misuse report_finding for positive confirmations."
       : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     hasTool("subagent")

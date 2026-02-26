@@ -1305,6 +1305,116 @@ test("post_summary renders clickable inline links when comment URLs are availabl
   expect(summaryCall?.args.body).toContain("linked=[src/retry.ts:1 (RIGHT, comment)](https://example.com/review-comment/202)");
 });
 
+test("post_summary uses explicit key file details reported by the model", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/retry.ts", status: "modified", additions: 2, deletions: 1, changes: 3, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 1,
+      changedLineCount: 3,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const commentTool = getTool(tools, "comment");
+  const reportKeyFileTool = getTool(tools, "report_key_file");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-retry-loop",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Retry loop never stops on permanent 4xx responses",
+  });
+  await commentTool.execute("", {
+    path: "src/retry.ts",
+    line: 1,
+    side: "RIGHT",
+    finding_ref: "bug-retry-loop",
+    body: "This branch should stop retrying on terminal client errors.",
+  });
+  await reportKeyFileTool.execute("", {
+    path: "src/retry.ts",
+    why_review: "Retry termination behavior changed.",
+    what_file_does: "Implements retry policy and termination decisions.",
+    what_changed: "Added terminal error classification branch.",
+    why_changed: "Prevent runaway retries for non-retryable client errors.",
+    review_checklist: ["Confirm 4xx exits retry loop.", "Confirm transient 5xx still retries."],
+  });
+  await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Retry policy needs one correction before merge.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("| `src/retry.ts` | Retry termination behavior changed. |");
+  expect(summaryCall?.args.body).toContain("| What this file does | Implements retry policy and termination decisions. |");
+  expect(summaryCall?.args.body).toContain("| What changed | Added terminal error classification branch. |");
+  expect(summaryCall?.args.body).toContain(
+    "| Review checklist | - Confirm 4xx exits retry loop.<br>- Confirm transient 5xx still retries. |"
+  );
+});
+
+test("post_summary includes report_observation output in key findings", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/tools/github.ts", status: "modified", additions: 8, deletions: 2, changes: 10, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: true,
+      modeCandidate: "compact",
+      changedFileCount: 1,
+      changedLineCount: 10,
+      riskHints: [],
+    },
+  });
+
+  const reportObservationTool = getTool(tools, "report_observation");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportObservationTool.execute("", {
+    observation_ref: "context-issue-replies",
+    category: "context",
+    title: "Review context now captures standalone PR comment replies",
+    details: "Follow-up runs can acknowledge human replies posted outside review threads.",
+  });
+  await summaryTool.execute("", {
+    verdict: "Approve",
+    preface: "No actionable issues found in this follow-up.",
+  });
+
+  const summaryCall = calls.find((call) => call.type === "issue_comment");
+  expect(summaryCall).toBeTruthy();
+  expect(summaryCall?.args.body).toContain("### Key Findings");
+  expect(summaryCall?.args.body).toContain(
+    "**Review context now captures standalone PR comment replies** (Context): Follow-up runs can acknowledge human replies posted outside review threads."
+  );
+});
+
 test("post_summary rejects unresolved inline finding without linked comment", async () => {
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
@@ -1427,7 +1537,7 @@ test("post_summary rejects summary-only unresolved finding with bookkeeping reas
     status: "still_open",
     placement: "summary_only",
     summary_only_reason: "Verification of specific logic requested by previous file-level review guide.",
-    title: "Verify resolved findings bypass inline link validation",
+    title: "Resolved findings bypass inline link validation safeguards",
     evidence: ["src/tools/review.ts:1152"],
   });
 
@@ -1543,6 +1653,44 @@ test("report_finding rejects summary_only placement without reason", async () =>
   });
 
   expect(result.content[0].text).toContain("requires summary_only_reason");
+});
+
+test("report_finding rejects verification-style and praise-only issue text", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const metaResult = await reportFindingTool.execute("", {
+    finding_ref: "verify-upsert-logic",
+    category: "design",
+    severity: "low",
+    status: "new",
+    title: "Verify report_finding upsert logic",
+    details: "Ensures update path behaves correctly.",
+  });
+  expect(metaResult.content[0].text).toContain("title must describe an issue");
+
+  const praiseResult = await reportFindingTool.execute("", {
+    finding_ref: "robust-traceability",
+    category: "design",
+    severity: "low",
+    status: "new",
+    title: "Robust traceability implementation",
+    details: "This correctly handles linking and looks good overall.",
+  });
+  expect(praiseResult.content[0].text).toContain("appears praise-only");
 });
 
 test("set_summary_mode rejects downgrade and alert without evidence", async () => {

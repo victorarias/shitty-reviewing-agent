@@ -4,7 +4,11 @@ const TOOL_DOCS: Record<string, string> = {
   post_summary:
     "call exactly once near the end. Use verdict/preface after recording findings; tooling renders the summary and appends footer/markers automatically.",
   report_finding:
-    "`report_finding({ finding_ref, category, severity, status, placement?, summary_only_reason?, title, details?, evidence?, action? })` — record every finding for deterministic rendering and comment/summary traceability. Write human-readable issue statements (not review-task bookkeeping). Never use for praise-only or verification-complete notes.",
+    "`report_finding({ finding_ref, category, severity, status, placement?, summary_only_reason?, title, details?, evidence?, action? })` — record every issue/resolution/still-open item for deterministic rendering and comment/summary traceability. Title must name a concrete issue (not 'Verify/Check/Confirm ...'). Never use for praise-only notes.",
+  report_key_file:
+    "`report_key_file({ path, why_review?, what_file_does?, what_changed?, why_changed?, review_checklist?, impact_map? })` — record key files so reviewers get actionable file-level context in the summary.",
+  report_observation:
+    "`report_observation({ observation_ref?, category, title, details? })` — record important non-issue context for the Key Findings section (for example architecture intent, testing gaps, rollout risk).",
   comment:
     "`comment({ path, line, side, body, finding_ref? })` — for actionable issues only. Never post praise-only comments. When the comment maps to a finding, pass the same finding_ref used in report_finding.",
   suggest:
@@ -31,6 +35,8 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     useSubagent: hasTool("subagent"),
     postSummary: hasTool("post_summary"),
     reportFinding: hasTool("report_finding"),
+    reportKeyFile: hasTool("report_key_file"),
+    reportObservation: hasTool("report_observation"),
     setSummaryMode: hasTool("set_summary_mode"),
     terminate: hasTool("terminate"),
     useDiff: hasTool("get_diff"),
@@ -51,7 +57,7 @@ export function buildSystemPrompt(toolNames: string[] = []): string {
     "- Read full files for context, not just diffs. If a read is truncated, fetch remaining ranges before concluding.",
     "- Follow AGENTS.md / CLAUDE.md when present. Suggest updates if new patterns should be documented.",
     "- Only post suggestions that materially change behavior, correctness, performance, security, design, or maintainability. Never post a no-op suggestion block.",
-    "- Do not report positive confirmations or 'verification completed' notes as findings. Findings should describe concrete issues/risk or lifecycle changes of prior issues.",
+    "- Do not report positive confirmations or 'verification completed' notes as findings. Findings should describe concrete issues/risk or lifecycle changes of prior issues. Use report_observation for non-issue context.",
     "- Do not post praise-only inline comments (for example, 'looks good', 'good refactor', or verification-only acknowledgements). Inline comments must call out a problem or required action.",
     can.searchWeb
       ? "- Use web_search to validate external facts (API versions, public behavior). Do not speculate without checking."
@@ -126,6 +132,12 @@ Never re-post feedback that a prior thread already covers. If the verdict change
   if (can.reportFinding) {
     workflowSteps.push("Record each issue/resolution/still-open item with report_finding before posting summary. Use placement=summary_only + summary_only_reason for findings that are not tied to a specific file line.");
   }
+  if (can.reportKeyFile) {
+    workflowSteps.push("For major touched files, call report_key_file so the summary includes reviewer-oriented file context and checklist items.");
+  }
+  if (can.reportObservation) {
+    workflowSteps.push("Use report_observation for non-issue context that helps reviewers understand intent/risk without creating fake findings.");
+  }
   if (can.setSummaryMode) {
     workflowSteps.push("Use set_summary_mode only when evidence shows higher risk than the default summary mode.");
   }
@@ -190,6 +202,8 @@ Rendering is deterministic in tooling:
 - If findings are sparse/empty, omit empty sections.
 - If follow-up has no new/resolved/still-open items, tooling posts a short status summary.
 - If risk is high, tooling switches to alert mode and makes risk signal explicit.
+- Key Findings are rendered from report_observation entries (non-issue context).
+- Key Files are rendered from report_key_file entries (with deterministic fallback when omitted).
 
 Summary mode behavior:
 - User prompt provides a deterministic summary mode candidate (compact or standard) and risk hints.

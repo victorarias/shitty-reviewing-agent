@@ -54,11 +54,18 @@ export interface KeyFileSummary {
   impactMap?: string;
 }
 
+export interface SummaryObservation {
+  category: "context" | "testing" | "risk" | "architecture";
+  title: string;
+  details?: string;
+}
+
 export interface AdaptiveSummaryInput {
   verdict: string;
   preface?: string;
   findings: StructuredSummaryFinding[];
   keyFiles?: KeyFileSummary[];
+  observations?: SummaryObservation[];
   mode: SummaryMode;
   isFollowUp: boolean;
   modeReason?: string;
@@ -154,11 +161,18 @@ export function hasHighRiskFindings(findings: StructuredSummaryFinding[]): boole
 export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): string {
   const findings = sanitizeFindings(input.findings);
   const keyFiles = sanitizeKeyFileSummaries(input.keyFiles);
+  const observations = sanitizeObservations(input.observations);
   const preface = sanitizeText(input.preface);
   const effectiveMode = hasHighRiskFindings(findings) ? "alert" : input.mode;
   const sections = partitionFindings(findings);
 
-  if (input.isFollowUp && sections.newIssues.length === 0 && sections.resolved.length === 0 && sections.stillOpen.length === 0) {
+  if (
+    input.isFollowUp &&
+    sections.newIssues.length === 0 &&
+    sections.resolved.length === 0 &&
+    sections.stillOpen.length === 0 &&
+    observations.length === 0
+  ) {
     const message = preface || "No new issues, resolutions, or still-open items to report since the last review.";
     const lines = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, "", message];
     return appendTraceabilityComment(
@@ -175,7 +189,8 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
         findings,
         input.modeReason,
         input.modeEvidence,
-        input.isFollowUp ? [] : keyFiles
+        input.isFollowUp ? [] : keyFiles,
+        observations
       ),
       findings
     );
@@ -186,6 +201,7 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
   lines.push("");
   if (!input.isFollowUp) {
     appendKeyFilesSection(lines, keyFiles);
+    appendObservationsSection(lines, observations);
   }
 
   if (!input.isFollowUp) {
@@ -241,6 +257,7 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
     lines.push("");
     lines.push(renderGroupedFindings(sections.stillOpen, { verbose: effectiveMode === "standard" }));
   }
+  appendObservationsSection(lines, observations);
   return appendTraceabilityComment(lines.join("\n"), findings);
 }
 
@@ -280,6 +297,26 @@ function sanitizeText(value: string | undefined): string {
     .trim();
 }
 
+function sanitizeObservationCategory(value: string | undefined): SummaryObservation["category"] {
+  if (value === "testing" || value === "risk" || value === "architecture") return value;
+  return "context";
+}
+
+function sanitizeObservations(value: SummaryObservation[] | undefined): SummaryObservation[] {
+  if (!value || value.length === 0) return [];
+  const cleaned: SummaryObservation[] = [];
+  for (const item of value) {
+    const title = sanitizeText(item.title);
+    if (!title) continue;
+    cleaned.push({
+      category: sanitizeObservationCategory(item.category),
+      title,
+      details: sanitizeText(item.details) || undefined,
+    });
+  }
+  return cleaned.slice(0, 8);
+}
+
 function sanitizeFindingRef(value: string | undefined): string | undefined {
   const normalized = sanitizeText(value);
   return normalized || undefined;
@@ -308,7 +345,8 @@ function renderAlertSummary(
   findings: StructuredSummaryFinding[],
   modeReason?: string,
   modeEvidence?: string[],
-  keyFiles?: KeyFileSummary[]
+  keyFiles?: KeyFileSummary[],
+  observations?: SummaryObservation[]
 ): string {
   const risky = findings.filter((finding) => finding.severity === "high" && finding.status !== "resolved");
   const focus = (risky.length > 0 ? risky : findings).slice(0, 3);
@@ -326,6 +364,7 @@ function renderAlertSummary(
     focus.length > 0 ? renderGroupedFindings(focus) : "- None",
   ];
   appendKeyFilesSection(lines, keyFiles ?? []);
+  appendObservationsSection(lines, observations ?? []);
   const actions = focus
     .map((finding) => finding.action)
     .filter((value): value is string => Boolean(value))
@@ -401,7 +440,7 @@ function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean):
   const linkPart = renderFindingLinkage(finding, { verbose, titleLinked: linkedTitle !== displayTitle });
   if (!verbose) {
     const concise = `[${finding.severity}] ${linkedTitle}`;
-    return linkPart ? `${concise} | ${linkPart}` : concise;
+    return linkPart ? `${concise}. ${linkPart}` : concise;
   }
   const parts = [`[${finding.severity}] ${linkedTitle}`];
   if (finding.details) {
@@ -424,7 +463,7 @@ function renderFindingLinkage(
       return `inline comment: ${linked[0]}`;
     }
     return options.verbose
-      ? `inline comments: ${linked.slice(0, 3).join("; ")}`
+      ? `inline comments: ${linked.slice(0, 3).join(", ")}`
       : `inline comments: ${linked.length}`;
   }
   if (finding.placement === "summary_only") {
@@ -558,6 +597,22 @@ function appendKeyFilesSection(lines: string[], keyFiles: KeyFileSummary[]): voi
     lines.push("");
   }
   lines.push("</details>");
+  lines.push("");
+}
+
+function appendObservationsSection(lines: string[], observations: SummaryObservation[]): void {
+  if (observations.length === 0) return;
+  lines.push("### Key Findings");
+  lines.push("");
+  for (const observation of observations) {
+    const categoryLabel = observation.category[0].toUpperCase() + observation.category.slice(1);
+    const title = toSingleLine(observation.title);
+    if (observation.details) {
+      lines.push(`- **${title}** (${categoryLabel}): ${toSingleLine(firstSentence(observation.details, 280))}`);
+    } else {
+      lines.push(`- **${title}** (${categoryLabel})`);
+    }
+  }
   lines.push("");
 }
 

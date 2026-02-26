@@ -13,6 +13,7 @@ import {
   normalizeSummaryStatus,
   summaryModeRank,
   type KeyFileSummary,
+  type SummaryObservation,
   type StructuredSummaryFinding,
   type SummaryMode,
   type SummaryPlacement,
@@ -42,6 +43,11 @@ const SUMMARY_ONLY_META_REASON_PATTERNS = [
   /requested by previous file-level review guide/i,
   /validation requested/i,
 ];
+const META_FINDING_TITLE_PATTERN = /^(verify|validation|check|confirm|assess|review)\b/i;
+const PRAISE_ONLY_PATTERN =
+  /\b(looks good|good refactor|robust implementation|solid foundation|works as expected|correctly handles|well done)\b/i;
+const ISSUE_SIGNAL_PATTERN =
+  /\b(bug|error|fail|failing|missing|incorrect|bypass|leak|race|insecure|broken|regression|coupl|duplica|unused|slow|latency|risk|vulnerab|crash|panic|deadlock|impact)\b/i;
 const EVIDENCE_FILE_LINE_PATTERN = /^([^\s:][^:]*?):(\d+)(?::\d+)?(?:\b|$)/;
 interface SummaryPolicy {
   isFollowUp: boolean;
@@ -80,14 +86,24 @@ interface FindingLink {
   kind: "comment" | "suggestion";
 }
 
+interface SummaryDraftSnapshot {
+  findings: StructuredSummaryFinding[];
+  observations: SummaryObservation[];
+  keyFiles: KeyFileSummary[];
+}
+
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById, threadLastActorById, threadLastCommentById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById, threadsByRootCommentId } = buildThreadIndex(deps.reviewThreads);
   const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
+  const changedPathSet = new Set(deps.changedFiles.map((file) => file.filename));
   const commentById = new Map(deps.existingComments.map((comment) => [comment.id, comment]));
   const summaryFindings: StructuredSummaryFinding[] = [];
   const findingIndexByRef = new Map<string, number>();
   const findingLinksByRef = new Map<string, FindingLink[]>();
+  const keyFilesByPath = new Map<string, KeyFileSummary>();
+  const summaryObservations: SummaryObservation[] = [];
+  const observationIndexByRef = new Map<string, number>();
   let summaryModeOverride: SummaryMode | null = null;
   let summaryModeReason = "";
   let summaryModeEvidence: string[] = [];
@@ -120,6 +136,18 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     const index = findingIndexByRef.get(findingRef);
     if (index === undefined) return undefined;
     return summaryFindings[index];
+  };
+  const buildSummaryDraft = (): SummaryDraftSnapshot => {
+    const findings = summaryFindings.map((finding) => ({
+      ...finding,
+      linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
+    }));
+    const keyFiles = resolveSummaryKeyFiles(deps.changedFiles, findings, [...keyFilesByPath.values()]);
+    return {
+      findings,
+      observations: [...summaryObservations],
+      keyFiles,
+    };
   };
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
@@ -643,6 +671,22 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { count: summaryFindings.length },
         };
       }
+      const details = params.details?.trim() || undefined;
+      const action = params.action?.trim() || undefined;
+      const narrativeValidation = validateFindingNarrative({
+        title,
+        details,
+        action,
+      });
+      if (narrativeValidation.ok === false) {
+        return {
+          content: [{
+            type: "text",
+            text: `Finding ${findingRef} rejected: ${narrativeValidation.message} Use report_observation for non-issue context.`,
+          }],
+          details: { count: summaryFindings.length },
+        };
+      }
       const finding: StructuredSummaryFinding = {
         findingRef,
         category,
@@ -651,9 +695,9 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         placement,
         summaryOnlyReason,
         title,
-        details: params.details?.trim() || undefined,
+        details,
         evidence: (params.evidence ?? []).map((item) => item.trim()).filter(Boolean),
-        action: params.action?.trim() || undefined,
+        action,
       };
       const existingIndex = findingIndexByRef.get(findingRef);
       if (existingIndex !== undefined) {
@@ -670,6 +714,89 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
             : `Finding recorded (${summaryFindings.length}).`,
         }],
         details: { count: summaryFindings.length },
+      };
+    },
+  };
+
+  const reportKeyFileTool: AgentTool<typeof ReportKeyFileSchema, { count: number }> = {
+    name: "report_key_file",
+    label: "Report key file",
+    description: "Record key-file context for summary rendering.",
+    parameters: ReportKeyFileSchema,
+    execute: async (_id, params) => {
+      const path = params.path.trim();
+      if (!path) {
+        return {
+          content: [{ type: "text", text: "report_key_file requires a non-empty path." }],
+          details: { count: keyFilesByPath.size },
+        };
+      }
+      if (!changedPathSet.has(path)) {
+        return {
+          content: [{ type: "text", text: `Path ${path} is not in changed files. Only report changed files as key files.` }],
+          details: { count: keyFilesByPath.size },
+        };
+      }
+      const fallback = buildAutoKeyFileSummary(deps.changedFiles, path);
+      keyFilesByPath.set(path, {
+        path,
+        whyReview: params.why_review?.trim() || "n/a",
+        whatFileDoes: params.what_file_does?.trim() || "n/a",
+        whatChanged: params.what_changed?.trim() || fallback,
+        whyChanged: params.why_changed?.trim() || "n/a",
+        reviewChecklist: (params.review_checklist ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 5),
+        impactMap: params.impact_map?.trim() || undefined,
+      });
+      return {
+        content: [{ type: "text", text: `Key file recorded (${keyFilesByPath.size}).` }],
+        details: { count: keyFilesByPath.size },
+      };
+    },
+  };
+
+  const reportObservationTool: AgentTool<typeof ReportObservationSchema, { count: number }> = {
+    name: "report_observation",
+    label: "Report observation",
+    description: "Record non-issue context that should appear in summary key findings.",
+    parameters: ReportObservationSchema,
+    execute: async (_id, params) => {
+      const title = params.title.trim();
+      if (!title) {
+        return {
+          content: [{ type: "text", text: "report_observation requires title." }],
+          details: { count: summaryObservations.length },
+        };
+      }
+      const category = normalizeObservationCategory(params.category);
+      const observation: SummaryObservation = {
+        category,
+        title,
+        details: params.details?.trim() || undefined,
+      };
+      const observationRef = normalizeFindingRef(params.observation_ref);
+      if (params.observation_ref && !observationRef) {
+        return {
+          content: [{ type: "text", text: `Invalid observation_ref "${params.observation_ref}".` }],
+          details: { count: summaryObservations.length },
+        };
+      }
+      if (observationRef) {
+        const existingIndex = observationIndexByRef.get(observationRef);
+        if (existingIndex !== undefined) {
+          summaryObservations[existingIndex] = observation;
+          return {
+            content: [{ type: "text", text: `Observation updated (${observationRef}).` }],
+            details: { count: summaryObservations.length },
+          };
+        }
+        summaryObservations.push(observation);
+        observationIndexByRef.set(observationRef, summaryObservations.length - 1);
+      } else {
+        summaryObservations.push(observation);
+      }
+      return {
+        content: [{ type: "text", text: `Observation recorded (${summaryObservations.length}).` }],
+        details: { count: summaryObservations.length },
       };
     },
   };
@@ -738,34 +865,38 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      const summaryValidation = validateSummaryFindings(summaryFindings, findingLinksByRef);
+      const draft = buildSummaryDraft();
+      const summaryValidation = validateSummaryFindings(draft.findings, findingLinksByRef);
       if (summaryValidation.ok === false) {
         return {
           content: [{ type: "text", text: summaryValidation.message }],
           details: { id: -1 },
         };
       }
-      const findingsForSummary = summaryFindings.map((finding) => ({
-        ...finding,
-        linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
-      }));
-      const keyFiles = selectKeyFilesForSummary(deps.changedFiles, findingsForSummary);
-      // Mark as posted immediately to prevent racing duplicate calls.
-      deps.onSummaryPosted?.();
-      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(findingsForSummary);
+      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(draft.findings);
+      const verdictValidation = validateSummaryVerdict(verdict, draft.findings);
+      if (verdictValidation.ok === false) {
+        return {
+          content: [{ type: "text", text: verdictValidation.message }],
+          details: { id: -1 },
+        };
+      }
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const derivedMode = summaryModeOverride ?? baseMode;
       const hintedRisk = Boolean(deps.summaryPolicy?.riskHints && deps.summaryPolicy.riskHints.length > 0);
-      const hasUnresolvedMediumOrHigh = findingsForSummary.some(
+      const hasUnresolvedMediumOrHigh = draft.findings.some(
         (finding) => finding.status !== "resolved" && finding.severity !== "low"
       );
       const riskAwareMode = hintedRisk && hasUnresolvedMediumOrHigh ? maxSummaryMode(derivedMode, "standard") : derivedMode;
-      const effectiveMode = hasHighRiskFindings(findingsForSummary) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      const effectiveMode = hasHighRiskFindings(draft.findings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      // Mark as posted immediately to prevent racing duplicate calls.
+      deps.onSummaryPosted?.();
       const summaryBody = buildAdaptiveSummaryMarkdown({
         verdict,
         preface: params.preface,
-        findings: findingsForSummary,
-        keyFiles,
+        findings: draft.findings,
+        keyFiles: draft.keyFiles,
+        observations: draft.observations,
         mode: effectiveMode,
         isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
         modeReason: summaryModeReason,
@@ -795,6 +926,8 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     replyTool,
     resolveTool,
     reportFindingTool,
+    reportKeyFileTool,
+    reportObservationTool,
     setSummaryModeTool,
     summaryTool,
     createTerminateTool(),
@@ -860,6 +993,31 @@ const ReportFindingSchema = Type.Object({
   details: Type.Optional(Type.String({ description: "Optional one-line detail for context." })),
   evidence: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   action: Type.Optional(Type.String({ description: "Optional requested reviewer action." })),
+});
+
+const ReportKeyFileSchema = Type.Object({
+  path: Type.String({ minLength: 1, description: "Changed file path." }),
+  why_review: Type.Optional(Type.String({ description: "Why this file deserves reviewer attention." })),
+  what_file_does: Type.Optional(Type.String({ description: "Short explanation of this file's role." })),
+  what_changed: Type.Optional(Type.String({ description: "What changed in this file." })),
+  why_changed: Type.Optional(Type.String({ description: "Why this file changed." })),
+  review_checklist: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+  impact_map: Type.Optional(Type.String({ description: "Optional dependency/flow mapping." })),
+});
+
+const ReportObservationSchema = Type.Object({
+  observation_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional stable reference id for upserting an observation.",
+  })),
+  category: Type.String({
+    enum: ["context", "testing", "risk", "architecture"],
+    description: "Observation category shown in Key Findings.",
+  }),
+  title: Type.String({ minLength: 1, description: "Observation title." }),
+  details: Type.Optional(Type.String({ description: "Optional observation details." })),
 });
 
 const SetSummaryModeSchema = Type.Object({
@@ -936,6 +1094,33 @@ function normalizeFindingPlacement(
 ): SummaryPlacement {
   if (value === "inline" || value === "summary_only") return value;
   return status === "new" ? "inline" : "summary_only";
+}
+
+function normalizeObservationCategory(value: string | undefined): SummaryObservation["category"] {
+  if (value === "testing" || value === "risk" || value === "architecture") return value;
+  return "context";
+}
+
+function validateFindingNarrative(input: {
+  title: string;
+  details?: string;
+  action?: string;
+}): { ok: true } | { ok: false; message: string } {
+  const title = input.title.trim();
+  if (META_FINDING_TITLE_PATTERN.test(title)) {
+    return {
+      ok: false,
+      message: "title must describe an issue, not a verification task (avoid prefixes like Verify/Check/Confirm).",
+    };
+  }
+  const combined = `${title} ${input.details ?? ""} ${input.action ?? ""}`.trim();
+  if (PRAISE_ONLY_PATTERN.test(combined) && !ISSUE_SIGNAL_PATTERN.test(combined)) {
+    return {
+      ok: false,
+      message: "finding appears praise-only or verification-only; findings must capture concrete risk/impact.",
+    };
+  }
+  return { ok: true };
 }
 
 function isBotAuthor(author?: string, authorType?: string): boolean {
@@ -1305,6 +1490,39 @@ function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: str
   return anchors;
 }
 
+function resolveSummaryKeyFiles(
+  changedFiles: ChangedFile[],
+  findings: StructuredSummaryFinding[],
+  reportedKeyFiles: KeyFileSummary[]
+): KeyFileSummary[] {
+  const validPaths = new Set(changedFiles.map((file) => file.filename));
+  const merged: KeyFileSummary[] = [];
+  const seen = new Set<string>();
+
+  for (const reported of reportedKeyFiles) {
+    if (!reported.path || !validPaths.has(reported.path) || seen.has(reported.path)) continue;
+    seen.add(reported.path);
+    merged.push({
+      path: reported.path,
+      whyReview: reported.whyReview?.trim() || "n/a",
+      whatFileDoes: reported.whatFileDoes?.trim() || "n/a",
+      whatChanged: reported.whatChanged?.trim() || buildAutoKeyFileSummary(changedFiles, reported.path),
+      whyChanged: reported.whyChanged?.trim() || "n/a",
+      reviewChecklist: (reported.reviewChecklist ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 5),
+      impactMap: reported.impactMap?.trim() || undefined,
+    });
+  }
+
+  const inferred = selectKeyFilesForSummary(changedFiles, findings);
+  for (const item of inferred) {
+    if (seen.has(item.path)) continue;
+    merged.push(item);
+    seen.add(item.path);
+    if (merged.length >= 6) break;
+  }
+  return merged.slice(0, 6);
+}
+
 function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): KeyFileSummary[] {
   if (changedFiles.length === 0) return [];
   const byPath = new Map(changedFiles.map((file) => [file.filename, file]));
@@ -1368,13 +1586,7 @@ function parsePathFromLinkedLocation(value: string): string | null {
 }
 
 function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefined): KeyFileSummary {
-  const additions = Number.isFinite(file.additions) ? file.additions : 0;
-  const deletions = Number.isFinite(file.deletions) ? file.deletions : 0;
   const categoryList = categories ? [...categories].sort((a, b) => a.localeCompare(b)) : [];
-  const whatChangedBase = `${file.status} (+${additions}/-${deletions})`;
-  const whatChanged = file.status === "renamed" && file.previous_filename
-    ? `${whatChangedBase}; renamed from ${file.previous_filename}`
-    : whatChangedBase;
   const whyReview = categoryList.length > 0
     ? `Related findings: ${categoryList.join(", ")}.`
     : "n/a";
@@ -1382,7 +1594,7 @@ function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefi
     path: file.filename,
     whyReview,
     whatFileDoes: "n/a",
-    whatChanged,
+    whatChanged: buildAutoKeyFileSummary([file], file.filename),
     whyChanged: "n/a",
     reviewChecklist: [],
   };
@@ -1390,6 +1602,18 @@ function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefi
     summary.impactMap = `${file.previous_filename} -> ${file.filename}`;
   }
   return summary;
+}
+
+function buildAutoKeyFileSummary(changedFiles: ChangedFile[], path: string): string {
+  const file = changedFiles.find((item) => item.filename === path);
+  if (!file) return "n/a";
+  const additions = Number.isFinite(file.additions) ? file.additions : 0;
+  const deletions = Number.isFinite(file.deletions) ? file.deletions : 0;
+  const base = `${file.status} (+${additions}/-${deletions})`;
+  if (file.status === "renamed" && file.previous_filename) {
+    return `${base}, renamed from ${file.previous_filename}`;
+  }
+  return base;
 }
 
 function formatFindingLinks(links: FindingLink[] | undefined): string[] {
@@ -1415,6 +1639,19 @@ function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" |
     return "Request Changes";
   }
   return "Approve";
+}
+
+function validateSummaryVerdict(
+  verdict: "Request Changes" | "Approve" | "Skipped",
+  findings: StructuredSummaryFinding[]
+): { ok: true } | { ok: false; message: string } {
+  if (verdict === "Approve" && findings.some((finding) => finding.status !== "resolved" && finding.severity !== "low")) {
+    return {
+      ok: false,
+      message: "Verdict Approve conflicts with unresolved medium/high findings. Use Request Changes or lower severity after reassessment.",
+    };
+  }
+  return { ok: true };
 }
 
 async function safeCall<T>(fn: () => Promise<T>): Promise<T> {

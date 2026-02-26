@@ -335,3 +335,28 @@ test("buildAdaptiveSummaryMarkdown includes key files section when provided", ()
   expect(summary).toContain("| Review checklist | - Validate summary readability changes. |");
   expect(summary).toContain("<details><summary>📂 File details</summary>");
 });
+
+test("buildAdaptiveSummaryMarkdown includes key findings observations", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Approve",
+    mode: "compact",
+    isFollowUp: true,
+    observations: [
+      {
+        category: "architecture",
+        title: "Bun migration landed end-to-end",
+        details: "CI, Docker, and local scripts now use Bun consistently.",
+      },
+      {
+        category: "risk",
+        title: "Legacy npm lockfile removed",
+      },
+    ],
+    findings: [],
+  });
+
+  expect(summary).toContain("### Key Findings");
+  expect(summary).toContain("**Bun migration landed end-to-end** (Architecture): CI, Docker, and local scripts now use Bun consistently.");
+  expect(summary).toContain("**Legacy npm lockfile removed** (Risk)");
+  expect(summary).not.toContain("No new issues, resolutions, or still-open items");
+});
