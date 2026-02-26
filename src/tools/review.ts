@@ -688,7 +688,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         };
       }
       const summaryValidation = validateSummaryFindings(summaryFindings, findingLinksByRef);
-      if (!summaryValidation.ok) {
+      if (summaryValidation.ok === false) {
         return {
           content: [{ type: "text", text: summaryValidation.message }],
           details: { id: -1 },
