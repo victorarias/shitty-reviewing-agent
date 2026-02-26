@@ -12,14 +12,43 @@ import {
   normalizeSummarySeverity,
   normalizeSummaryStatus,
   summaryModeRank,
+  type KeyFileSummary,
+  type SummaryObservation,
   type StructuredSummaryFinding,
   type SummaryMode,
+  type SummaryPlacement,
 } from "../summary.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
 
 const BOT_COMMENT_MARKER = "<!-- sri:bot-comment -->";
+const FINDING_REF_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,79}$/;
 const RESOLVE_THREAD_MUTATION = `mutation ResolveReviewThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread {\n      id\n      isResolved\n    }\n  }\n}`;
+const SUMMARY_ONLY_REASON_HINT_PATTERNS = [
+  /cross[- ]file/i,
+  /multiple files/i,
+  /no single line/i,
+  /no line-specific diff/i,
+  /not tied to a single line/i,
+  /non-commentable/i,
+  /binary/i,
+  /too large to diff/i,
+  /outdated diff/i,
+  /unchanged since last review/i,
+  /still open from prior review/i,
+  /architectural/i,
+];
+const SUMMARY_ONLY_META_REASON_PATTERNS = [
+  /verification of specific logic/i,
+  /requested by previous file-level review guide/i,
+  /validation requested/i,
+];
+const META_FINDING_TITLE_PATTERN = /^(verify|validation|check|confirm|assess|review)\b/i;
+const PRAISE_ONLY_PATTERN =
+  /\b(looks good|good refactor|robust implementation|solid foundation|works as expected|correctly handles|well done)\b/i;
+const ISSUE_SIGNAL_PATTERN =
+  /\b(bug|error|fail|failing|missing|incorrect|bypass|leak|race|insecure|broken|regression|coupl|duplica|unused|slow|latency|risk|vulnerab|crash|panic|deadlock|impact)\b/i;
+const EVIDENCE_FILE_LINE_PATTERN = /^([^\s:][^:]*?):(\d+)(?::\d+)?(?:\b|$)/;
 interface SummaryPolicy {
   isFollowUp: boolean;
   modeCandidate: SummaryMode;
@@ -48,15 +77,78 @@ interface ReviewToolDeps {
   summaryPolicy?: SummaryPolicy;
 }
 
+interface FindingLink {
+  path: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+  commentId: number;
+  commentUrl?: string;
+  kind: "comment" | "suggestion";
+}
+
+interface SummaryDraftSnapshot {
+  findings: StructuredSummaryFinding[];
+  observations: SummaryObservation[];
+  keyFiles: KeyFileSummary[];
+}
+
 export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
   const { existingByLocation, threadActivityById, threadLastActorById, threadLastCommentById } = buildLocationIndex(deps.existingComments);
   const { threadsByLocation, threadsById, threadsByRootCommentId } = buildThreadIndex(deps.reviewThreads);
   const patchByPath = new Map(deps.changedFiles.map((file) => [file.filename, file.patch]));
+  const changedPathSet = new Set(deps.changedFiles.map((file) => file.filename));
   const commentById = new Map(deps.existingComments.map((comment) => [comment.id, comment]));
   const summaryFindings: StructuredSummaryFinding[] = [];
+  const findingIndexByRef = new Map<string, number>();
+  const findingLinksByRef = new Map<string, FindingLink[]>();
+  const keyFilesByPath = new Map<string, KeyFileSummary>();
+  const summaryObservations: SummaryObservation[] = [];
+  const observationIndexByRef = new Map<string, number>();
   let summaryModeOverride: SummaryMode | null = null;
   let summaryModeReason = "";
   let summaryModeEvidence: string[] = [];
+
+  const recordFindingLink = (
+    findingRef: string | undefined,
+    location: { path: string; line: number; side: "LEFT" | "RIGHT" | undefined },
+    commentId: number,
+    kind: "comment" | "suggestion",
+    commentUrl?: string
+  ) => {
+    if (!findingRef) return;
+    const side = location.side ?? "RIGHT";
+    const links = findingLinksByRef.get(findingRef) ?? [];
+    if (links.some((link) => link.path === location.path && link.line === location.line && link.side === side && link.commentId === commentId)) {
+      return;
+    }
+    links.push({
+      path: location.path,
+      line: location.line,
+      side,
+      commentId,
+      commentUrl,
+      kind,
+    });
+    findingLinksByRef.set(findingRef, links);
+  };
+  const getFindingByRef = (findingRef: string | undefined): StructuredSummaryFinding | undefined => {
+    if (!findingRef) return undefined;
+    const index = findingIndexByRef.get(findingRef);
+    if (index === undefined) return undefined;
+    return summaryFindings[index];
+  };
+  const buildSummaryDraft = (): SummaryDraftSnapshot => {
+    const findings = summaryFindings.map((finding) => ({
+      ...finding,
+      linkedLocations: finding.findingRef ? formatFindingLinks(findingLinksByRef.get(finding.findingRef)) : [],
+    }));
+    const keyFiles = resolveSummaryKeyFiles(deps.changedFiles, findings, [...keyFilesByPath.values()]);
+    return {
+      findings,
+      observations: [...summaryObservations],
+      keyFiles,
+    };
+  };
   const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
     name: "list_threads_for_location",
     label: "List review threads for location",
@@ -79,7 +171,24 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: CommentSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const body = ensureBotMarker(params.body);
+      const findingRef = normalizeFindingRef(params.finding_ref);
+      if (params.finding_ref && !findingRef) {
+        return {
+          content: [{ type: "text", text: `Invalid finding_ref "${params.finding_ref}". Use lowercase letters/numbers with . _ : - only.` }],
+          details: { id: -1 },
+        };
+      }
+      const finding = getFindingByRef(findingRef);
+      if (findingRef && !finding) {
+        return {
+          content: [{
+            type: "text",
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+          }],
+          details: { id: -1 },
+        };
+      }
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(params.body, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -102,6 +211,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -141,6 +251,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onInlineComment?.();
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
             return {
               content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -175,6 +286,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onInlineComment?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
         return {
           content: [{ type: "text", text: `Reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -185,14 +297,15 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           owner: deps.owner,
           repo: deps.repo,
           pull_number: deps.pullNumber,
-        commit_id: deps.headSha,
-        path: params.path,
-        line: params.line,
-        side: side ?? "RIGHT",
-        body,
-      })
-    );
+          commit_id: deps.headSha,
+          path: params.path,
+          line: params.line,
+          side: side ?? "RIGHT",
+          body,
+        })
+      );
       deps.onInlineComment?.();
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -207,7 +320,25 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     parameters: SuggestSchema,
     execute: async (_id, params) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
-      const body = ensureBotMarker(wrapSuggestion(params.suggestion, params.comment));
+      const findingRef = normalizeFindingRef(params.finding_ref);
+      if (params.finding_ref && !findingRef) {
+        return {
+          content: [{ type: "text", text: `Invalid finding_ref "${params.finding_ref}". Use lowercase letters/numbers with . _ : - only.` }],
+          details: { id: -1 },
+        };
+      }
+      const finding = getFindingByRef(findingRef);
+      if (findingRef && !finding) {
+        return {
+          content: [{
+            type: "text",
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+          }],
+          details: { id: -1 },
+        };
+      }
+      const suggestionBody = wrapSuggestion(params.suggestion, params.comment);
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(suggestionBody, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -230,6 +361,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -269,6 +401,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
               })
             );
             deps.onSuggestion?.();
+            recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
             return {
               content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
               details: { id: response.data.id },
@@ -303,6 +436,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           })
         );
         deps.onSuggestion?.();
+        recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
         return {
           content: [{ type: "text", text: `Suggestion reply posted: ${response.data.id}` }],
           details: { id: response.data.id },
@@ -321,6 +455,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         })
       );
       deps.onSuggestion?.();
+      recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -510,28 +645,158 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     description: "Record a structured finding for deterministic summary rendering.",
     parameters: ReportFindingSchema,
     execute: async (_id, params) => {
+      const findingRef = normalizeFindingRef(params.finding_ref);
       const category = normalizeSummaryCategory(params.category);
       const severity = normalizeSummarySeverity(params.severity);
       const status = normalizeSummaryStatus(params.status ?? "new");
       const title = params.title?.trim();
-      if (!category || !severity || !status || !title) {
+      if (!findingRef || !category || !severity || !status || !title) {
         return {
-          content: [{ type: "text", text: "Invalid finding payload. Provide category, severity, status, and title." }],
+          content: [{
+            type: "text",
+            text:
+              "Invalid finding payload. Provide finding_ref, category, severity, status, and title.",
+          }],
           details: { count: summaryFindings.length },
         };
       }
-      summaryFindings.push({
+      const placement = normalizeFindingPlacement(params.placement, status);
+      const summaryOnlyReason = params.summary_only_reason?.trim() || undefined;
+      if (placement === "summary_only" && !summaryOnlyReason) {
+        return {
+          content: [{
+            type: "text",
+            text: `Finding ${findingRef} uses placement=summary_only and requires summary_only_reason.`,
+          }],
+          details: { count: summaryFindings.length },
+        };
+      }
+      const details = params.details?.trim() || undefined;
+      const action = params.action?.trim() || undefined;
+      const narrativeValidation = validateFindingNarrative({
+        title,
+        details,
+        action,
+      });
+      if (narrativeValidation.ok === false) {
+        return {
+          content: [{
+            type: "text",
+            text: `Finding ${findingRef} rejected: ${narrativeValidation.message} Use report_observation for non-issue context.`,
+          }],
+          details: { count: summaryFindings.length },
+        };
+      }
+      const finding: StructuredSummaryFinding = {
+        findingRef,
         category,
         severity,
         status,
+        placement,
+        summaryOnlyReason,
         title,
-        details: params.details?.trim() || undefined,
+        details,
         evidence: (params.evidence ?? []).map((item) => item.trim()).filter(Boolean),
-        action: params.action?.trim() || undefined,
+        action,
+      };
+      const existingIndex = findingIndexByRef.get(findingRef);
+      if (existingIndex !== undefined) {
+        summaryFindings[existingIndex] = finding;
+      } else {
+        summaryFindings.push(finding);
+        findingIndexByRef.set(findingRef, summaryFindings.length - 1);
+      }
+      return {
+        content: [{
+          type: "text",
+          text: existingIndex !== undefined
+            ? `Finding updated (${findingRef}).`
+            : `Finding recorded (${summaryFindings.length}).`,
+        }],
+        details: { count: summaryFindings.length },
+      };
+    },
+  };
+
+  const reportKeyFileTool: AgentTool<typeof ReportKeyFileSchema, { count: number }> = {
+    name: "report_key_file",
+    label: "Report key file",
+    description: "Record key-file context for summary rendering.",
+    parameters: ReportKeyFileSchema,
+    execute: async (_id, params) => {
+      const path = params.path.trim();
+      if (!path) {
+        return {
+          content: [{ type: "text", text: "report_key_file requires a non-empty path." }],
+          details: { count: keyFilesByPath.size },
+        };
+      }
+      if (!changedPathSet.has(path)) {
+        return {
+          content: [{ type: "text", text: `Path ${path} is not in changed files. Only report changed files as key files.` }],
+          details: { count: keyFilesByPath.size },
+        };
+      }
+      const fallback = buildAutoKeyFileSummary(deps.changedFiles, path);
+      keyFilesByPath.set(path, {
+        path,
+        whyReview: params.why_review?.trim() || "n/a",
+        whatFileDoes: params.what_file_does?.trim() || "n/a",
+        whatChanged: params.what_changed?.trim() || fallback,
+        whyChanged: params.why_changed?.trim() || "n/a",
+        reviewChecklist: (params.review_checklist ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 5),
+        impactMap: params.impact_map?.trim() || undefined,
       });
       return {
-        content: [{ type: "text", text: `Finding recorded (${summaryFindings.length}).` }],
-        details: { count: summaryFindings.length },
+        content: [{ type: "text", text: `Key file recorded (${keyFilesByPath.size}).` }],
+        details: { count: keyFilesByPath.size },
+      };
+    },
+  };
+
+  const reportObservationTool: AgentTool<typeof ReportObservationSchema, { count: number }> = {
+    name: "report_observation",
+    label: "Report observation",
+    description: "Record non-issue context that should appear in summary key findings.",
+    parameters: ReportObservationSchema,
+    execute: async (_id, params) => {
+      const title = params.title.trim();
+      if (!title) {
+        return {
+          content: [{ type: "text", text: "report_observation requires title." }],
+          details: { count: summaryObservations.length },
+        };
+      }
+      const category = normalizeObservationCategory(params.category);
+      const observation: SummaryObservation = {
+        category,
+        title,
+        details: params.details?.trim() || undefined,
+      };
+      const observationRef = normalizeFindingRef(params.observation_ref);
+      if (params.observation_ref && !observationRef) {
+        return {
+          content: [{ type: "text", text: `Invalid observation_ref "${params.observation_ref}".` }],
+          details: { count: summaryObservations.length },
+        };
+      }
+      if (observationRef) {
+        const existingIndex = observationIndexByRef.get(observationRef);
+        if (existingIndex !== undefined) {
+          summaryObservations[existingIndex] = observation;
+          return {
+            content: [{ type: "text", text: `Observation updated (${observationRef}).` }],
+            details: { count: summaryObservations.length },
+          };
+        }
+        summaryObservations.push(observation);
+        observationIndexByRef.set(observationRef, summaryObservations.length - 1);
+      } else {
+        summaryObservations.push(observation);
+      }
+      return {
+        content: [{ type: "text", text: `Observation recorded (${summaryObservations.length}).` }],
+        details: { count: summaryObservations.length },
       };
     },
   };
@@ -600,19 +865,38 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
           details: { id: -1 },
         };
       }
-      // Mark as posted immediately to prevent racing duplicate calls.
-      deps.onSummaryPosted?.();
-      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(summaryFindings);
+      const draft = buildSummaryDraft();
+      const summaryValidation = validateSummaryFindings(draft.findings, findingLinksByRef);
+      if (summaryValidation.ok === false) {
+        return {
+          content: [{ type: "text", text: summaryValidation.message }],
+          details: { id: -1 },
+        };
+      }
+      const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(draft.findings);
+      const verdictValidation = validateSummaryVerdict(verdict, draft.findings);
+      if (verdictValidation.ok === false) {
+        return {
+          content: [{ type: "text", text: verdictValidation.message }],
+          details: { id: -1 },
+        };
+      }
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const derivedMode = summaryModeOverride ?? baseMode;
       const hintedRisk = Boolean(deps.summaryPolicy?.riskHints && deps.summaryPolicy.riskHints.length > 0);
-      const hasUnresolved = summaryFindings.some((finding) => finding.status !== "resolved");
-      const riskAwareMode = hintedRisk && hasUnresolved ? maxSummaryMode(derivedMode, "standard") : derivedMode;
-      const effectiveMode = hasHighRiskFindings(summaryFindings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      const hasUnresolvedMediumOrHigh = draft.findings.some(
+        (finding) => finding.status !== "resolved" && finding.severity !== "low"
+      );
+      const riskAwareMode = hintedRisk && hasUnresolvedMediumOrHigh ? maxSummaryMode(derivedMode, "standard") : derivedMode;
+      const effectiveMode = hasHighRiskFindings(draft.findings) ? maxSummaryMode(riskAwareMode, "alert") : riskAwareMode;
+      // Mark as posted immediately to prevent racing duplicate calls.
+      deps.onSummaryPosted?.();
       const summaryBody = buildAdaptiveSummaryMarkdown({
         verdict,
         preface: params.preface,
-        findings: summaryFindings,
+        findings: draft.findings,
+        keyFiles: draft.keyFiles,
+        observations: draft.observations,
         mode: effectiveMode,
         isFollowUp: deps.summaryPolicy?.isFollowUp ?? false,
         modeReason: summaryModeReason,
@@ -642,6 +926,8 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     replyTool,
     resolveTool,
     reportFindingTool,
+    reportKeyFileTool,
+    reportObservationTool,
     setSummaryModeTool,
     summaryTool,
     createTerminateTool(),
@@ -654,6 +940,12 @@ const CommentSchema = Type.Object({
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
   thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
   allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
+  finding_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional finding reference that links this inline comment to report_finding.",
+  })),
   body: Type.String({ description: "Markdown body" }),
 });
 
@@ -663,6 +955,12 @@ const SuggestSchema = Type.Object({
   side: Type.Optional(Type.String({ description: "LEFT or RIGHT", enum: ["LEFT", "RIGHT"] })),
   thread_id: Type.Optional(Type.Integer({ minimum: 1, description: "Existing thread id to reply to." })),
   allow_new_thread: Type.Optional(Type.Boolean({ description: "Set true to force a new thread even if one exists." })),
+  finding_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional finding reference that links this suggestion to report_finding.",
+  })),
   comment: Type.Optional(Type.String({ description: "Optional comment before suggestion" })),
   suggestion: Type.String({ description: "Replacement code for suggestion block" }),
 });
@@ -674,16 +972,52 @@ const ListThreadsSchema = Type.Object({
 });
 
 const ReportFindingSchema = Type.Object({
+  finding_ref: Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Stable reference id linking this finding to inline comments/suggestions.",
+  }),
   category: Type.String({
     description: "Finding category",
     enum: ["bug", "security", "performance", "unused_code", "duplicated_code", "refactoring", "design", "documentation"],
   }),
   severity: Type.String({ description: "Finding severity", enum: ["low", "medium", "high"] }),
   status: Type.Optional(Type.String({ description: "Finding lifecycle status", enum: ["new", "resolved", "still_open"] })),
+  placement: Type.Optional(Type.String({
+    description: "inline for file-thread findings, summary_only for cross-file/non-line-specific findings.",
+    enum: ["inline", "summary_only"],
+  })),
+  summary_only_reason: Type.Optional(Type.String({ description: "Required when placement is summary_only." })),
   title: Type.String({ description: "Short issue title." }),
   details: Type.Optional(Type.String({ description: "Optional one-line detail for context." })),
   evidence: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   action: Type.Optional(Type.String({ description: "Optional requested reviewer action." })),
+});
+
+const ReportKeyFileSchema = Type.Object({
+  path: Type.String({ minLength: 1, description: "Changed file path." }),
+  why_review: Type.Optional(Type.String({ description: "Why this file deserves reviewer attention." })),
+  what_file_does: Type.Optional(Type.String({ description: "Short explanation of this file's role." })),
+  what_changed: Type.Optional(Type.String({ description: "What changed in this file." })),
+  why_changed: Type.Optional(Type.String({ description: "Why this file changed." })),
+  review_checklist: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+  impact_map: Type.Optional(Type.String({ description: "Optional dependency/flow mapping." })),
+});
+
+const ReportObservationSchema = Type.Object({
+  observation_ref: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 80,
+    pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
+    description: "Optional stable reference id for upserting an observation.",
+  })),
+  category: Type.String({
+    enum: ["context", "testing", "risk", "architecture"],
+    description: "Observation category shown in Key Findings.",
+  }),
+  title: Type.String({ minLength: 1, description: "Observation title." }),
+  details: Type.Optional(Type.String({ description: "Optional observation details." })),
 });
 
 const SetSummaryModeSchema = Type.Object({
@@ -725,6 +1059,68 @@ function ensureBotMarker(body: string): string {
   const trimmed = body.trim();
   if (!trimmed) return BOT_COMMENT_MARKER;
   return `${body}\n\n${BOT_COMMENT_MARKER}`;
+}
+
+function ensureFindingRefMarker(body: string, findingRef: string | undefined): string {
+  if (!findingRef) return body;
+  const marker = `<!-- sri:finding-ref:${findingRef} -->`;
+  if (body.includes(marker)) return body;
+  return `${body}\n${marker}`;
+}
+
+function ensureFindingCategoryLabel(body: string, finding: StructuredSummaryFinding | undefined): string {
+  if (!finding) return body;
+  const slug = finding.category.toLowerCase().replace(/\s+/g, "_");
+  const marker = `<!-- sri:finding-category:${slug} -->`;
+  if (body.includes(marker)) return body;
+  const trimmed = body.trim();
+  const categoryLine = `**Category:** ${finding.category}`;
+  if (!trimmed) {
+    return `${categoryLine}\n${marker}`;
+  }
+  return `${categoryLine}\n\n${trimmed}\n${marker}`;
+}
+
+function normalizeFindingRef(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || !FINDING_REF_PATTERN.test(normalized)) return undefined;
+  return normalized;
+}
+
+function normalizeFindingPlacement(
+  value: string | undefined,
+  status: StructuredSummaryFinding["status"]
+): SummaryPlacement {
+  if (value === "inline" || value === "summary_only") return value;
+  return status === "new" ? "inline" : "summary_only";
+}
+
+function normalizeObservationCategory(value: string | undefined): SummaryObservation["category"] {
+  if (value === "testing" || value === "risk" || value === "architecture") return value;
+  return "context";
+}
+
+function validateFindingNarrative(input: {
+  title: string;
+  details?: string;
+  action?: string;
+}): { ok: true } | { ok: false; message: string } {
+  const title = input.title.trim();
+  if (META_FINDING_TITLE_PATTERN.test(title)) {
+    return {
+      ok: false,
+      message: "title must describe an issue, not a verification task (avoid prefixes like Verify/Check/Confirm).",
+    };
+  }
+  const combined = `${title} ${input.details ?? ""} ${input.action ?? ""}`.trim();
+  if (PRAISE_ONLY_PATTERN.test(combined) && !ISSUE_SIGNAL_PATTERN.test(combined)) {
+    return {
+      ok: false,
+      message: "finding appears praise-only or verification-only; findings must capture concrete risk/impact.",
+    };
+  }
+  return { ok: true };
 }
 
 function isBotAuthor(author?: string, authorType?: string): boolean {
@@ -992,6 +1388,246 @@ function buildDuplicateUpdateResponse(
   };
 }
 
+function validateSummaryFindings(
+  findings: StructuredSummaryFinding[],
+  findingLinksByRef: Map<string, FindingLink[]>
+): { ok: true } | { ok: false; message: string } {
+  const missingRefs = findings.filter((finding) => !finding.findingRef);
+  if (missingRefs.length > 0) {
+    return {
+      ok: false,
+      message: "Every report_finding entry must include finding_ref.",
+    };
+  }
+  const missingSummaryOnlyReason = findings.filter(
+    (finding) => finding.placement === "summary_only" && !finding.summaryOnlyReason?.trim()
+  );
+  if (missingSummaryOnlyReason.length > 0) {
+    const refs = missingSummaryOnlyReason.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message: `summary_only findings require summary_only_reason. Missing: ${refs || "unknown"}.`,
+    };
+  }
+  const invalidSummaryOnlyMetaReasons = findings.filter((finding) => {
+    if (finding.placement !== "summary_only") return false;
+    const findingRef = finding.findingRef ?? "";
+    const links = findingLinksByRef.get(findingRef) ?? [];
+    if (links.length > 0) return false;
+    return isMetaSummaryOnlyReason(finding.summaryOnlyReason);
+  });
+  if (invalidSummaryOnlyMetaReasons.length > 0) {
+    const refs = invalidSummaryOnlyMetaReasons.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message:
+        `summary_only_reason must explain why no inline anchor is possible (cross-file, no line-specific diff, or non-commentable file), not verification bookkeeping. Update: ${refs || "unknown"}.`,
+    };
+  }
+  const lineAnchoredSummaryOnly = findings.filter((finding) => {
+    if (finding.status === "resolved") return false;
+    if (finding.placement !== "summary_only") return false;
+    if (finding.severity === "low") return false;
+    const findingRef = finding.findingRef ?? "";
+    const links = findingLinksByRef.get(findingRef) ?? [];
+    if (links.length > 0) return false;
+    const anchors = parseEvidenceAnchors(finding.evidence);
+    const anchoredPaths = new Set(anchors.map((anchor) => anchor.path));
+    const hasLineAnchors = anchors.some((anchor) => anchor.line > 0);
+    const singlePathLineAnchored = hasLineAnchors && anchoredPaths.size === 1;
+    if (!singlePathLineAnchored) return false;
+    return !hasSummaryOnlyScopeHint(finding.summaryOnlyReason);
+  });
+  if (lineAnchoredSummaryOnly.length > 0) {
+    const refs = lineAnchoredSummaryOnly.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message:
+        `Line-anchored unresolved findings must have linked inline comments/suggestions. Add comment/suggest with matching finding_ref, or justify summary_only_reason with explicit scope limits. Missing links: ${refs || "unknown"}.`,
+    };
+  }
+  const missingInlineLinks = findings
+    .filter((finding) => finding.status !== "resolved" && finding.placement !== "summary_only")
+    .filter((finding) => {
+      const findingRef = finding.findingRef ?? "";
+      const links = findingLinksByRef.get(findingRef) ?? [];
+      return links.length === 0;
+    });
+  if (missingInlineLinks.length > 0) {
+    const refs = missingInlineLinks.map((finding) => finding.findingRef).filter(Boolean).join(", ");
+    return {
+      ok: false,
+      message:
+        `Unresolved inline findings are missing linked comments/suggestions. Add finding_ref to comment/suggest or mark placement=summary_only with summary_only_reason. Missing links: ${refs || "unknown"}.`,
+    };
+  }
+  return { ok: true };
+}
+
+function hasSummaryOnlyScopeHint(reason: string | undefined): boolean {
+  const text = (reason ?? "").trim();
+  if (!text) return false;
+  return SUMMARY_ONLY_REASON_HINT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isMetaSummaryOnlyReason(reason: string | undefined): boolean {
+  const text = (reason ?? "").trim();
+  if (!text) return false;
+  return SUMMARY_ONLY_META_REASON_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: string; line: number }> {
+  if (!evidence || evidence.length === 0) return [];
+  const anchors: Array<{ path: string; line: number }> = [];
+  for (const entry of evidence) {
+    const normalized = entry.trim().replace(/^`+|`+$/g, "");
+    const match = normalized.match(EVIDENCE_FILE_LINE_PATTERN);
+    if (!match) continue;
+    const line = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(line) || line <= 0) continue;
+    anchors.push({ path: match[1], line });
+  }
+  return anchors;
+}
+
+function resolveSummaryKeyFiles(
+  changedFiles: ChangedFile[],
+  findings: StructuredSummaryFinding[],
+  reportedKeyFiles: KeyFileSummary[]
+): KeyFileSummary[] {
+  const validPaths = new Set(changedFiles.map((file) => file.filename));
+  const merged: KeyFileSummary[] = [];
+  const seen = new Set<string>();
+
+  for (const reported of reportedKeyFiles) {
+    if (!reported.path || !validPaths.has(reported.path) || seen.has(reported.path)) continue;
+    seen.add(reported.path);
+    merged.push({
+      path: reported.path,
+      whyReview: reported.whyReview?.trim() || "n/a",
+      whatFileDoes: reported.whatFileDoes?.trim() || "n/a",
+      whatChanged: reported.whatChanged?.trim() || buildAutoKeyFileSummary(changedFiles, reported.path),
+      whyChanged: reported.whyChanged?.trim() || "n/a",
+      reviewChecklist: (reported.reviewChecklist ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 5),
+      impactMap: reported.impactMap?.trim() || undefined,
+    });
+  }
+  if (merged.length > 0) {
+    return merged.slice(0, 6);
+  }
+
+  const inferred = selectKeyFilesForSummary(changedFiles, findings);
+  for (const item of inferred) {
+    if (seen.has(item.path)) continue;
+    merged.push(item);
+    seen.add(item.path);
+    if (merged.length >= 6) break;
+  }
+  return merged.slice(0, 6);
+}
+
+function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): KeyFileSummary[] {
+  if (changedFiles.length === 0) return [];
+  const byPath = new Map(changedFiles.map((file) => [file.filename, file]));
+  const orderedPaths: string[] = [];
+  const seenPaths = new Set<string>();
+  const categoriesByPath = new Map<string, Set<string>>();
+  const pushPath = (path: string | null | undefined) => {
+    if (!path) return;
+    if (seenPaths.has(path)) return;
+    if (!byPath.has(path)) return;
+    seenPaths.add(path);
+    orderedPaths.push(path);
+  };
+  const recordCategory = (path: string | null | undefined, category: string) => {
+    if (!path) return;
+    if (!byPath.has(path)) return;
+    const set = categoriesByPath.get(path) ?? new Set<string>();
+    set.add(category);
+    categoriesByPath.set(path, set);
+  };
+
+  for (const finding of findings) {
+    const evidenceAnchors = parseEvidenceAnchors(finding.evidence);
+    for (const anchor of evidenceAnchors) {
+      pushPath(anchor.path);
+      recordCategory(anchor.path, finding.category);
+    }
+    for (const location of finding.linkedLocations ?? []) {
+      const path = parsePathFromLinkedLocation(location);
+      pushPath(path);
+      recordCategory(path, finding.category);
+    }
+  }
+
+  const byChangeVolume = [...changedFiles].sort((a, b) => {
+    const aChanges = Number.isFinite(a.changes) ? a.changes : 0;
+    const bChanges = Number.isFinite(b.changes) ? b.changes : 0;
+    if (bChanges !== aChanges) return bChanges - aChanges;
+    const aAdditions = Number.isFinite(a.additions) ? a.additions : 0;
+    const bAdditions = Number.isFinite(b.additions) ? b.additions : 0;
+    if (bAdditions !== aAdditions) return bAdditions - aAdditions;
+    return a.filename.localeCompare(b.filename);
+  });
+  for (const file of byChangeVolume) {
+    pushPath(file.filename);
+  }
+
+  return orderedPaths
+    .slice(0, 6)
+    .map((path) => buildKeyFileSummary(byPath.get(path)!, categoriesByPath.get(path)));
+}
+
+function parsePathFromLinkedLocation(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const labelMatch = trimmed.match(/^\[([^\]]+)\]\([^)]+\)$/);
+  const candidate = labelMatch ? labelMatch[1] : trimmed;
+  const anchorMatch = candidate.match(EVIDENCE_FILE_LINE_PATTERN);
+  if (anchorMatch) return anchorMatch[1];
+  return null;
+}
+
+function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefined): KeyFileSummary {
+  const categoryList = categories ? [...categories].sort((a, b) => a.localeCompare(b)) : [];
+  const whyReview = categoryList.length > 0
+    ? `Related findings: ${categoryList.join(", ")}.`
+    : "n/a";
+  const summary: KeyFileSummary = {
+    path: file.filename,
+    whyReview,
+    whatFileDoes: "n/a",
+    whatChanged: buildAutoKeyFileSummary([file], file.filename),
+    whyChanged: "n/a",
+    reviewChecklist: [],
+  };
+  if (file.status === "renamed" && file.previous_filename) {
+    summary.impactMap = `${file.previous_filename} -> ${file.filename}`;
+  }
+  return summary;
+}
+
+function buildAutoKeyFileSummary(changedFiles: ChangedFile[], path: string): string {
+  const file = changedFiles.find((item) => item.filename === path);
+  if (!file) return "n/a";
+  const additions = Number.isFinite(file.additions) ? file.additions : 0;
+  const deletions = Number.isFinite(file.deletions) ? file.deletions : 0;
+  const base = `${file.status} (+${additions}/-${deletions})`;
+  if (file.status === "renamed" && file.previous_filename) {
+    return `${base}, renamed from ${file.previous_filename}`;
+  }
+  return base;
+}
+
+function formatFindingLinks(links: FindingLink[] | undefined): string[] {
+  if (!links || links.length === 0) return [];
+  return links.map((link) => {
+    const label = `${link.path}:${link.line} (${link.side}, ${link.kind})`;
+    if (link.commentUrl) return `[${label}](${link.commentUrl})`;
+    return `${label}, comment ${link.commentId}`;
+  });
+}
+
 function normalizeVerdict(value: string | undefined): "Request Changes" | "Approve" | "Skipped" | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
@@ -1006,6 +1642,19 @@ function inferVerdict(findings: StructuredSummaryFinding[]): "Request Changes" |
     return "Request Changes";
   }
   return "Approve";
+}
+
+function validateSummaryVerdict(
+  verdict: "Request Changes" | "Approve" | "Skipped",
+  findings: StructuredSummaryFinding[]
+): { ok: true } | { ok: false; message: string } {
+  if (verdict === "Approve" && findings.some((finding) => finding.status !== "resolved" && finding.severity !== "low")) {
+    return {
+      ok: false,
+      message: "Verdict Approve conflicts with unresolved medium/high findings. Use Request Changes or lower severity after reassessment.",
+    };
+  }
+  return { ok: true };
 }
 
 async function safeCall<T>(fn: () => Promise<T>): Promise<T> {
