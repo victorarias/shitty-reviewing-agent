@@ -1229,8 +1229,6 @@ test("post_summary renders structured findings and alert mode", async () => {
   expect(summaryCall?.args.body).toContain("src/auth/token.ts:44");
   expect(summaryCall?.args.body).not.toContain("(ref: security-token-signature)");
   expect(summaryCall?.args.body).toContain("inline comments: 1");
-  expect(summaryCall?.args.body).toContain("### Key Files");
-  expect(summaryCall?.args.body).toContain("- `src/auth/token.ts (+5/-1)`");
   expect(summaryCall?.args.body).toContain("<!-- sri:traceability");
   expect(summaryCall?.args.body).toContain("ref=security-token-signature; category=Security; severity=high; status=new");
 });
@@ -1302,7 +1300,8 @@ test("post_summary renders clickable inline links when comment URLs are availabl
   expect(summaryCall).toBeTruthy();
   expect(summaryCall?.args.body).toContain("[medium] [Retry loop never stops on permanent 4xx responses](https://example.com/review-comment/202)");
   expect(summaryCall?.args.body).toContain("### Key Files");
-  expect(summaryCall?.args.body).toContain("- `src/retry.ts (+2/-1)`");
+  expect(summaryCall?.args.body).toContain("| `src/retry.ts` | Related findings: Bug. |");
+  expect(summaryCall?.args.body).toContain("| What changed | modified (+2/-1) |");
   expect(summaryCall?.args.body).toContain("linked=[src/retry.ts:1 (RIGHT, comment)](https://example.com/review-comment/202)");
 });
 

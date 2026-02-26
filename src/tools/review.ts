@@ -12,6 +12,7 @@ import {
   normalizeSummarySeverity,
   normalizeSummaryStatus,
   summaryModeRank,
+  type KeyFileSummary,
   type StructuredSummaryFinding,
   type SummaryMode,
   type SummaryPlacement,
@@ -1304,11 +1305,12 @@ function parseEvidenceAnchors(evidence: string[] | undefined): Array<{ path: str
   return anchors;
 }
 
-function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): string[] {
+function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: StructuredSummaryFinding[]): KeyFileSummary[] {
   if (changedFiles.length === 0) return [];
   const byPath = new Map(changedFiles.map((file) => [file.filename, file]));
   const orderedPaths: string[] = [];
   const seenPaths = new Set<string>();
+  const categoriesByPath = new Map<string, Set<string>>();
   const pushPath = (path: string | null | undefined) => {
     if (!path) return;
     if (seenPaths.has(path)) return;
@@ -1316,14 +1318,24 @@ function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: Structu
     seenPaths.add(path);
     orderedPaths.push(path);
   };
+  const recordCategory = (path: string | null | undefined, category: string) => {
+    if (!path) return;
+    if (!byPath.has(path)) return;
+    const set = categoriesByPath.get(path) ?? new Set<string>();
+    set.add(category);
+    categoriesByPath.set(path, set);
+  };
 
   for (const finding of findings) {
     const evidenceAnchors = parseEvidenceAnchors(finding.evidence);
     for (const anchor of evidenceAnchors) {
       pushPath(anchor.path);
+      recordCategory(anchor.path, finding.category);
     }
     for (const location of finding.linkedLocations ?? []) {
-      pushPath(parsePathFromLinkedLocation(location));
+      const path = parsePathFromLinkedLocation(location);
+      pushPath(path);
+      recordCategory(path, finding.category);
     }
   }
 
@@ -1342,7 +1354,7 @@ function selectKeyFilesForSummary(changedFiles: ChangedFile[], findings: Structu
 
   return orderedPaths
     .slice(0, 6)
-    .map((path) => formatKeyFileSummary(byPath.get(path)!));
+    .map((path) => buildKeyFileSummary(byPath.get(path)!, categoriesByPath.get(path)));
 }
 
 function parsePathFromLinkedLocation(value: string): string | null {
@@ -1355,12 +1367,27 @@ function parsePathFromLinkedLocation(value: string): string | null {
   return null;
 }
 
-function formatKeyFileSummary(file: ChangedFile): string {
+function buildKeyFileSummary(file: ChangedFile, categories: Set<string> | undefined): KeyFileSummary {
   const additions = Number.isFinite(file.additions) ? file.additions : 0;
   const deletions = Number.isFinite(file.deletions) ? file.deletions : 0;
-  const summary = `${file.filename} (+${additions}/-${deletions})`;
+  const categoryList = categories ? [...categories].sort((a, b) => a.localeCompare(b)) : [];
+  const whatChangedBase = `${file.status} (+${additions}/-${deletions})`;
+  const whatChanged = file.status === "renamed" && file.previous_filename
+    ? `${whatChangedBase}; renamed from ${file.previous_filename}`
+    : whatChangedBase;
+  const whyReview = categoryList.length > 0
+    ? `Related findings: ${categoryList.join(", ")}.`
+    : "n/a";
+  const summary: KeyFileSummary = {
+    path: file.filename,
+    whyReview,
+    whatFileDoes: "n/a",
+    whatChanged,
+    whyChanged: "n/a",
+    reviewChecklist: [],
+  };
   if (file.status === "renamed" && file.previous_filename) {
-    return `${summary} renamed from ${file.previous_filename}`;
+    summary.impactMap = `${file.previous_filename} -> ${file.filename}`;
   }
   return summary;
 }

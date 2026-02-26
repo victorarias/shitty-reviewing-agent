@@ -44,11 +44,21 @@ export interface StructuredSummaryFinding {
   action?: string;
 }
 
+export interface KeyFileSummary {
+  path: string;
+  whyReview: string;
+  whatFileDoes: string;
+  whatChanged: string;
+  whyChanged: string;
+  reviewChecklist: string[];
+  impactMap?: string;
+}
+
 export interface AdaptiveSummaryInput {
   verdict: string;
   preface?: string;
   findings: StructuredSummaryFinding[];
-  keyFiles?: string[];
+  keyFiles?: KeyFileSummary[];
   mode: SummaryMode;
   isFollowUp: boolean;
   modeReason?: string;
@@ -143,7 +153,7 @@ export function hasHighRiskFindings(findings: StructuredSummaryFinding[]): boole
 
 export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): string {
   const findings = sanitizeFindings(input.findings);
-  const keyFiles = sanitizeKeyFiles(input.keyFiles);
+  const keyFiles = sanitizeKeyFileSummaries(input.keyFiles);
   const preface = sanitizeText(input.preface);
   const effectiveMode = hasHighRiskFindings(findings) ? "alert" : input.mode;
   const sections = partitionFindings(findings);
@@ -151,7 +161,6 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
   if (input.isFollowUp && sections.newIssues.length === 0 && sections.resolved.length === 0 && sections.stillOpen.length === 0) {
     const message = preface || "No new issues, resolutions, or still-open items to report since the last review.";
     const lines = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, "", message];
-    appendKeyFilesSection(lines, keyFiles);
     return appendTraceabilityComment(
       lines.join("\n"),
       findings
@@ -160,7 +169,14 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
 
   if (effectiveMode === "alert") {
     return appendTraceabilityComment(
-      renderAlertSummary(input.verdict, preface, findings, input.modeReason, input.modeEvidence, keyFiles),
+      renderAlertSummary(
+        input.verdict,
+        preface,
+        findings,
+        input.modeReason,
+        input.modeEvidence,
+        input.isFollowUp ? [] : keyFiles
+      ),
       findings
     );
   }
@@ -168,7 +184,9 @@ export function buildAdaptiveSummaryMarkdown(input: AdaptiveSummaryInput): strin
   const lines: string[] = ["## Review Summary", "", `**Verdict:** ${input.verdict}`, ""];
   lines.push(preface || defaultPreface(input.isFollowUp, findings.length > 0));
   lines.push("");
-  appendKeyFilesSection(lines, keyFiles);
+  if (!input.isFollowUp) {
+    appendKeyFilesSection(lines, keyFiles);
+  }
 
   if (!input.isFollowUp) {
     if (findings.length === 0) {
@@ -290,7 +308,7 @@ function renderAlertSummary(
   findings: StructuredSummaryFinding[],
   modeReason?: string,
   modeEvidence?: string[],
-  keyFiles?: string[]
+  keyFiles?: KeyFileSummary[]
 ): string {
   const risky = findings.filter((finding) => finding.severity === "high" && finding.status !== "resolved");
   const focus = (risky.length > 0 ? risky : findings).slice(0, 3);
@@ -486,18 +504,60 @@ function defaultPreface(isFollowUp: boolean, hasFindings: boolean): string {
     : "Review findings are grouped by category and severity below.";
 }
 
-function sanitizeKeyFiles(value: string[] | undefined): string[] {
+function sanitizeKeyFileSummaries(value: KeyFileSummary[] | undefined): KeyFileSummary[] {
   if (!value || value.length === 0) return [];
-  return value.map((item) => sanitizeText(item)).filter(Boolean).slice(0, 8);
+  const cleaned: KeyFileSummary[] = [];
+  for (const item of value) {
+    const path = sanitizeText(item.path);
+    if (!path) continue;
+    const checklist = (item.reviewChecklist ?? [])
+      .map((entry) => sanitizeText(entry))
+      .filter(Boolean)
+      .slice(0, 5);
+    cleaned.push({
+      path,
+      whyReview: sanitizeText(item.whyReview),
+      whatFileDoes: sanitizeText(item.whatFileDoes),
+      whatChanged: sanitizeText(item.whatChanged),
+      whyChanged: sanitizeText(item.whyChanged),
+      reviewChecklist: checklist,
+      impactMap: sanitizeText(item.impactMap) || undefined,
+    });
+  }
+  return cleaned.slice(0, 8);
 }
 
-function appendKeyFilesSection(lines: string[], keyFiles: string[]): void {
+function appendKeyFilesSection(lines: string[], keyFiles: KeyFileSummary[]): void {
   if (keyFiles.length === 0) return;
   lines.push("### Key Files");
   lines.push("");
+  lines.push("| File | Why review this |");
+  lines.push("|------|------------------|");
   for (const file of keyFiles) {
-    lines.push(`- \`${file}\``);
+    const fileCell = `\`${escapeMarkdownTableCell(file.path)}\``;
+    const whyReview = file.whyReview || "n/a";
+    lines.push(`| ${fileCell} | ${escapeMarkdownTableCell(whyReview)} |`);
   }
+  lines.push("");
+  lines.push("<details><summary>📂 File details</summary>");
+  lines.push("");
+  for (const file of keyFiles) {
+    lines.push(`#### \`${file.path}\``);
+    lines.push("| Aspect | Notes |");
+    lines.push("|-------|-------|");
+    lines.push(`| What this file does | ${escapeMarkdownTableCell(file.whatFileDoes || "n/a")} |`);
+    lines.push(`| What changed | ${escapeMarkdownTableCell(file.whatChanged || "n/a")} |`);
+    lines.push(`| Why it changed | ${escapeMarkdownTableCell(file.whyChanged || "n/a")} |`);
+    const checklist = file.reviewChecklist.length > 0
+      ? file.reviewChecklist.map((entry) => `- ${entry}`).join("<br>")
+      : "n/a";
+    lines.push(`| Review checklist | ${escapeMarkdownTableCell(checklist)} |`);
+    if (file.impactMap) {
+      lines.push(`| Impact map | \`${escapeMarkdownTableCell(file.impactMap)}\` |`);
+    }
+    lines.push("");
+  }
+  lines.push("</details>");
   lines.push("");
 }
 
@@ -515,4 +575,8 @@ function findPrimaryLinkUrl(linkedLocations: string[] | undefined): string | nul
     if (match && match[1]) return match[1];
   }
   return null;
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }

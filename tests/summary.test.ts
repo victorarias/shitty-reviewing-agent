@@ -300,7 +300,24 @@ test("buildAdaptiveSummaryMarkdown includes key files section when provided", ()
     verdict: "Request Changes",
     mode: "standard",
     isFollowUp: false,
-    keyFiles: ["src/tools/review.ts (+42/-15)", "src/summary.ts (+18/-6)"],
+    keyFiles: [
+      {
+        path: "src/tools/review.ts",
+        whyReview: "Related findings: Design.",
+        whatFileDoes: "n/a",
+        whatChanged: "modified (+42/-15)",
+        whyChanged: "n/a",
+        reviewChecklist: [],
+      },
+      {
+        path: "src/summary.ts",
+        whyReview: "Related findings: Refactoring.",
+        whatFileDoes: "n/a",
+        whatChanged: "modified (+18/-6)",
+        whyChanged: "n/a",
+        reviewChecklist: ["Validate summary readability changes."],
+      },
+    ],
     findings: [
       {
         category: "Design",
@@ -312,6 +329,9 @@ test("buildAdaptiveSummaryMarkdown includes key files section when provided", ()
   });
 
   expect(summary).toContain("### Key Files");
-  expect(summary).toContain("- `src/tools/review.ts (+42/-15)`");
-  expect(summary).toContain("- `src/summary.ts (+18/-6)`");
+  expect(summary).toContain("| `src/tools/review.ts` | Related findings: Design. |");
+  expect(summary).toContain("| What this file does | n/a |");
+  expect(summary).toContain("| What changed | modified (+18/-6) |");
+  expect(summary).toContain("| Review checklist | - Validate summary readability changes. |");
+  expect(summary).toContain("<details><summary>📂 File details</summary>");
 });
