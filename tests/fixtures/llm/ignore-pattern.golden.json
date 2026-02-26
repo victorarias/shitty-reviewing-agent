@@ -9,7 +9,7 @@
     "reasoning": "low",
     "maxFiles": 5,
     "ignorePatterns": [
-      "package-lock.json"
+      "bun.lock"
     ]
   },
   "compactionTriggered": true,

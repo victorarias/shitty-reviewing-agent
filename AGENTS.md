@@ -8,10 +8,10 @@
 - `.github/workflows/`: CI and release workflows.
 
 ## Build, Test, and Development Commands
-- `npm run build`: Type-checks and builds with `tsc`.
-- `npm test`: Runs tests via `bun test`.
-- `npm run smoke`: Runs a local smoke review against a PR (see `scripts/smoke.mjs`).
-- `npm start`: Runs the Action entrypoint locally with Bun.
+- `bun run build`: Type-checks and builds with `tsc`.
+- `bun test`: Runs tests via Bun test runner.
+- `bun run smoke`: Runs a local smoke review against a PR (see `scripts/smoke.mjs`).
+- `bun run start`: Runs the Action entrypoint locally with Bun.
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript (ESM). Use 2-space indentation.
@@ -20,7 +20,7 @@
 - Keep review prompt strings in `src/prompts/review.ts` and review summary formatting in `src/summary.ts`. Command prompts live in `src/commands/command-runner.ts`.
 
 ## Testing Guidelines
-- Framework: Bun test (`npm test`).
+- Framework: Bun test (`bun test`).
 - Place tests under `tests/` with descriptive names, e.g., `tests/prompt.test.ts`.
 - For behavior changes in prompts or tools, add targeted tests where feasible.
 
@@ -48,7 +48,7 @@
 
 ## Release Checklist
 - Decide the next version (use semver; patch for fixes, minor for new features, major for breaking changes).
-- Bump `package.json` and `package-lock.json` to the new version.
+- Bump `package.json` to the new version.
 - Commit the version bump (e.g., "Bump version to v0.2.1").
 - Create an annotated or lightweight tag `vX.Y.Z` on that commit.
 - Push the commit and tag: `git push origin main` and `git push origin vX.Y.Z`.

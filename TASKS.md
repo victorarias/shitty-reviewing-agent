@@ -84,4 +84,4 @@
 - [x] Update CI to run `test:llm` on internal PRs (skip forks).
 - [x] Patch `@mariozechner/pi-ai` for Vertex Express API key support (patch-package).
 - [ ] Confirm live auth works: `GEMINI_API_KEY` must be a real Gemini API key (Vertex API keys return 401 "API keys are not supported").
-- [ ] Verify: `npm test`, `npm run test:llm` (requires key), `npm run build`.
+- [ ] Verify: `bun test`, `bun run test:llm` (requires key), `bun run build`.
