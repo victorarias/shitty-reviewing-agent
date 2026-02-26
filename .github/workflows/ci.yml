@@ -89,7 +89,7 @@ jobs:
             INPUT_MODEL=gemini-3-flash-preview \
             INPUT_REASONING=minimal \
             INPUT_DEBUG=true \
-            INPUT_EXPERIMENTAL-PR-EXPLAINER=true \
+            INPUT_EXPERIMENTAL-PR-EXPLAINER=false \
             LLM_RATE_LIMIT_MAX_WAIT_MS=3600000 \
             LLM_RATE_LIMIT_MAX_ATTEMPTS=20 \
             "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
