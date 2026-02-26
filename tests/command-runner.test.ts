@@ -63,6 +63,8 @@ test("runCommand filters review tools for issue-only", async () => {
   });
   expect(toolNames).toContain("post_summary");
   expect(toolNames).toContain("update_comment");
+  expect(toolNames).toContain("report_finding");
+  expect(toolNames).toContain("set_summary_mode");
   expect(toolNames).not.toContain("comment");
 });
 
@@ -97,6 +99,8 @@ test("runCommand filters review tools for review-only", async () => {
   });
   expect(toolNames).toContain("comment");
   expect(toolNames).not.toContain("post_summary");
+  expect(toolNames).not.toContain("report_finding");
+  expect(toolNames).not.toContain("set_summary_mode");
   expect(toolNames).toContain("update_comment");
 });
 

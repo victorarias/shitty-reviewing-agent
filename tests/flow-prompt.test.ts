@@ -53,6 +53,11 @@ test("runActionFlow prompt snapshot matches fixture", async () => {
 
   expect(captured).not.toBeNull();
   const directoryCount = new Set(captured.changedFiles.map((file: any) => file.filename.split("/").slice(0, -1).join("/") || "(root)")).size;
+  const changedLineCount = captured.changedFiles.reduce((sum: number, file: any) => sum + (file.changes ?? 0), 0);
+  const isFollowUp =
+    Boolean(captured.lastReviewedSha) ||
+    Boolean(captured.previousVerdict && captured.previousVerdict !== "Skipped");
+  const summaryModeCandidate = isFollowUp && captured.changedFiles.length <= 3 && changedLineCount <= 40 ? "compact" : "standard";
   const prompt = buildUserPrompt({
     prTitle: captured.prInfo.title,
     prBody: captured.prInfo.body,
@@ -69,6 +74,9 @@ test("runActionFlow prompt snapshot matches fixture", async () => {
     previousReviewAt: captured.previousReviewAt ?? null,
     previousReviewBody: captured.previousReviewBody ?? null,
     sequenceDiagram: null,
+    changedLineCount,
+    summaryModeCandidate,
+    riskHints: [],
   });
 
   const expected = await Bun.file("tests/fixtures/harness/flow-prompt.golden.txt").text();

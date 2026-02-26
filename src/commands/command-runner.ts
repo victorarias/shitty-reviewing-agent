@@ -348,10 +348,10 @@ function buildTools(
 function filterReviewToolsByCommentType(tools: any[], commentType: CommentType): any[] {
   if (commentType === "both") return tools;
   if (commentType === "issue") {
-    return tools.filter((tool) => tool.name === "post_summary" || tool.name === "update_comment");
+    return tools.filter((tool) => ["post_summary", "update_comment", "report_finding", "set_summary_mode"].includes(tool.name));
   }
   if (commentType === "review") {
-    return tools.filter((tool) => tool.name !== "post_summary");
+    return tools.filter((tool) => !["post_summary", "report_finding", "set_summary_mode"].includes(tool.name));
   }
   return tools;
 }
@@ -365,7 +365,13 @@ function buildSystemPrompt(input: CommandRunInput, commandPrompt: string, toolNa
       ? "- If post_summary is available, call it exactly once near the end to publish the summary."
       : null,
     hasTool("post_summary")
-      ? "- For post_summary body, write only summary sections. Do not include footer lines (Reviewed by/model/billing) or sri markers; tooling appends them."
+      ? "- Preferred summary flow: call report_finding for each issue, then post_summary with verdict/preface. If using post_summary body directly, do not include footer lines (Reviewed by/model/billing) or sri markers; tooling appends them."
+      : null,
+    hasTool("set_summary_mode")
+      ? "- Use set_summary_mode only to escalate verbosity/risk signaling when evidence warrants it."
+      : null,
+    hasTool("report_finding")
+      ? "- report_finding schema ties each finding to category/severity/status. Use it before post_summary."
       : null,
     hasTool("terminate") ? "- Call terminate exactly once as your final action." : null,
     hasTool("subagent")
