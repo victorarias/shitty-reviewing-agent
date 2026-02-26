@@ -296,6 +296,31 @@ test("buildAdaptiveSummaryMarkdown does not truncate long finding details with e
   expect(summary).not.toContain("…");
 });
 
+test("buildAdaptiveSummaryMarkdown avoids duplicate punctuation before inline comment linkage", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "dup-punctuation-check",
+        category: "Refactoring",
+        severity: "low",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/tools/review.ts:42 (RIGHT, comment 1)", "src/tools/review.ts:43 (RIGHT, comment 2)"],
+        title: "Duplicate finding_ref regex pattern",
+        details: "The finding_ref pattern is repeated across multiple schemas and should be centralized.",
+      },
+    ],
+  });
+
+  expect(summary).toContain(
+    "Refactoring impact: The finding_ref pattern is repeated across multiple schemas and should be centralized. inline comments: src/tools/review.ts:42 (RIGHT, comment 1), src/tools/review.ts:43 (RIGHT, comment 2)"
+  );
+  expect(summary).not.toContain("centralized.. inline comments: 2");
+});
+
 test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compact finding", () => {
   const summary = buildAdaptiveSummaryMarkdown({
     verdict: "Request Changes",

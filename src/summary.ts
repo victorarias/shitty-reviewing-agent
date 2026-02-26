@@ -440,7 +440,7 @@ function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean):
   const linkPart = renderFindingLinkage(finding, { verbose, titleLinked: linkedTitle !== displayTitle });
   if (!verbose) {
     const concise = `[${finding.severity}] ${linkedTitle}`;
-    return linkPart ? `${concise}. ${linkPart}` : concise;
+    return linkPart ? joinSentenceParts([concise, linkPart]) : concise;
   }
   const parts = [`[${finding.severity}] ${linkedTitle}`];
   if (finding.details) {
@@ -448,7 +448,7 @@ function renderFindingLine(finding: StructuredSummaryFinding, verbose: boolean):
   }
   if (finding.action) parts.push(`next step: ${toSingleLine(finding.action)}`);
   if (linkPart) parts.push(linkPart);
-  return parts.join(". ");
+  return joinSentenceParts(parts);
 }
 
 function renderFindingLinkage(
@@ -493,6 +493,21 @@ function firstSentence(value: string, maxLength: number): string {
 
 function toSingleLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function joinSentenceParts(parts: string[]): string {
+  let result = "";
+  for (const part of parts) {
+    const cleaned = part.trim();
+    if (!cleaned) continue;
+    if (!result) {
+      result = cleaned;
+      continue;
+    }
+    const separator = /[.?!:]$/.test(result) ? " " : ". ";
+    result = `${result}${separator}${cleaned}`;
+  }
+  return result;
 }
 
 function appendTraceabilityComment(markdown: string, findings: StructuredSummaryFinding[]): string {
