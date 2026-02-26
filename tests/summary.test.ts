@@ -321,6 +321,30 @@ test("buildAdaptiveSummaryMarkdown avoids duplicate punctuation before inline co
   expect(summary).not.toContain("centralized.. inline comments: 2");
 });
 
+test("buildAdaptiveSummaryMarkdown normalizes stray double periods before inline comment linkage", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "double-period-linkage-check",
+        category: "Refactoring",
+        severity: "low",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/tools/review.ts:42 (RIGHT, comment 1)", "src/tools/review.ts:43 (RIGHT, comment 2)"],
+        title: "Duplicate finding_ref regex pattern",
+        details:
+          "The finding_ref pattern [a-z0-9][a-z0-9._:-]{0,79}$ is repeated across several schemas and centralizing it would improve maintainability..",
+      },
+    ],
+  });
+
+  expect(summary).toContain("maintainability. inline comments:");
+  expect(summary).not.toContain("maintainability.. inline comments:");
+});
+
 test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compact finding", () => {
   const summary = buildAdaptiveSummaryMarkdown({
     verdict: "Request Changes",

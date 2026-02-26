@@ -214,7 +214,7 @@ test("comment tool appends bot marker to new comments", async () => {
   expect(calls[0].args.body).toContain("<!-- sri:bot-comment -->");
 });
 
-test("comment tool includes category label when finding_ref matches a recorded finding", async () => {
+test("comment tool includes change context when finding_ref matches a recorded finding", async () => {
   const existingComments: ExistingComment[] = [];
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
@@ -238,6 +238,7 @@ test("comment tool includes category label when finding_ref matches a recorded f
     severity: "medium",
     status: "new",
     title: "API boundary leaks persistence details",
+    details: "Storage concerns leak through response interface",
   });
 
   const commentTool = getTool(tools, "comment");
@@ -251,13 +252,13 @@ test("comment tool includes category label when finding_ref matches a recorded f
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
-  expect(calls[0].args.body).toContain("**Category:** Design");
-  expect(calls[0].args.body).toContain("**Why this category:**");
+  expect(calls[0].args.body).toContain("Storage concerns leak through response interface.");
+  expect(calls[0].args.body).not.toContain("**Category:**");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:design -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:design-api-boundary -->");
 });
 
-test("suggest tool includes category label when finding_ref matches a recorded finding", async () => {
+test("suggest tool includes change context when finding_ref matches a recorded finding", async () => {
   const existingComments: ExistingComment[] = [];
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
@@ -281,6 +282,7 @@ test("suggest tool includes category label when finding_ref matches a recorded f
     severity: "medium",
     status: "new",
     title: "Null guard is missing on parse result",
+    details: "Dereference happens before null check",
   });
 
   const suggestTool = getTool(tools, "suggest");
@@ -295,8 +297,8 @@ test("suggest tool includes category label when finding_ref matches a recorded f
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
-  expect(calls[0].args.body).toContain("**Category:** Bug");
-  expect(calls[0].args.body).toContain("**Why this category:**");
+  expect(calls[0].args.body).toContain("Dereference happens before null check.");
+  expect(calls[0].args.body).not.toContain("**Category:**");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:bug -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:bug-null-guard -->");
 });

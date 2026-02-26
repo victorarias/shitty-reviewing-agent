@@ -49,16 +49,6 @@ const PRAISE_ONLY_PATTERN =
 const ISSUE_SIGNAL_PATTERN =
   /\b(bug|error|fail|failing|missing|incorrect|bypass|leak|race|insecure|broken|regression|coupl|duplica|unused|slow|latency|risk|vulnerab|crash|panic|deadlock|impact)\b/i;
 const EVIDENCE_FILE_LINE_PATTERN = /^([^\s:][^:]*?):(\d+)(?::\d+)?(?:\b|$)/;
-const CATEGORY_EXPLANATION_BY_NAME: Record<StructuredSummaryFinding["category"], string> = {
-  Bug: "This can impact behavior or correctness.",
-  Security: "This can introduce a security risk.",
-  Performance: "This can degrade performance or resource efficiency.",
-  "Unused Code": "This increases maintenance surface without clear value.",
-  "Duplicated Code": "This increases divergence and maintenance cost.",
-  Refactoring: "This indicates maintainability or structure can be improved.",
-  Design: "This affects boundaries, responsibilities, or coupling.",
-  Documentation: "This can cause misunderstanding or incorrect usage.",
-};
 interface SummaryPolicy {
   isFollowUp: boolean;
   modeCandidate: SummaryMode;
@@ -193,12 +183,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         return {
           content: [{
             type: "text",
-            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so change context and traceability metadata can be attached.`,
           }],
           details: { id: -1 },
         };
       }
-      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(params.body, finding), findingRef));
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingContextLabel(params.body, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -342,13 +332,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         return {
           content: [{
             type: "text",
-            text: `Unknown finding_ref "${findingRef}". Call report_finding first so category and traceability metadata can be attached.`,
+            text: `Unknown finding_ref "${findingRef}". Call report_finding first so change context and traceability metadata can be attached.`,
           }],
           details: { id: -1 },
         };
       }
       const suggestionBody = wrapSuggestion(params.suggestion, params.comment);
-      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingCategoryLabel(suggestionBody, finding), findingRef));
+      const body = ensureBotMarker(ensureFindingRefMarker(ensureFindingContextLabel(suggestionBody, finding), findingRef));
       if (params.thread_id) {
         const thread = threadsById.get(params.thread_id);
         if (!thread?.rootCommentId) {
@@ -1078,30 +1068,48 @@ function ensureFindingRefMarker(body: string, findingRef: string | undefined): s
   return `${body}\n${marker}`;
 }
 
-function ensureFindingCategoryLabel(body: string, finding: StructuredSummaryFinding | undefined): string {
+function ensureFindingContextLabel(body: string, finding: StructuredSummaryFinding | undefined): string {
   if (!finding) return body;
   const slug = finding.category.toLowerCase().replace(/\s+/g, "_");
   const marker = `<!-- sri:finding-category:${slug} -->`;
   if (body.includes(marker)) return body;
   const trimmed = body.trim();
-  const categoryLine = `**Category:** ${finding.category}`;
-  const rationaleLine = `**Why this category:** ${deriveFindingCategoryExplanation(finding)}`;
+  const contextLine = deriveFindingChangeContext(finding);
   if (!trimmed) {
-    return `${categoryLine}\n${rationaleLine}\n${marker}`;
+    return `${contextLine}\n${marker}`;
   }
-  return `${categoryLine}\n${rationaleLine}\n\n${trimmed}\n${marker}`;
+  return `${contextLine}\n\n${trimmed}\n${marker}`;
 }
 
-function deriveFindingCategoryExplanation(finding: StructuredSummaryFinding): string {
-  const details = (finding.details ?? "").trim();
-  if (details) {
-    const firstLine = details
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.length > 0);
-    if (firstLine) return firstLine;
-  }
-  return CATEGORY_EXPLANATION_BY_NAME[finding.category];
+function deriveFindingChangeContext(finding: StructuredSummaryFinding): string {
+  const detailsLine = firstNonEmptyLine(finding.details);
+  if (detailsLine) return ensureTerminalSentence(detailsLine);
+  const title = normalizeInlineText(finding.title);
+  if (!title) return "This feedback is tied to the related summary finding.";
+  return ensureTerminalSentence(`This feedback is about ${stripTerminalPunctuation(title)}`);
+}
+
+function firstNonEmptyLine(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value
+    .split(/\r?\n/)
+    .map((line) => normalizeInlineText(line))
+    .find((line) => line.length > 0);
+}
+
+function normalizeInlineText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function stripTerminalPunctuation(value: string): string {
+  return value.replace(/[.?!:;,]+$/g, "").trim();
+}
+
+function ensureTerminalSentence(value: string): string {
+  const cleaned = normalizeInlineText(value);
+  if (!cleaned) return "This feedback is tied to the related summary finding.";
+  if (/[.?!]$/.test(cleaned)) return cleaned;
+  return `${cleaned}.`;
 }
 
 function normalizeFindingRef(value: string | undefined): string | undefined {

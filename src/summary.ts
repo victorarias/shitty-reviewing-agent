@@ -504,10 +504,15 @@ function joinSentenceParts(parts: string[]): string {
       result = cleaned;
       continue;
     }
-    const separator = /[.?!:]$/.test(result) ? " " : ". ";
-    result = `${result}${separator}${cleaned}`;
+    const normalizedResult = normalizeSentenceBoundary(result);
+    const separator = /(?:\.\.\.|…|[.?!:])$/.test(normalizedResult) ? " " : ". ";
+    result = `${normalizedResult}${separator}${cleaned}`;
   }
   return result;
+}
+
+function normalizeSentenceBoundary(value: string): string {
+  return value.replace(/\.\.$/, ".");
 }
 
 function appendTraceabilityComment(markdown: string, findings: StructuredSummaryFinding[]): string {
