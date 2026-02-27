@@ -208,6 +208,229 @@ test("buildAdaptiveSummaryMarkdown uses richer standard follow-up output", () =>
   });
 
   expect(summary).toContain("### Issue Categories");
-  expect(summary).toContain("evidence: src/retry.ts:88");
-  expect(summary).toContain("action: Gate retries");
+  expect(summary).not.toContain("evidence:");
+  expect(summary).toContain("next step: Gate retries");
+});
+
+test("buildAdaptiveSummaryMarkdown hides refs in visible text and keeps traceability metadata", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "bug-retry-loop",
+        category: "Bug",
+        severity: "medium",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/retry.ts:88 (RIGHT, comment, comment 55)"],
+        title: "Retry loop never stops on permanent 4xx responses",
+      },
+      {
+        findingRef: "design-boundary-leak",
+        category: "Design",
+        severity: "low",
+        status: "still_open",
+        placement: "summary_only",
+        summaryOnlyReason: "No single line anchor in this update.",
+        title: "Service boundary remains coupled to transport DTOs",
+      },
+    ],
+  });
+
+  expect(summary).not.toContain("(ref: bug-retry-loop)");
+  expect(summary).toContain("inline comments: src/retry.ts:88 (RIGHT, comment, comment 55)");
+  expect(summary).not.toContain("(ref: design-boundary-leak)");
+  expect(summary).toContain("No single line anchor in this update.");
+  expect(summary).toContain("<!-- sri:traceability");
+  expect(summary).toContain("ref=bug-retry-loop; category=Bug; severity=medium; status=new");
+  expect(summary).toContain("ref=design-boundary-leak; category=Design; severity=low; status=still_open");
+});
+
+test("buildAdaptiveSummaryMarkdown favors details for verification-style titles", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "upsert-logic-check",
+        category: "Design",
+        severity: "low",
+        status: "new",
+        placement: "summary_only",
+        summaryOnlyReason: "cross-file design concern",
+        title: "Verify report_finding upsert logic",
+        details: "Upsert collisions can overwrite prior findings when refs are reused.",
+      },
+    ],
+  });
+
+  expect(summary).toContain("[low] Upsert collisions can overwrite prior findings when refs are reused.");
+  expect(summary).toContain("Design impact: Upsert collisions can overwrite prior findings when refs are reused.");
+});
+
+test("buildAdaptiveSummaryMarkdown does not truncate long finding details with ellipsis", () => {
+  const longDetails =
+    "This is a deliberately long detail text that should remain fully visible in the summary output without any truncation marker because reviewers asked for complete detail visibility even when the string is long and contains no sentence terminator";
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "long-detail-check",
+        category: "Design",
+        severity: "low",
+        status: "new",
+        placement: "summary_only",
+        summaryOnlyReason: "Cross-file concern.",
+        title: "Long detail should remain fully visible",
+        details: longDetails,
+      },
+    ],
+  });
+
+  expect(summary).toContain(`Design impact: ${longDetails}`);
+  expect(summary).not.toContain("…");
+});
+
+test("buildAdaptiveSummaryMarkdown avoids duplicate punctuation before inline comment linkage", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "dup-punctuation-check",
+        category: "Refactoring",
+        severity: "low",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/tools/review.ts:42 (RIGHT, comment 1)", "src/tools/review.ts:43 (RIGHT, comment 2)"],
+        title: "Duplicate finding_ref regex pattern",
+        details: "The finding_ref pattern is repeated across multiple schemas and should be centralized.",
+      },
+    ],
+  });
+
+  expect(summary).toContain(
+    "Refactoring impact: The finding_ref pattern is repeated across multiple schemas and should be centralized. inline comments: src/tools/review.ts:42 (RIGHT, comment 1), src/tools/review.ts:43 (RIGHT, comment 2)"
+  );
+  expect(summary).not.toContain("centralized.. inline comments: 2");
+});
+
+test("buildAdaptiveSummaryMarkdown normalizes stray double periods before inline comment linkage", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    findings: [
+      {
+        findingRef: "double-period-linkage-check",
+        category: "Refactoring",
+        severity: "low",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["src/tools/review.ts:42 (RIGHT, comment 1)", "src/tools/review.ts:43 (RIGHT, comment 2)"],
+        title: "Duplicate finding_ref regex pattern",
+        details:
+          "The finding_ref pattern [a-z0-9][a-z0-9._:-]{0,79}$ is repeated across several schemas and centralizing it would improve maintainability..",
+      },
+    ],
+  });
+
+  expect(summary).toContain("maintainability. inline comments:");
+  expect(summary).not.toContain("maintainability.. inline comments:");
+});
+
+test("buildAdaptiveSummaryMarkdown shows clickable inline link for single compact finding", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "compact",
+    isFollowUp: true,
+    findings: [
+      {
+        findingRef: "bug-retry-loop",
+        category: "Bug",
+        severity: "medium",
+        status: "new",
+        placement: "inline",
+        linkedLocations: ["[src/retry.ts:88 (RIGHT, comment)](https://example.com/comment/88)"],
+        title: "Retry loop never stops on permanent 4xx responses",
+      },
+    ],
+  });
+
+  expect(summary).toContain("[medium] [Retry loop never stops on permanent 4xx responses](https://example.com/comment/88)");
+  expect(summary).not.toContain("inline comment:");
+  expect(summary).toContain("<!-- sri:traceability");
+  expect(summary).toContain("ref=bug-retry-loop");
+});
+
+test("buildAdaptiveSummaryMarkdown includes key files section when provided", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Request Changes",
+    mode: "standard",
+    isFollowUp: false,
+    keyFiles: [
+      {
+        path: "src/tools/review.ts",
+        whyReview: "Related findings: Design.",
+        whatFileDoes: "n/a",
+        whatChanged: "modified (+42/-15)",
+        whyChanged: "n/a",
+        reviewChecklist: [],
+      },
+      {
+        path: "src/summary.ts",
+        whyReview: "Related findings: Refactoring.",
+        whatFileDoes: "n/a",
+        whatChanged: "modified (+18/-6)",
+        whyChanged: "n/a",
+        reviewChecklist: ["Validate summary readability changes."],
+      },
+    ],
+    findings: [
+      {
+        category: "Design",
+        severity: "low",
+        status: "new",
+        title: "Service boundary remains coupled to transport DTOs",
+      },
+    ],
+  });
+
+  expect(summary).toContain("### Key Files");
+  expect(summary).toContain("| `src/tools/review.ts` | Related findings: Design. |");
+  expect(summary).toContain("| What this file does | n/a |");
+  expect(summary).toContain("| What changed | modified (+18/-6) |");
+  expect(summary).toContain("| Review checklist | - Validate summary readability changes. |");
+  expect(summary).toContain("<details><summary>📂 File details</summary>");
+});
+
+test("buildAdaptiveSummaryMarkdown includes key findings observations", () => {
+  const summary = buildAdaptiveSummaryMarkdown({
+    verdict: "Approve",
+    mode: "compact",
+    isFollowUp: true,
+    observations: [
+      {
+        category: "architecture",
+        title: "Bun migration landed end-to-end",
+        details: "CI, Docker, and local scripts now use Bun consistently.",
+      },
+      {
+        category: "risk",
+        title: "Legacy npm lockfile removed",
+      },
+    ],
+    findings: [],
+  });
+
+  expect(summary).toContain("### Key Findings");
+  expect(summary).toContain("**Bun migration landed end-to-end** (Architecture): CI, Docker, and local scripts now use Bun consistently.");
+  expect(summary).toContain("**Legacy npm lockfile removed** (Risk)");
+  expect(summary).not.toContain("No new issues, resolutions, or still-open items");
 });
