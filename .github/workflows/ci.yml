@@ -123,10 +123,11 @@ jobs:
       - name: Run baseline reviewer v0.2.8
         if: ${{ env.BASELINE_API_KEY != '' }}
         uses: victorarias/shitty-reviewing-agent@v0.2.8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           provider: ${{ secrets.GEMINI_API_KEY != '' && 'google' || 'google-vertex' }}
           api-key: ${{ env.BASELINE_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           model: gemini-3-flash-preview
           reasoning: minimal
           debug: true
