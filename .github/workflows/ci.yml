@@ -2,10 +2,20 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   push:
     branches:
       - main
       - review-dedupe-threaded
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   LOG_TOOL_CALLS: "1"
@@ -51,7 +61,7 @@ jobs:
         run: bun run build
 
   reviewer-latest:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && !contains(github.event.pull_request.labels.*.name, 'compare-baseline') }}
     needs: [test, harness]
     runs-on: ubuntu-latest
     permissions:
@@ -89,8 +99,36 @@ jobs:
             INPUT_MODEL=gemini-3-flash-preview \
             INPUT_REASONING=minimal \
             INPUT_DEBUG=true \
-            INPUT_EXPERIMENTAL-PR-EXPLAINER=true \
+            INPUT_EXPERIMENTAL-PR-EXPLAINER=false \
             LLM_RATE_LIMIT_MAX_WAIT_MS=3600000 \
             LLM_RATE_LIMIT_MAX_ATTEMPTS=20 \
             "INPUT_API-KEY=${VERTEX_AI_API_KEY}" \
             bun src/index.ts
+
+  reviewer-baseline-v028:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'compare-baseline') }}
+    needs: [test, harness]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    continue-on-error: true
+    env:
+      BASELINE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip baseline reviewer when API key is missing
+        if: ${{ env.BASELINE_API_KEY == '' }}
+        run: echo "Skipping baseline reviewer (configure GEMINI_API_KEY for baseline comparison)."
+      - name: Run baseline reviewer v0.2.8
+        if: ${{ env.BASELINE_API_KEY != '' }}
+        uses: victorarias/shitty-reviewing-agent@v0.2.8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          provider: google
+          api-key: ${{ env.BASELINE_API_KEY }}
+          model: gemini-3-flash-preview
+          reasoning: minimal
+          debug: true
+          experimental-pr-explainer: false
