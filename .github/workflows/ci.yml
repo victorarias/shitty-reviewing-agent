@@ -61,7 +61,7 @@ jobs:
         run: bun run build
 
   reviewer-latest:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && !contains(github.event.pull_request.labels.*.name, 'compare-baseline') }}
     needs: [test, harness]
     runs-on: ubuntu-latest
     permissions:
@@ -71,40 +71,24 @@ jobs:
     env:
       VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
     steps:
-      - name: Check compare-baseline label (live)
-        id: compare_baseline_gate
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          labels="$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels --jq '.[].name')"
-          if printf '%s\n' "$labels" | grep -Fxq "compare-baseline"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Skip reviewer when compare-baseline label is present
-        if: ${{ steps.compare_baseline_gate.outputs.skip == 'true' }}
-        run: echo "Skipping reviewer-latest (compare-baseline label is set)."
       - uses: actions/checkout@v4
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' }}
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v1
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' && env.VERTEX_AI_API_KEY != '' }}
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
         with:
           bun-version: "1.3.9"
       - name: Skip reviewer when VERTEX_AI_API_KEY is missing
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' && env.VERTEX_AI_API_KEY == '' }}
+        if: ${{ env.VERTEX_AI_API_KEY == '' }}
         run: echo "Skipping reviewer-latest (VERTEX_AI_API_KEY not configured)."
       - name: Install dependencies (apply local patches)
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' && env.VERTEX_AI_API_KEY != '' }}
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
         run: bun install --frozen-lockfile
       - name: Verify pi-ai patch is active
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' && env.VERTEX_AI_API_KEY != '' }}
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
         run: grep -n "VERTEX_AI_API_KEY" node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
       - name: Run reviewer from source (patched dependencies)
-        if: ${{ steps.compare_baseline_gate.outputs.skip != 'true' && env.VERTEX_AI_API_KEY != '' }}
+        if: ${{ env.VERTEX_AI_API_KEY != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -122,7 +106,7 @@ jobs:
             bun src/index.ts
 
   reviewer-baseline-v028:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'compare-baseline') }}
     needs: [test, harness]
     runs-on: ubuntu-latest
     permissions:
@@ -132,32 +116,17 @@ jobs:
     env:
       BASELINE_API_KEY: ${{ secrets.GEMINI_API_KEY != '' && secrets.GEMINI_API_KEY || secrets.VERTEX_AI_API_KEY }}
     steps:
-      - name: Check compare-baseline label (live)
-        id: compare_baseline_gate
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          labels="$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels --jq '.[].name')"
-          if printf '%s\n' "$labels" | grep -Fxq "compare-baseline"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Skip baseline reviewer when compare-baseline label is absent
-        if: ${{ steps.compare_baseline_gate.outputs.run != 'true' }}
-        run: echo "Skipping baseline reviewer (compare-baseline label is not set)."
       - uses: actions/checkout@v4
-        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' }}
       - name: Skip baseline reviewer when API key is missing
-        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.BASELINE_API_KEY == '' }}
+        if: ${{ env.BASELINE_API_KEY == '' }}
         run: echo "Skipping baseline reviewer (configure GEMINI_API_KEY or VERTEX_AI_API_KEY)."
       - name: Run baseline reviewer v0.2.8
-        if: ${{ steps.compare_baseline_gate.outputs.run == 'true' && env.BASELINE_API_KEY != '' }}
+        if: ${{ env.BASELINE_API_KEY != '' }}
         uses: victorarias/shitty-reviewing-agent@v0.2.8
         with:
           provider: ${{ secrets.GEMINI_API_KEY != '' && 'google' || 'google-vertex' }}
           api-key: ${{ env.BASELINE_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           model: gemini-3-flash-preview
           reasoning: minimal
           debug: true

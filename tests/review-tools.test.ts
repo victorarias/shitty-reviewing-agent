@@ -1750,6 +1750,19 @@ test("report_finding rejects verification-style and praise-only issue text", asy
     details: "This correctly handles linking and looks good overall.",
   });
   expect(praiseResult.content[0].text).toContain("appears praise-only");
+
+  const summaryScopeResult = await reportFindingTool.execute("", {
+    finding_ref: "workflow-label-gate",
+    category: "design",
+    severity: "low",
+    status: "new",
+    placement: "summary_only",
+    summary_only_reason: "Cross-file workflow behavior.",
+    title: "Workflow condition depends on PR labels",
+    details:
+      "Behavior impact: Label gate can desync in edge cases. summary-only scope: This is a general observation not tied to one line.",
+  });
+  expect(summaryScopeResult.content[0].text).toContain("details must describe the issue only");
 });
 
 test("set_summary_mode rejects downgrade and alert without evidence", async () => {

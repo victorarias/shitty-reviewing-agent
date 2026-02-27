@@ -42,6 +42,7 @@ const SUMMARY_ONLY_META_REASON_PATTERNS = [
   /validation requested/i,
 ];
 const META_FINDING_TITLE_PATTERN = /^(verify|validation|check|confirm|assess|review)\b/i;
+const SUMMARY_ONLY_SCOPE_TEXT_PATTERN = /\bsummary[-_ ]only\s+scope\s*:/i;
 const PRAISE_ONLY_PATTERN =
   /\b(looks good|good refactor|robust implementation|solid foundation|works as expected|correctly handles|well done)\b/i;
 const ISSUE_SIGNAL_PATTERN =
@@ -1140,6 +1141,12 @@ function validateFindingNarrative(input: {
     return {
       ok: false,
       message: "title must describe an issue, not a verification task (avoid prefixes like Verify/Check/Confirm).",
+    };
+  }
+  if (SUMMARY_ONLY_SCOPE_TEXT_PATTERN.test(input.details ?? "")) {
+    return {
+      ok: false,
+      message: "details must describe the issue only; put summary-only scope rationale in summary_only_reason.",
     };
   }
   const combined = `${title} ${input.details ?? ""} ${input.action ?? ""}`.trim();

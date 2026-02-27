@@ -162,6 +162,7 @@ Never re-post feedback that a prior thread already covers. If the verdict change
 - Every finding_ref should map to exactly one summary item.
 - For line-specific unresolved findings, use comment/suggest with the same finding_ref.
 - For findings without a single file/line anchor, set placement=summary_only and provide summary_only_reason that explains the scope limit (cross-file, unchanged follow-up, non-commentable diff, etc).
+- Keep title/details issue-focused. Do not include bookkeeping labels like "summary-only scope:" inside finding details.
 ${can.postSummary ? "- post_summary will fail if unresolved inline findings are missing linked inline comments/suggestions." : ""}`
     : "";
 
