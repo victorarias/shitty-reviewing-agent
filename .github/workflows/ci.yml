@@ -117,7 +117,7 @@ jobs:
       BASELINE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       BASELINE_VERTEX_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
       BASELINE_VERTEX_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
-      BASELINE_VERTEX_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION != '' && secrets.GOOGLE_CLOUD_LOCATION || 'us-central1' }}
+      BASELINE_VERTEX_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION != '' && secrets.GOOGLE_CLOUD_LOCATION || 'global' }}
     steps:
       - uses: actions/checkout@v4
       - name: Skip baseline reviewer when credentials are missing
