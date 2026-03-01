@@ -117,6 +117,7 @@ jobs:
       BASELINE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       BASELINE_VERTEX_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
       BASELINE_VERTEX_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      BASELINE_VERTEX_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION != '' && secrets.GOOGLE_CLOUD_LOCATION || 'us-central1' }}
     steps:
       - uses: actions/checkout@v4
       - name: Skip baseline reviewer when credentials are missing
@@ -144,6 +145,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_CLOUD_PROJECT: ${{ env.BASELINE_VERTEX_PROJECT }}
           GCLOUD_PROJECT: ${{ env.BASELINE_VERTEX_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ env.BASELINE_VERTEX_LOCATION }}
         with:
           provider: google-vertex
           api-key: ${{ env.BASELINE_VERTEX_API_KEY }}
