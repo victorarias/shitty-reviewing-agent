@@ -1008,7 +1008,7 @@ const SuggestSchema = Type.Object({
     pattern: "^[a-z0-9][a-z0-9._:-]{0,79}$",
     description: "Optional finding reference that links this suggestion to report_finding.",
   })),
-  comment: Type.Optional(Type.String({ description: "Optional comment before suggestion" })),
+  comment: Type.String({ description: "Explanation of why this change is needed. Always provide context so the reviewer understands the reasoning." }),
   suggestion: Type.String({ description: "Replacement code for suggestion block" }),
 });
 

@@ -12,7 +12,7 @@ const TOOL_DOCS: Record<string, string> = {
   comment:
     "`comment({ path, line, side, body, finding_ref? })` — for actionable issues only. Never post praise-only comments. When the comment maps to a finding, pass the same finding_ref used in report_finding.",
   suggest:
-    "`suggest({ path, line, side, suggestion, comment?, finding_ref? })` — for actionable issues only. Never post praise-only comments. When the suggestion maps to a finding, pass the same finding_ref used in report_finding.",
+    "`suggest({ path, line, side, suggestion, comment, finding_ref? })` — for actionable issues only. Always include a comment explaining why the change is needed. When the suggestion maps to a finding, pass the same finding_ref used in report_finding.",
   set_summary_mode:
     "`set_summary_mode({ mode, reason, evidence[] })` — escalate summary mode to standard/alert when risk justifies it. Never use for downgrades.",
   terminate: "call exactly once as your final action.",
