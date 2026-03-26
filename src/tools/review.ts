@@ -721,7 +721,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       const verb = existingIndex !== undefined ? "updated" : "recorded";
       const placementHint = placement === "inline"
         ? " Placement is inline — post a comment or suggest with this finding_ref."
-        : "";
+        : " Placement is summary_only. If this finding targets a specific line, consider posting a comment or suggest and updating placement to inline for better traceability.";
       return {
         content: [{
           type: "text",
