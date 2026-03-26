@@ -67,6 +67,19 @@ Tests use Bun's built-in test runner. Test files are in `tests/`:
 - `list-threads.test.ts` - Thread listing and filtering
 - `summary.test.ts` - Summary markdown rendering
 
+## Debugging Agent Behavior
+
+When the reviewing agent produces unexpected output (duplicated comments, wrong placements, confused findings, etc.), **do not assume it's a model quality issue.** Frontier models follow instructions correctly when the instructions and tool contracts are clear. The root cause is almost always in the harness — the tools, prompts, or validation logic.
+
+Investigation checklist:
+1. **Trace the tool call sequence from CI logs.** Reconstruct exactly what the model sent, what each tool returned, and what the model saw before its next decision.
+2. **Check what the harness silently modifies.** Functions like `ensureFindingContextLabel` transform the model's output before posting. The model never sees these transformations. If the harness injects content that overlaps with what the model wrote, the visible output looks duplicated even though the model only said it once.
+3. **Check what the tool responses communicate back.** If a tool returns "Comment posted: 123" but doesn't say *where* or *what was modified*, the model has limited ability to track state across batches. Sparse tool responses can cause the model to retry or duplicate work.
+4. **Check what the validation rules pressure the model to do.** Strict traceability rules (e.g., "every inline finding must have a linked comment or post_summary will fail") can nudge the model into creating redundant findings to satisfy constraints, especially when an earlier assignment was imperfect.
+5. **Check within-session state tracking.** Dedup indexes built from pre-existing data at construction time won't catch duplicates created during the current session. If the model posts two comments at the same location in different batches, the second one may bypass all dedup checks.
+
+The default hypothesis should be: "the harness made it easy for the model to do the wrong thing" — not "the model is bad at this."
+
 ## Release
 
 Push a tag like `v0.1.0` to trigger `.github/workflows/release.yml` which builds and publishes to GHCR.

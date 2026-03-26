@@ -236,7 +236,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       if (config.debug && event.result) {
         log(`tool output: ${event.toolName}`, safeStringify(event.result));
       }
-      if (event.toolName === "terminate") {
+      if (event.toolName === "terminate" && event.result?.details?.ok === true) {
         summaryState.terminatedByTool = true;
         agent.abort();
       }

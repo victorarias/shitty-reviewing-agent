@@ -32,7 +32,7 @@ const basePrInfo: PullRequestInfo = {
   url: "https://example.com/pr/1",
 };
 
-const patch = "@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n";
+const patch = "@@ -1,3 +1,3 @@\n-const a = 1;\n+const a = 2;\n-const b = 1;\n+const b = 2;\n";
 
 const baseChangedFiles: ChangedFile[] = [
   {
@@ -69,10 +69,10 @@ test("runReview tool integration posts comment and suggestion", async () => {
         });
         await suggestTool.execute("", {
           path: "src/index.ts",
-          line: 1,
+          line: 2,
           side: "RIGHT",
           comment: "Try this",
-          suggestion: "const a = 3;",
+          suggestion: "const b = 3;",
         });
         await summaryTool.execute("", {
           verdict: "Approve",
