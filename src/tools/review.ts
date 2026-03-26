@@ -2,7 +2,6 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
-import { createTerminateTool } from "./terminate.js";
 import type { ChangedFile, CommentType, ExistingComment, ReviewThreadInfo } from "../types.js";
 import {
   buildAdaptiveSummaryMarkdown,
@@ -865,8 +864,9 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         };
       }
       const draft = buildSummaryDraft();
+      const force = Boolean(params.force);
       const summaryValidation = validateSummaryFindings(draft.findings, findingLinksByRef);
-      if (summaryValidation.ok === false) {
+      if (summaryValidation.ok === false && !force) {
         return {
           content: [{ type: "text", text: summaryValidation.message }],
           details: { id: -1 },
@@ -874,7 +874,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       }
       const verdict = normalizeVerdict(params.verdict) ?? inferVerdict(draft.findings);
       const verdictValidation = validateSummaryVerdict(verdict, draft.findings);
-      if (verdictValidation.ok === false) {
+      if (verdictValidation.ok === false && !force) {
         return {
           content: [{ type: "text", text: verdictValidation.message }],
           details: { id: -1 },
@@ -929,8 +929,40 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     reportObservationTool,
     setSummaryModeTool,
     summaryTool,
-    createTerminateTool(),
+    createReviewTerminateTool(() => deps.summaryPosted?.() ?? false),
   ];
+}
+
+const ReviewTerminateSchema = Type.Object({
+  force: Type.Optional(Type.Boolean({
+    description: "Set to true to terminate even if post_summary has not been called yet. Use only after a failed attempt that you cannot fix.",
+  })),
+});
+
+function createReviewTerminateTool(
+  isSummaryPosted: () => boolean
+): AgentTool<typeof ReviewTerminateSchema, { ok: boolean }> {
+  return {
+    name: "terminate",
+    label: "Terminate",
+    description: "End the review run. Validates that post_summary has been called first.",
+    parameters: ReviewTerminateSchema,
+    execute: async (_id, params) => {
+      if (!isSummaryPosted() && !params?.force) {
+        return {
+          content: [{
+            type: "text",
+            text: "Cannot terminate: post_summary has not been called yet. Post the summary first, then call terminate. If post_summary failed and you cannot fix the issue, call terminate with force=true.",
+          }],
+          details: { ok: false },
+        };
+      }
+      return {
+        content: [{ type: "text", text: "Terminated." }],
+        details: { ok: true },
+      };
+    },
+  };
 }
 
 const CommentSchema = Type.Object({
@@ -1028,6 +1060,9 @@ const SetSummaryModeSchema = Type.Object({
 const SummarySchema = Type.Object({
   verdict: Type.Optional(Type.String({ enum: ["Request Changes", "Approve", "Skipped"] })),
   preface: Type.Optional(Type.String({ description: "Optional one-sentence summary preface." })),
+  force: Type.Optional(Type.Boolean({
+    description: "Set to true to bypass finding-link validation and post the summary regardless. Use only after a failed attempt that you cannot fix.",
+  })),
 }, {
   additionalProperties: false,
   minProperties: 1,
@@ -1428,11 +1463,13 @@ function validateSummaryFindings(
   findings: StructuredSummaryFinding[],
   findingLinksByRef: Map<string, FindingLink[]>
 ): { ok: true } | { ok: false; message: string } {
+  const forceHint = "If you cannot fix this, call post_summary with force=true to bypass validation.";
+
   const missingRefs = findings.filter((finding) => !finding.findingRef);
   if (missingRefs.length > 0) {
     return {
       ok: false,
-      message: "Every report_finding entry must include finding_ref.",
+      message: `Every report_finding entry must include finding_ref. Fix: call report_finding again with a finding_ref for each entry. ${forceHint}`,
     };
   }
   const missingSummaryOnlyReason = findings.filter(
@@ -1442,7 +1479,7 @@ function validateSummaryFindings(
     const refs = missingSummaryOnlyReason.map((finding) => finding.findingRef).filter(Boolean).join(", ");
     return {
       ok: false,
-      message: `summary_only findings require summary_only_reason. Missing: ${refs || "unknown"}.`,
+      message: `summary_only findings require summary_only_reason. Missing: ${refs || "unknown"}. Fix: call report_finding again for these refs with a summary_only_reason explaining why no inline anchor is possible. ${forceHint}`,
     };
   }
   const invalidSummaryOnlyMetaReasons = findings.filter((finding) => {
@@ -1457,7 +1494,7 @@ function validateSummaryFindings(
     return {
       ok: false,
       message:
-        `summary_only_reason must explain why no inline anchor is possible (cross-file, no line-specific diff, or non-commentable file), not verification bookkeeping. Update: ${refs || "unknown"}.`,
+        `summary_only_reason must explain why no inline anchor is possible (cross-file, no line-specific diff, or non-commentable file), not verification bookkeeping. Update: ${refs || "unknown"}. Fix: call report_finding again with a concrete summary_only_reason. ${forceHint}`,
     };
   }
   const lineAnchoredSummaryOnly = findings.filter((finding) => {
@@ -1478,7 +1515,7 @@ function validateSummaryFindings(
     return {
       ok: false,
       message:
-        `Line-anchored unresolved findings must have linked inline comments/suggestions. Add comment/suggest with matching finding_ref, or justify summary_only_reason with explicit scope limits. Missing links: ${refs || "unknown"}.`,
+        `Line-anchored unresolved findings should have linked inline comments/suggestions. Fix: either post a comment/suggest with the matching finding_ref, or call report_finding again with placement=summary_only and a summary_only_reason that includes a scope hint (e.g. "cross-file concern"). Missing links: ${refs || "unknown"}. ${forceHint}`,
     };
   }
   const missingInlineLinks = findings
@@ -1493,7 +1530,7 @@ function validateSummaryFindings(
     return {
       ok: false,
       message:
-        `Unresolved inline findings are missing linked comments/suggestions. Add finding_ref to comment/suggest or mark placement=summary_only with summary_only_reason. Missing links: ${refs || "unknown"}.`,
+        `Unresolved inline findings are missing linked comments/suggestions. Fix: either (1) post a comment/suggest with the matching finding_ref, or (2) call report_finding again with placement=summary_only and a summary_only_reason. Missing links: ${refs || "unknown"}. ${forceHint}`,
     };
   }
   return { ok: true };

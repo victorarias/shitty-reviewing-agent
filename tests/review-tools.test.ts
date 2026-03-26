@@ -1645,7 +1645,7 @@ test("post_summary rejects line-anchored unresolved summary-only finding without
     preface: "Retry behavior needs correction.",
   });
   expect(result.details.id).toBe(-1);
-  expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
+  expect(result.content[0].text).toContain("Line-anchored unresolved findings should have linked inline comments/suggestions");
 });
 
 test("post_summary rejects low-severity line-anchored summary-only finding without inline link", async () => {
@@ -1682,7 +1682,7 @@ test("post_summary rejects low-severity line-anchored summary-only finding witho
     preface: "No blocking issues found.",
   });
   expect(result.details.id).toBe(-1);
-  expect(result.content[0].text).toContain("Line-anchored unresolved findings must have linked inline comments/suggestions");
+  expect(result.content[0].text).toContain("Line-anchored unresolved findings should have linked inline comments/suggestions");
 });
 
 test("report_finding rejects summary_only placement without reason", async () => {
@@ -1836,4 +1836,123 @@ test("post_summary rejects legacy body input", async () => {
   expect(result.content[0].text).toContain("no longer supported");
   const summaryCall = calls.find((call) => call.type === "issue_comment");
   expect(summaryCall).toBeUndefined();
+});
+
+test("post_summary with force=true bypasses finding-link validation", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/auth/token.ts", status: "modified", additions: 5, deletions: 1, changes: 6, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    summaryPolicy: {
+      isFollowUp: false,
+      modeCandidate: "standard",
+      changedFileCount: 1,
+      changedLineCount: 6,
+      riskHints: [],
+    },
+  });
+
+  const reportFindingTool = getTool(tools, "report_finding");
+  const summaryTool = getTool(tools, "post_summary");
+
+  await reportFindingTool.execute("", {
+    finding_ref: "bug-unlinked",
+    category: "bug",
+    severity: "medium",
+    status: "new",
+    title: "Missing error handling",
+  });
+  // No comment/suggest posted — validation would normally reject
+  const result = await summaryTool.execute("", {
+    verdict: "Request Changes",
+    preface: "Found an issue.",
+    force: true,
+  });
+
+  expect(result.details.id).toBe(303);
+  expect(calls.find((call) => call.type === "issue_comment")).toBeDefined();
+});
+
+test("terminate rejects when post_summary has not been called", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/foo.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const terminateTool = getTool(tools, "terminate");
+  const result = await terminateTool.execute("", {});
+
+  expect(result.details.ok).toBe(false);
+  expect(result.content[0].text).toContain("post_summary has not been called yet");
+});
+
+test("terminate with force=true bypasses post_summary check", async () => {
+  const { octokit } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/foo.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const terminateTool = getTool(tools, "terminate");
+  const result = await terminateTool.execute("", { force: true });
+
+  expect(result.details.ok).toBe(true);
+  expect(result.content[0].text).toBe("Terminated.");
+});
+
+test("terminate succeeds after post_summary has been called", async () => {
+  const { octokit } = makeOctokitSpy();
+  let posted = false;
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/foo.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+    onSummaryPosted: () => { posted = true; },
+    summaryPosted: () => posted,
+  });
+
+  const summaryTool = getTool(tools, "post_summary");
+  await summaryTool.execute("", { verdict: "Approve" });
+
+  const terminateTool = getTool(tools, "terminate");
+  const result = await terminateTool.execute("", {});
+
+  expect(result.details.ok).toBe(true);
+  expect(result.content[0].text).toBe("Terminated.");
 });
