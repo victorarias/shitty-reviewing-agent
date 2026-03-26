@@ -718,12 +718,14 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
         summaryFindings.push(finding);
         findingIndexByRef.set(findingRef, summaryFindings.length - 1);
       }
+      const verb = existingIndex !== undefined ? "updated" : "recorded";
+      const placementHint = placement === "inline"
+        ? " Placement is inline — post a comment or suggest with this finding_ref."
+        : "";
       return {
         content: [{
           type: "text",
-          text: existingIndex !== undefined
-            ? `Finding updated (${findingRef}).`
-            : `Finding recorded (${summaryFindings.length}).`,
+          text: `Finding ${verb} (${findingRef}).${placementHint}`,
         }],
         details: { count: summaryFindings.length },
       };
@@ -1133,10 +1135,10 @@ function normalizeFindingRef(value: string | undefined): string | undefined {
 
 function normalizeFindingPlacement(
   value: string | undefined,
-  status: StructuredSummaryFinding["status"]
+  _status: StructuredSummaryFinding["status"]
 ): SummaryPlacement {
   if (value === "inline" || value === "summary_only") return value;
-  return status === "new" ? "inline" : "summary_only";
+  return "summary_only";
 }
 
 function normalizeObservationCategory(value: string | undefined): SummaryObservation["category"] {

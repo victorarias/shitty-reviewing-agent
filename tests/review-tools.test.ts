@@ -237,6 +237,7 @@ test("comment tool includes finding metadata markers when finding_ref matches a 
     category: "design",
     severity: "medium",
     status: "new",
+    placement: "inline",
     title: "API boundary leaks persistence details",
     details: "Storage concerns leak through response interface",
   });
@@ -281,6 +282,7 @@ test("suggest tool includes finding metadata markers when finding_ref matches a 
     category: "bug",
     severity: "medium",
     status: "new",
+    placement: "inline",
     title: "Null guard is missing on parse result",
     details: "Dereference happens before null check",
   });
@@ -1205,6 +1207,7 @@ test("post_summary renders structured findings and alert mode", async () => {
     category: "security",
     severity: "high",
     status: "new",
+    placement: "inline",
     title: "Token validation bypasses signature check",
     evidence: ["src/auth/token.ts:44"],
     action: "Require signature verification before accepting bearer tokens.",
@@ -1286,6 +1289,7 @@ test("post_summary renders clickable inline links when comment URLs are availabl
     category: "bug",
     severity: "medium",
     status: "new",
+    placement: "inline",
     title: "Retry loop never stops on permanent 4xx responses",
   });
   await commentTool.execute("", {
@@ -1508,6 +1512,7 @@ test("post_summary rejects unresolved inline finding without linked comment", as
     category: "bug",
     severity: "medium",
     status: "new",
+    placement: "inline",
     title: "Retry loop never stops on permanent 4xx responses",
   });
   const result = await summaryTool.execute("", {
@@ -1736,6 +1741,7 @@ test("report_finding rejects verification-style and praise-only issue text", asy
     category: "design",
     severity: "low",
     status: "new",
+    placement: "inline",
     title: "Verify report_finding upsert logic",
     details: "Ensures update path behaves correctly.",
   });
@@ -1746,6 +1752,7 @@ test("report_finding rejects verification-style and praise-only issue text", asy
     category: "design",
     severity: "low",
     status: "new",
+    placement: "inline",
     title: "Robust traceability implementation",
     details: "This correctly handles linking and looks good overall.",
   });
@@ -1869,6 +1876,7 @@ test("post_summary with force=true bypasses finding-link validation", async () =
     category: "bug",
     severity: "medium",
     status: "new",
+    placement: "inline",
     title: "Missing error handling",
   });
   // No comment/suggest posted — validation would normally reject
