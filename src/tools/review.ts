@@ -1515,7 +1515,7 @@ function validateSummaryFindings(
     return {
       ok: false,
       message:
-        `Line-anchored unresolved findings should have linked inline comments/suggestions. Fix: either post a comment/suggest with the matching finding_ref, or call report_finding again with placement=summary_only and a summary_only_reason that includes a scope hint (e.g. "cross-file concern"). Missing links: ${refs || "unknown"}. ${forceHint}`,
+        `Line-anchored unresolved findings should have linked inline comments/suggestions. Fix: either post a comment/suggest with the matching finding_ref, or call report_finding again with the SAME finding_ref and set placement=summary_only with a summary_only_reason that includes a scope hint (e.g. "cross-file concern"). Missing links: ${refs || "unknown"}. ${forceHint}`,
     };
   }
   const missingInlineLinks = findings
@@ -1530,7 +1530,7 @@ function validateSummaryFindings(
     return {
       ok: false,
       message:
-        `Unresolved inline findings are missing linked comments/suggestions. Fix: either (1) post a comment/suggest with the matching finding_ref, or (2) call report_finding again with placement=summary_only and a summary_only_reason. Missing links: ${refs || "unknown"}. ${forceHint}`,
+        `Unresolved inline findings are missing linked comments/suggestions. Fix: either (1) post a comment/suggest with the matching finding_ref, or (2) call report_finding again with the SAME finding_ref and set placement=summary_only with a summary_only_reason (this updates the existing finding). Missing links: ${refs || "unknown"}. ${forceHint}`,
     };
   }
   return { ok: true };
