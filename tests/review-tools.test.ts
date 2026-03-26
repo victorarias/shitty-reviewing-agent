@@ -214,7 +214,7 @@ test("comment tool appends bot marker to new comments", async () => {
   expect(calls[0].args.body).toContain("<!-- sri:bot-comment -->");
 });
 
-test("comment tool includes change context when finding_ref matches a recorded finding", async () => {
+test("comment tool includes finding metadata markers when finding_ref matches a recorded finding", async () => {
   const existingComments: ExistingComment[] = [];
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
@@ -252,13 +252,13 @@ test("comment tool includes change context when finding_ref matches a recorded f
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
-  expect(calls[0].args.body).toContain("Storage concerns leak through response interface.");
-  expect(calls[0].args.body).not.toContain("**Category:**");
+  expect(calls[0].args.body).toContain("This interface should not expose storage-specific concerns.");
+  expect(calls[0].args.body).not.toContain("Storage concerns leak through response interface.");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:design -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:design-api-boundary -->");
 });
 
-test("suggest tool includes change context when finding_ref matches a recorded finding", async () => {
+test("suggest tool includes finding metadata markers when finding_ref matches a recorded finding", async () => {
   const existingComments: ExistingComment[] = [];
   const { octokit, calls } = makeOctokitSpy();
   const tools = createReviewTools({
@@ -297,8 +297,8 @@ test("suggest tool includes change context when finding_ref matches a recorded f
 
   expect(calls.length).toBe(1);
   expect(calls[0].type).toBe("comment");
-  expect(calls[0].args.body).toContain("Dereference happens before null check.");
-  expect(calls[0].args.body).not.toContain("**Category:**");
+  expect(calls[0].args.body).toContain("Add a guard before dereference.");
+  expect(calls[0].args.body).not.toContain("Dereference happens before null check.");
   expect(calls[0].args.body).toContain("<!-- sri:finding-category:bug -->");
   expect(calls[0].args.body).toContain("<!-- sri:finding-ref:bug-null-guard -->");
 });
@@ -1955,4 +1955,83 @@ test("terminate succeeds after post_summary has been called", async () => {
 
   expect(result.details.ok).toBe(true);
   expect(result.content[0].text).toBe("Terminated.");
+});
+
+test("comment tool replies to session-posted comment at same location", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+
+  const first = await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "First comment about this line.",
+  });
+  expect(first.details.id).toBe(202);
+  expect(calls[0].type).toBe("comment");
+
+  const second = await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "Second comment about this line.",
+  });
+  // Dedup kicks in — tells model to update existing comment instead of creating duplicate
+  expect(second.content[0].text).toContain("update_comment");
+  const newCommentCalls = calls.filter((c) => c.type === "comment");
+  expect(newCommentCalls.length).toBe(1);
+});
+
+test("suggest tool replies to session-posted comment at same location", async () => {
+  const { octokit, calls } = makeOctokitSpy();
+  const tools = createReviewTools({
+    octokit: octokit as any,
+    owner: "o",
+    repo: "r",
+    pullNumber: 1,
+    headSha: "sha",
+    modelId: "model",
+    reviewSha: "sha",
+    changedFiles: [{ filename: "src/index.ts", status: "modified", additions: 1, deletions: 1, changes: 2, patch }],
+    getBilling: () => ({ input: 0, output: 0, total: 0, cost: 0 }),
+    existingComments: [],
+    reviewThreads: [],
+  });
+
+  const commentTool = getTool(tools, "comment");
+  const suggestTool = getTool(tools, "suggest");
+
+  await commentTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "This line needs a fix.",
+  });
+  expect(calls[0].type).toBe("comment");
+
+  const second = await suggestTool.execute("", {
+    path: "src/index.ts",
+    line: 1,
+    side: "RIGHT",
+    suggestion: "const a = 3;",
+    comment: "Here is the fix.",
+  });
+  // Dedup kicks in — tells model to update existing comment instead of creating duplicate
+  expect(second.content[0].text).toContain("update_comment");
+  const newCommentCalls = calls.filter((c) => c.type === "comment");
+  expect(newCommentCalls.length).toBe(1);
 });

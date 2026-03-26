@@ -304,6 +304,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       );
       deps.onInlineComment?.();
       recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "comment", response.data.html_url);
+      trackSessionComment(existingByLocation, {
+        id: response.data.id,
+        path: params.path,
+        line: params.line,
+        side: (side ?? "RIGHT") as "LEFT" | "RIGHT",
+        body,
+      });
       return {
         content: [{ type: "text", text: `Comment posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -454,6 +461,13 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       );
       deps.onSuggestion?.();
       recordFindingLink(findingRef, { path: params.path, line: params.line, side }, response.data.id, "suggestion", response.data.html_url);
+      trackSessionComment(existingByLocation, {
+        id: response.data.id,
+        path: params.path,
+        line: params.line,
+        side: (side ?? "RIGHT") as "LEFT" | "RIGHT",
+        body,
+      });
       return {
         content: [{ type: "text", text: `Suggestion posted: ${response.data.id}` }],
         details: { id: response.data.id },
@@ -1107,43 +1121,7 @@ function ensureFindingContextLabel(body: string, finding: StructuredSummaryFindi
   const slug = finding.category.toLowerCase().replace(/\s+/g, "_");
   const marker = `<!-- sri:finding-category:${slug} -->`;
   if (body.includes(marker)) return body;
-  const trimmed = body.trim();
-  const contextLine = deriveFindingChangeContext(finding);
-  if (!trimmed) {
-    return `${contextLine}\n${marker}`;
-  }
-  return `${contextLine}\n\n${trimmed}\n${marker}`;
-}
-
-function deriveFindingChangeContext(finding: StructuredSummaryFinding): string {
-  const detailsLine = firstNonEmptyLine(finding.details);
-  if (detailsLine) return ensureTerminalSentence(detailsLine);
-  const title = normalizeInlineText(finding.title);
-  if (!title) return "This feedback is tied to the related summary finding.";
-  return ensureTerminalSentence(`This feedback is about ${stripTerminalPunctuation(title)}`);
-}
-
-function firstNonEmptyLine(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  return value
-    .split(/\r?\n/)
-    .map((line) => normalizeInlineText(line))
-    .find((line) => line.length > 0);
-}
-
-function normalizeInlineText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function stripTerminalPunctuation(value: string): string {
-  return value.replace(/[.?!:;,]+$/g, "").trim();
-}
-
-function ensureTerminalSentence(value: string): string {
-  const cleaned = normalizeInlineText(value);
-  if (!cleaned) return "This feedback is tied to the related summary finding.";
-  if (/[.?!]$/.test(cleaned)) return cleaned;
-  return `${cleaned}.`;
+  return `${body.trim()}\n${marker}`;
 }
 
 function normalizeFindingRef(value: string | undefined): string | undefined {
@@ -1246,6 +1224,28 @@ function buildLocationIndex(comments: ExistingComment[]): {
     threadLastActorById: lastActorById,
     threadLastCommentById: lastCommentById,
   };
+}
+
+function trackSessionComment(
+  map: Map<string, ExistingComment[]>,
+  posted: { id: number; path: string; line: number; side: "LEFT" | "RIGHT"; body: string }
+): void {
+  const key = `${posted.path}:${posted.line}:${posted.side}`;
+  const synthetic: ExistingComment = {
+    id: posted.id,
+    author: "github-actions[bot]",
+    authorType: "Bot",
+    body: posted.body,
+    url: "",
+    type: "review",
+    path: posted.path,
+    line: posted.line,
+    side: posted.side,
+    updatedAt: new Date().toISOString(),
+  };
+  const existing = map.get(key) ?? [];
+  existing.push(synthetic);
+  map.set(key, existing);
 }
 
 function findLatestLocation(
