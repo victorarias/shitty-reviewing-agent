@@ -628,12 +628,19 @@ function appendObservationsSection(lines: string[], observations: SummaryObserva
     const categoryLabel = observation.category[0].toUpperCase() + observation.category.slice(1);
     const title = toSingleLine(observation.title);
     if (observation.details) {
-      lines.push(`- **${title}** (${categoryLabel}): ${toSingleLine(observation.details)}`);
+      const hasBlockContent = /```|<details|<summary/i.test(observation.details);
+      if (hasBlockContent) {
+        lines.push(`- **${title}** (${categoryLabel}):`);
+        lines.push("");
+        lines.push(observation.details.trim());
+      } else {
+        lines.push(`- **${title}** (${categoryLabel}): ${toSingleLine(observation.details)}`);
+      }
     } else {
       lines.push(`- **${title}** (${categoryLabel})`);
     }
+    lines.push("");
   }
-  lines.push("");
 }
 
 function withPrimaryLink(title: string, linkedLocations: string[] | undefined): string {
