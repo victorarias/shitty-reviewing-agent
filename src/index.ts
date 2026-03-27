@@ -10,7 +10,7 @@ import { runScheduledFlow } from "./app/schedule.js";
 import { matchesBotMention, parseCommandInvocation } from "./commands/args.js";
 import { CommandRegistry } from "./commands/registry.js";
 import { runCommand } from "./commands/command-runner.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
+import type { ChangedFile, ExistingComment, ModelEndpoint, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo } from "./types.js";
 
 async function main(): Promise<void> {
   try {
@@ -96,4 +96,4 @@ export { buildSummaryMarkdown } from "./summary.js";
 
 main();
 
-export type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo };
+export type { ChangedFile, ExistingComment, ModelEndpoint, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo };

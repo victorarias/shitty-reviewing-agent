@@ -14,6 +14,15 @@ inputs:
   compaction-model:
     description: "Optional model to use for context compaction summaries (defaults to gemini-3-flash-preview for Google, else same as model)"
     required: false
+  fallback-provider:
+    description: "Fallback LLM provider (defaults to primary provider if only fallback-model is set)"
+    required: false
+  fallback-model:
+    description: "Fallback model to use when the primary model hits sustained rate limits"
+    required: false
+  fallback-api-key:
+    description: "API key for the fallback provider (defaults to primary api-key if omitted)"
+    required: false
   max-files:
     description: "Max files to review (skips if exceeded)"
     required: false

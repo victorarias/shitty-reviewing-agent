@@ -3,14 +3,14 @@ import type { Usage } from "@mariozechner/pi-ai";
 import { buildSystemPrompt, buildUserPrompt } from "../prompts/review.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createSubagentTool, createWebSearchTool, RateLimitError } from "../tools/index.js";
 import { filterToolsByAllowlist } from "../tools/categories.js";
-import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo, ToolCategory } from "../types.js";
+import type { ChangedFile, ExistingComment, ModelEndpoint, PullRequestInfo, ReviewConfig, ReviewContext, ReviewThreadInfo, ToolCategory } from "../types.js";
 import { createAgentWithCompaction } from "./agent-setup.js";
 import { countDistinctDirectories, filterDiagramFiles, filterIgnoredFiles } from "./file-filters.js";
 import { maybeGenerateSequenceDiagram } from "./diagram.js";
 import { isGemini3 } from "./model.js";
 import { maybePostPrExplainer } from "./pr-explainer.js";
 import type { PrExplainerGenerateFn } from "./pr-explainer.js";
-import { withRetries } from "./retries.js";
+import { QuotaExhaustedError, withRetries } from "./retries.js";
 import { deriveErrorReason, postFailureSummary, postFallbackSummary } from "./summary.js";
 
 export interface ReviewRunInput {
@@ -194,84 +194,106 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     input.toolAllowlist.length === 0 ||
     input.toolAllowlist.includes("github.pr.feedback");
 
-  const { agent, model, effectiveThinkingLevel } = createAgentWithCompaction({
-    config,
-    systemPrompt: buildSystemPrompt(tools.map((tool) => tool.name)),
-    tools,
-    contextState,
-    summaryState,
-    temperatureOverride: effectiveTemperature,
-    overrides: input.overrides,
-  });
+  const fallbackQuotaThreshold = getFallbackQuotaThreshold();
 
-  const maxIterations = 10 + config.maxFiles * 5;
-  let toolExecutions = 0;
+  function buildAgentForEndpoint(endpoint: ModelEndpoint, temperatureOvr?: number, clearCompactionModel = false) {
+    const agentConfig: ReviewConfig = {
+      ...config,
+      provider: endpoint.provider,
+      modelId: endpoint.modelId,
+      apiKey: endpoint.apiKey,
+      ...(clearCompactionModel ? { compactionModel: undefined } : {}),
+    };
+    const result = createAgentWithCompaction({
+      config: agentConfig,
+      systemPrompt: buildSystemPrompt(tools.map((tool) => tool.name)),
+      tools,
+      contextState,
+      summaryState,
+      temperatureOverride: temperatureOvr,
+      overrides: input.overrides,
+    });
 
-  agent.subscribe((event) => {
-    if (event.type === "tool_execution_start") {
-      toolExecutions += 1;
-      if (summaryState.posted && event.toolName !== "terminate") {
-        console.warn(`[warn] tool called after summary: ${event.toolName}`);
-      }
-      if (event.toolName === "read" && event.args?.path) {
-        contextState.filesRead.add(event.args.path);
-        if (event.args.start_line || event.args.end_line) {
-          contextState.partialReads.add(event.args.path);
+    const maxIterations = 10 + agentConfig.maxFiles * 5;
+    let toolExecutions = 0;
+
+    result.agent.subscribe((event) => {
+      if (event.type === "tool_execution_start") {
+        toolExecutions += 1;
+        if (summaryState.posted && event.toolName !== "terminate") {
+          console.warn(`[warn] tool called after summary: ${event.toolName}`);
+        }
+        if (event.toolName === "read" && event.args?.path) {
+          contextState.filesRead.add(event.args.path);
+          if (event.args.start_line || event.args.end_line) {
+            contextState.partialReads.add(event.args.path);
+          }
+        }
+        if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
+          contextState.filesDiffed.add(event.args.path);
+        }
+        log(`tool call: ${event.toolName}`, event.args ? safeStringify(event.args) : "{}");
+        if (toolExecutions >= maxIterations) {
+          summaryState.abortedByLimit = true;
+          result.agent.abort();
         }
       }
-      if ((event.toolName === "get_diff" || event.toolName === "get_full_diff") && event.args?.path) {
-        contextState.filesDiffed.add(event.args.path);
+      if (event.type === "tool_execution_end") {
+        log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
+        if (event.toolName === "read" && event.result?.details?.truncated && event.result?.details?.path) {
+          contextState.truncatedReads.add(event.result.details.path);
+        }
+        if (agentConfig.debug && event.result) {
+          log(`tool output: ${event.toolName}`, safeStringify(event.result));
+        }
+        if (event.toolName === "terminate" && event.result?.details?.ok === true) {
+          summaryState.terminatedByTool = true;
+          result.agent.abort();
+        }
       }
-      log(`tool call: ${event.toolName}`, event.args ? safeStringify(event.args) : "{}");
-      if (toolExecutions >= maxIterations) {
-        summaryState.abortedByLimit = true;
-        agent.abort();
+      if (event.type === "message_end" && event.message.role === "assistant") {
+        const text = event.message.content
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join("");
+        const thinking = event.message.content
+          .filter((c) => c.type === "thinking")
+          .map((c) => c.thinking)
+          .join("");
+        if (text.trim()) {
+          log(`assistant: ${text}`);
+        }
+        if (thinking.trim()) {
+          log(`assistant thinking: ${thinking}`);
+        }
+        const usage = event.message.usage;
+        if (usage) {
+          const cost = calculateCost(result.model, usage);
+          summaryState.billing.input += usage.input;
+          summaryState.billing.output += usage.output;
+          summaryState.billing.total += usage.totalTokens;
+          summaryState.billing.cost += cost.total;
+          log(
+            `billing model=${event.message.model} input=${usage.input} output=${usage.output} total=${usage.totalTokens} cost=${cost.total.toFixed(6)}`
+          );
+        }
       }
-    }
-    if (event.type === "tool_execution_end") {
-      log(`tool end: ${event.toolName}`, event.isError ? "error" : "ok");
-      if (event.toolName === "read" && event.result?.details?.truncated && event.result?.details?.path) {
-        contextState.truncatedReads.add(event.result.details.path);
+      if (event.type === "agent_end") {
+        log("agent end");
       }
-      if (config.debug && event.result) {
-        log(`tool output: ${event.toolName}`, safeStringify(event.result));
-      }
-      if (event.toolName === "terminate" && event.result?.details?.ok === true) {
-        summaryState.terminatedByTool = true;
-        agent.abort();
-      }
-    }
-    if (event.type === "message_end" && event.message.role === "assistant") {
-      const text = event.message.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("");
-      const thinking = event.message.content
-        .filter((c) => c.type === "thinking")
-        .map((c) => c.thinking)
-        .join("");
-      if (text.trim()) {
-        log(`assistant: ${text}`);
-      }
-      if (thinking.trim()) {
-        log(`assistant thinking: ${thinking}`);
-      }
-      const usage = event.message.usage;
-      if (usage) {
-        const cost = calculateCost(model, usage);
-        summaryState.billing.input += usage.input;
-        summaryState.billing.output += usage.output;
-        summaryState.billing.total += usage.totalTokens;
-        summaryState.billing.cost += cost.total;
-        log(
-          `billing model=${event.message.model} input=${usage.input} output=${usage.output} total=${usage.totalTokens} cost=${cost.total.toFixed(6)}`
-        );
-      }
-    }
-    if (event.type === "agent_end") {
-      log("agent end");
-    }
-  });
+    });
+
+    return result;
+  }
+
+  const primaryEndpoint: ModelEndpoint = { provider: config.provider, modelId: config.modelId, apiKey: config.apiKey };
+  const endpoints: ModelEndpoint[] = [primaryEndpoint];
+  if (config.fallback) {
+    endpoints.push(config.fallback);
+  }
+
+  const { agent: primaryAgent, model, effectiveThinkingLevel } = buildAgentForEndpoint(primaryEndpoint, effectiveTemperature);
+  let activeAgent: AgentLike = primaryAgent;
 
   const diagramFiles = await filterDiagramFiles(filteredFiles, config.repoRoot);
   const directoryCount = countDistinctDirectories(diagramFiles.map((file) => file.filename));
@@ -351,37 +373,74 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     log("experimental PR explainer skipped because github.pr.feedback tools are not allowlisted");
   }
 
-  let abortedByLimit = false;
-  try {
-    log("prompt start");
-    await withRetries(
-      async () => {
-        clearAgentError(agent);
-        await agent.prompt(userPrompt);
-        if (!summaryState.posted && agent.state.error) {
-          log("agent state error after prompt", safeStringify(agent.state.error));
-          throw normalizeAgentError(agent.state.error);
-        }
-      },
-      3,
-      (error) => !summaryState.abortedByLimit && !isCancellationError(error)
-    );
-    log("prompt done");
-  } catch (error) {
-    if (isCancellationError(error)) {
-      if (!summaryState.terminatedByTool) {
-        summaryState.abortedByCancellation = true;
-        log("run canceled; skipping summary");
-        return;
-      }
-      log("run terminated by tool; finishing gracefully");
+  const promptAgent = async (agent: AgentLike) => {
+    clearAgentError(agent);
+    await agent.prompt(userPrompt);
+    if (!summaryState.posted && agent.state.error) {
+      log("agent state error after prompt", safeStringify(agent.state.error));
+      throw normalizeAgentError(agent.state.error);
     }
-    if (summaryState.abortedByLimit) {
-      abortedByLimit = true;
-    } else {
-      const reason =
-        error instanceof RateLimitError
-          ? "GitHub API rate limit exceeded."
+  };
+
+  let abortedByLimit = false;
+  let activeModelId = config.modelId;
+
+  log("prompt start");
+  for (let i = 0; i < endpoints.length; i++) {
+    const endpoint = endpoints[i];
+    const isLast = i === endpoints.length - 1;
+    const isFallback = i > 0;
+
+    if (isFallback) {
+      activeAgent.abort();
+      contextState.filesRead.clear();
+      contextState.filesDiffed.clear();
+      contextState.truncatedReads.clear();
+      contextState.partialReads.clear();
+
+      const fallbackResult = buildAgentForEndpoint(endpoint, effectiveTemperature, true);
+      activeAgent = fallbackResult.agent;
+    }
+    activeModelId = endpoint.modelId;
+
+    try {
+      await withRetries(
+        () => promptAgent(activeAgent),
+        3,
+        (error) => !summaryState.abortedByLimit && !isCancellationError(error),
+        { maxConsecutiveQuotaErrors: isLast ? undefined : fallbackQuotaThreshold }
+      );
+      log(isFallback ? `prompt done (fallback: ${endpoint.modelId})` : "prompt done");
+      break;
+    } catch (error) {
+      if (error instanceof QuotaExhaustedError && !isLast) {
+        const next = endpoints[i + 1];
+        console.log(
+          `[fallback] ${endpoint.modelId} quota exhausted after ${error.consecutiveQuotaErrors} consecutive 429s. ` +
+          `Switching to ${next.provider}/${next.modelId}.`
+        );
+        continue;
+      }
+
+      if (isCancellationError(error)) {
+        if (!summaryState.terminatedByTool) {
+          summaryState.abortedByCancellation = true;
+          log("run canceled; skipping summary");
+          return;
+        }
+        log("run terminated by tool; finishing gracefully");
+        break;
+      }
+
+      if (summaryState.abortedByLimit) {
+        abortedByLimit = true;
+        break;
+      }
+
+      const reason = error instanceof RateLimitError
+        ? "GitHub API rate limit exceeded."
+        : isFallback
+          ? `LLM request failed after retries (fallback: ${endpoint.modelId}).`
           : "LLM request failed after retries.";
       if (feedbackAllowed) {
         await postFailureSummary({
@@ -390,7 +449,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
           repo: context.repo,
           prNumber: context.prNumber,
           reason,
-          model: config.modelId,
+          model: activeModelId,
           billing: summaryState.billing,
           reviewSha: input.prInfo.headSha,
         });
@@ -399,25 +458,25 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
   }
 
-  if (agent.state.error) {
-    log(`agent error: ${agent.state.error}`);
+  if (activeAgent.state.error) {
+    log(`agent error: ${activeAgent.state.error}`);
   }
 
-  if (isCancellationError(agent.state.error) && !summaryState.terminatedByTool) {
+  if (isCancellationError(activeAgent.state.error) && !summaryState.terminatedByTool) {
     summaryState.abortedByCancellation = true;
     log("run canceled; skipping summary");
     return;
   }
 
-  if (!summaryState.posted && agent.state.error && feedbackAllowed) {
-    const reason = deriveErrorReason(agent.state.error);
+  if (!summaryState.posted && activeAgent.state.error && feedbackAllowed) {
+    const reason = deriveErrorReason(activeAgent.state.error);
     await postFailureSummary({
       octokit,
       owner: context.owner,
       repo: context.repo,
       prNumber: context.prNumber,
       reason,
-      model: config.modelId,
+      model: activeModelId,
       billing: summaryState.billing,
       reviewSha: input.prInfo.headSha,
     });
@@ -438,7 +497,7 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
       owner: context.owner,
       repo: context.repo,
       prNumber: context.prNumber,
-      model: config.modelId,
+      model: activeModelId,
       verdict,
       reason,
       billing: summaryState.billing,
@@ -516,4 +575,15 @@ function errorMessage(error: unknown): string {
     return (error as { message: string }).message;
   }
   return safeStringify(error);
+}
+
+const DEFAULT_FALLBACK_QUOTA_THRESHOLD = 3;
+
+function getFallbackQuotaThreshold(): number {
+  const raw = process.env.LLM_FALLBACK_AFTER_QUOTA_ERRORS;
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_FALLBACK_QUOTA_THRESHOLD;
 }

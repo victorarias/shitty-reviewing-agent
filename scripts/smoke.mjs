@@ -61,6 +61,9 @@ if (appPrivateKeyFile) {
 if (args.appId) process.env["INPUT_APP-ID"] = String(args.appId);
 if (args.appInstallationId) process.env["INPUT_APP-INSTALLATION-ID"] = String(args.appInstallationId);
 if (args.appPrivateKey) process.env["INPUT_APP-PRIVATE-KEY"] = args.appPrivateKey;
+if (args.fallbackProvider) process.env["INPUT_FALLBACK-PROVIDER"] = args.fallbackProvider;
+if (args.fallbackModel) process.env["INPUT_FALLBACK-MODEL"] = args.fallbackModel;
+if (args.fallbackApiKey) process.env["INPUT_FALLBACK-API-KEY"] = args.fallbackApiKey;
 
 const result = spawnSync("bun", [entryPath], {
   stdio: "inherit",

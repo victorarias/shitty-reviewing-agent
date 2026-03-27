@@ -2,7 +2,7 @@ import * as core from "@actions/core";
 import fs from "node:fs";
 import path from "node:path";
 import { readReviewerc } from "./reviewerc.js";
-import type { ActionConfig, CommentType, ReviewConfig, ToolCategory } from "../types.js";
+import type { ActionConfig, CommentType, ModelEndpoint, ReviewConfig, ToolCategory } from "../types.js";
 
 const DEFAULT_IGNORE_PATTERNS = "*.lock,*.generated.*";
 const DEFAULT_MAX_FILES = 50;
@@ -38,6 +38,9 @@ export function readConfig(): ActionConfig {
   const modelInput = getOptionalInput("model");
   const apiKeyInput = getOptionalInput("api-key") ?? "";
   const compactionModelInput = getOptionalInput("compaction-model");
+  const fallbackProviderInput = getOptionalInput("fallback-provider");
+  const fallbackModelInput = getOptionalInput("fallback-model");
+  const fallbackApiKeyInput = getOptionalInput("fallback-api-key");
   const maxFilesInput = getOptionalInput("max-files");
   const ignorePatternsInput = getOptionalInput("ignore-patterns");
   const debugInput = getOptionalInput("debug");
@@ -93,6 +96,29 @@ export function readConfig(): ActionConfig {
     throw new Error("api-key is required for non-Vertex providers. For Vertex AI, api-key is optional (ADC or key).");
   }
 
+  const fallbackDefaults = reviewDefaults.fallback;
+  const fallbackProviderRaw = fallbackProviderInput ?? fallbackDefaults?.provider;
+  const fallbackProvider = fallbackProviderRaw ? normalizeProvider(fallbackProviderRaw) : undefined;
+  const fallbackModelId = fallbackModelInput ?? fallbackDefaults?.model ?? undefined;
+  const fallbackApiKey = fallbackApiKeyInput ?? undefined;
+
+  if (fallbackProvider && !fallbackModelId) {
+    throw new Error("fallback-model is required when fallback-provider is set.");
+  }
+
+  let fallback: ModelEndpoint | undefined;
+  if (fallbackModelId) {
+    const resolvedProvider = fallbackProvider ?? provider;
+    const resolvedApiKey = fallbackApiKey ?? (apiKeyInput || "");
+    if (resolvedProvider !== provider && !fallbackApiKey) {
+      console.warn(
+        `[warn] fallback-provider (${resolvedProvider}) differs from primary provider (${provider}) ` +
+        `but no fallback-api-key is set. The primary api-key will be used, which may not work.`
+      );
+    }
+    fallback = { provider: resolvedProvider, modelId: fallbackModelId, apiKey: resolvedApiKey };
+  }
+
   const review: ReviewConfig = {
     provider,
     apiKey: apiKeyInput ?? "",
@@ -106,6 +132,7 @@ export function readConfig(): ActionConfig {
     temperature,
     allowPrToolsInReview: allowPrTools,
     experimentalPrExplainer,
+    fallback,
   };
 
   return {
