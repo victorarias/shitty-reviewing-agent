@@ -158,7 +158,16 @@
         "provider": { "type": "string", "minLength": 1 },
         "model": { "type": "string", "minLength": 1 },
         "reasoning": { "$ref": "#/$defs/reasoning" },
-        "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model"],
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "reviewExperimental": {

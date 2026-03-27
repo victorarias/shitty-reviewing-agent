@@ -20,6 +20,12 @@ export interface ChangedFile {
   previous_filename?: string;
 }
 
+export interface ModelEndpoint {
+  provider: string;
+  modelId: string;
+  apiKey: string;
+}
+
 export interface ReviewConfig {
   provider: string;
   apiKey: string;
@@ -33,6 +39,7 @@ export interface ReviewConfig {
   temperature?: number;
   allowPrToolsInReview?: boolean;
   experimentalPrExplainer?: boolean;
+  fallback?: ModelEndpoint;
 }
 
 export type ToolCategory =
@@ -67,6 +74,10 @@ export interface ReviewDefaults {
   model?: string;
   reasoning?: ReviewConfig["reasoning"];
   temperature?: number;
+  fallback?: {
+    provider?: string;
+    model?: string;
+  };
 }
 
 export interface CommandDefinition {
