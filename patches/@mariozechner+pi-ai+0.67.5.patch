@@ -15,12 +15,12 @@ diff --git a/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js b/node_module
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
-@@ -277,7 +277,7 @@
+@@ -278,7 +278,7 @@
      });
  }
  function resolveApiKey(options) {
 -    const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_API_KEY?.trim();
 +    const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_API_KEY?.trim() || process.env.VERTEX_AI_API_KEY?.trim();
-     if (!apiKey || isPlaceholderApiKey(apiKey)) {
+     if (!apiKey || apiKey === GCP_VERTEX_CREDENTIALS_MARKER || isPlaceholderApiKey(apiKey)) {
          return undefined;
      }
