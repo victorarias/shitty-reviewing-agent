@@ -19,6 +19,10 @@ export function createFakeAgent(options?: {
       subscribers.push(fn);
     },
     async prompt(_input: any) {
+      // Mirror pi-agent-core Agent.prompt(): a fresh run clears prior errorMessage
+      // so stale errors don't leak across reuse. Without this the fake diverges
+      // from the real Agent and review-runner's `state.errorMessage` checks lie.
+      state.errorMessage = null;
       for (const event of options?.events ?? []) {
         for (const handler of subscribers) {
           handler(event);
