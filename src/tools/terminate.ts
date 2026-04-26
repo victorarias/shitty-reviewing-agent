@@ -1,9 +1,9 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 const TerminateSchema = Type.Object({});
 
-export function createTerminateTool(): AgentTool<typeof TerminateSchema, { ok: boolean }> {
+export function createTerminateTool(): AgentTool<any> {
   return {
     name: "terminate",
     label: "Terminate",
@@ -13,5 +13,5 @@ export function createTerminateTool(): AgentTool<typeof TerminateSchema, { ok: b
       content: [{ type: "text", text: "Terminated." }],
       details: { ok: true },
     }),
-  };
+  } as unknown as AgentTool<any>;
 }

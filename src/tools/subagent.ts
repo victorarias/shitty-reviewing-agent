@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { createAgentWithCompaction, type AgentSetupOverrides } from "../agent/agent-setup.js";
 import type { ReviewConfig } from "../types.js";
@@ -38,8 +38,8 @@ function extractAssistantText(message: any): string {
     .join("");
 }
 
-export function createSubagentTool(params: SubagentToolParams): AgentTool<typeof SubagentSchema, SubagentDetails> {
-  return {
+export function createSubagentTool(params: SubagentToolParams): AgentTool<any> {
+  const tool = {
     name: "subagent",
     label: "Subagent",
     description: "Spawn an in-process subagent with a fresh context to complete a task.",
@@ -143,4 +143,5 @@ export function createSubagentTool(params: SubagentToolParams): AgentTool<typeof
       };
     },
   };
+  return tool as unknown as AgentTool<any>;
 }

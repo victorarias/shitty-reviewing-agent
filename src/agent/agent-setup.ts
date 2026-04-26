@@ -82,11 +82,11 @@ export function createAgentWithCompaction(params: {
   };
 
   const tools = shouldLogToolCalls
-    ? params.tools.map((tool) => {
-      const execute = tool.execute;
+    ? (params.tools as any[]).map((tool) => {
+      const execute = tool.execute as (...args: any[]) => any;
       return {
         ...tool,
-        execute: async (...args: Parameters<typeof execute>) => {
+        execute: async (...args: any[]) => {
           const startedAt = Date.now();
           console.log(`[tool] start ${tool.name}`);
           try {

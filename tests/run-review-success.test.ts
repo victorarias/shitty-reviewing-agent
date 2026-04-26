@@ -141,7 +141,7 @@ test("runReview executes experimental PR explainer when enabled", async () => {
   expect(calls[2].args.body).toContain("**Verdict:** Approve");
 });
 
-test("runReview retries when agent records state.error after prompt", async () => {
+test("runReview retries when agent records state.errorMessage after prompt", async () => {
   const { octokit, calls } = makeOctokitSpy();
   let promptCalls = 0;
 
@@ -151,14 +151,14 @@ test("runReview retries when agent records state.error after prompt", async () =
     if (!summaryTool) {
       throw new Error("Missing post_summary tool");
     }
-    const state = { error: null as unknown, messages: [] as any[] };
+    const state = { errorMessage: null as unknown, messages: [] as any[] };
     return {
       state,
       subscribe() {},
       async prompt() {
         promptCalls += 1;
         if (promptCalls === 1) {
-          state.error = { message: "temporary upstream failure", status: 503 };
+          state.errorMessage = "temporary upstream failure (503)";
           return;
         }
         await summaryTool.execute("", {
@@ -167,7 +167,7 @@ test("runReview retries when agent records state.error after prompt", async () =
         });
       },
       abort() {
-        state.error = state.error ?? "aborted";
+        state.errorMessage = state.errorMessage ?? "aborted";
       },
     };
   };

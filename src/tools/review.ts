@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";
@@ -147,12 +147,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
       keyFiles,
     };
   };
-  const listThreadsTool: AgentTool<typeof ListThreadsSchema, { threads: ReviewThreadInfo[] }> = {
+  const listThreadsTool = {
     name: "list_threads_for_location",
     label: "List review threads for location",
     description: "List existing review threads for a file/line (optionally filtered by side).",
     parameters: ListThreadsSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ListThreadsSchema>) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const threads = findThreadsAtLocation(threadsByLocation, params.path, params.line, side);
       return {
@@ -162,12 +162,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const commentTool: AgentTool<typeof CommentSchema, { id: number }> = {
+  const commentTool = {
     name: "comment",
     label: "Post inline comment",
     description: "Post an inline comment on a specific line in a file.",
     parameters: CommentSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof CommentSchema>) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const findingRef = normalizeFindingRef(params.finding_ref);
       if (params.finding_ref && !findingRef) {
@@ -318,12 +318,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const suggestTool: AgentTool<typeof SuggestSchema, { id: number }> = {
+  const suggestTool = {
     name: "suggest",
     label: "Post suggestion block",
     description: "Post a GitHub suggestion block (single-hunk fix).",
     parameters: SuggestSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof SuggestSchema>) => {
       const side = params.side as "LEFT" | "RIGHT" | undefined;
       const findingRef = normalizeFindingRef(params.finding_ref);
       if (params.finding_ref && !findingRef) {
@@ -475,12 +475,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const updateTool: AgentTool<typeof UpdateSchema, { id: number }> = {
+  const updateTool = {
     name: "update_comment",
     label: "Update PR comment",
     description: "Update an existing PR comment (review or issue comment).",
     parameters: UpdateSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof UpdateSchema>) => {
       const mode = deps.commentType ?? "both";
       const existing = commentById.get(params.comment_id);
       const body = ensureBotMarker(params.body);
@@ -549,12 +549,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const replyTool: AgentTool<typeof ReplySchema, { id: number }> = {
+  const replyTool = {
     name: "reply_comment",
     label: "Reply to review comment",
     description: "Reply to an existing review comment thread.",
     parameters: ReplySchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReplySchema>) => {
       const response = await safeCall(() =>
         deps.octokit.rest.pulls.createReplyForReviewComment({
           owner: deps.owner,
@@ -571,12 +571,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const resolveTool: AgentTool<typeof ResolveSchema, { id: number }> = {
+  const resolveTool = {
     name: "resolve_thread",
     label: "Resolve review thread",
     description: "Reply with an explanation and resolve a review thread created by this bot.",
     parameters: ResolveSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ResolveSchema>) => {
       const explanation = params.body?.trim();
       if (!explanation || explanation === BOT_COMMENT_MARKER) {
         return {
@@ -651,12 +651,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const reportFindingTool: AgentTool<typeof ReportFindingSchema, { count: number }> = {
+  const reportFindingTool = {
     name: "report_finding",
     label: "Report finding",
     description: "Record a structured finding for deterministic summary rendering.",
     parameters: ReportFindingSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReportFindingSchema>) => {
       const findingRef = normalizeFindingRef(params.finding_ref);
       const category = normalizeSummaryCategory(params.category);
       const severity = normalizeSummarySeverity(params.severity);
@@ -732,12 +732,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const reportKeyFileTool: AgentTool<typeof ReportKeyFileSchema, { count: number }> = {
+  const reportKeyFileTool = {
     name: "report_key_file",
     label: "Report key file",
     description: "Record key-file context for summary rendering.",
     parameters: ReportKeyFileSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReportKeyFileSchema>) => {
       const path = params.path.trim();
       if (!path) {
         return {
@@ -768,12 +768,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const reportObservationTool: AgentTool<typeof ReportObservationSchema, { count: number }> = {
+  const reportObservationTool = {
     name: "report_observation",
     label: "Report observation",
     description: "Record non-issue context that should appear in summary key findings.",
     parameters: ReportObservationSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReportObservationSchema>) => {
       const title = params.title.trim();
       if (!title) {
         return {
@@ -815,12 +815,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const setSummaryModeTool: AgentTool<typeof SetSummaryModeSchema, { mode: SummaryMode }> = {
+  const setSummaryModeTool = {
     name: "set_summary_mode",
     label: "Set summary mode",
     description: "Escalate summary verbosity mode when risk is higher than deterministic scope suggests.",
     parameters: SetSummaryModeSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof SetSummaryModeSchema>) => {
       const requestedMode = params.mode as SummaryMode;
       const baseMode = deps.summaryPolicy?.modeCandidate ?? "standard";
       const currentMode = summaryModeOverride ?? baseMode;
@@ -857,12 +857,12 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     },
   };
 
-  const summaryTool: AgentTool<typeof SummarySchema, { id: number }> = {
+  const summaryTool = {
     name: "post_summary",
     label: "Post summary",
     description: "Post the final review summary as a PR comment using structured findings.",
     parameters: SummarySchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof SummarySchema>) => {
       const legacyBody = (params as Record<string, unknown>).body;
       if (typeof legacyBody === "string" && legacyBody.trim()) {
         return {
@@ -946,7 +946,7 @@ export function createReviewTools(deps: ReviewToolDeps): AgentTool<any>[] {
     setSummaryModeTool,
     summaryTool,
     createReviewTerminateTool(() => deps.summaryPosted?.() ?? false),
-  ];
+  ] as unknown as AgentTool<any>[];
 }
 
 const ReviewTerminateSchema = Type.Object({
@@ -957,13 +957,13 @@ const ReviewTerminateSchema = Type.Object({
 
 function createReviewTerminateTool(
   isSummaryPosted: () => boolean
-): AgentTool<typeof ReviewTerminateSchema, { ok: boolean }> {
-  return {
+): AgentTool<any> {
+  const tool = {
     name: "terminate",
     label: "Terminate",
     description: "End the review run. Validates that post_summary has been called first.",
     parameters: ReviewTerminateSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReviewTerminateSchema>) => {
       if (!isSummaryPosted() && !params?.force) {
         return {
           content: [{
@@ -979,6 +979,7 @@ function createReviewTerminateTool(
       };
     },
   };
+  return tool as unknown as AgentTool<any>;
 }
 
 const CommentSchema = Type.Object({

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import { minimatch } from "minimatch";
@@ -33,12 +33,12 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
     branch: buildScheduleBranchName(deps.jobId, deps.commandIds),
   };
 
-  const pushTool: AgentTool<typeof PushPrSchema, { branch: string }> = {
+  const pushTool = {
     name: "push_pr",
     label: "Push PR",
     description: "Push the committed branch and open or update a pull request.",
     parameters: PushPrSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof PushPrSchema>) => {
       const branch = resolveBranch(params.branch, state.branch);
       await assertCleanWorkingTree(deps.repoRoot);
       await assertBranchExists(deps.repoRoot, branch);
@@ -118,7 +118,7 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
     },
   };
 
-  return [pushTool];
+  return [pushTool] as unknown as AgentTool<any>[];
 }
 
 const SCHEDULE_BILLING_MARKER = "<!-- sri:schedule-billing -->";

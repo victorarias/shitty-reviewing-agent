@@ -374,11 +374,10 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
   }
 
   const promptAgent = async (agent: AgentLike) => {
-    clearAgentError(agent);
     await agent.prompt(userPrompt);
-    if (!summaryState.posted && agent.state.error) {
-      log("agent state error after prompt", safeStringify(agent.state.error));
-      throw normalizeAgentError(agent.state.error);
+    if (!summaryState.posted && agent.state.errorMessage) {
+      log("agent state error after prompt", safeStringify(agent.state.errorMessage));
+      throw normalizeAgentError(agent.state.errorMessage);
     }
   };
 
@@ -458,18 +457,18 @@ export async function runReview(input: ReviewRunInput): Promise<void> {
     }
   }
 
-  if (activeAgent.state.error) {
-    log(`agent error: ${activeAgent.state.error}`);
+  if (activeAgent.state.errorMessage) {
+    log(`agent error: ${activeAgent.state.errorMessage}`);
   }
 
-  if (isCancellationError(activeAgent.state.error) && !summaryState.terminatedByTool) {
+  if (isCancellationError(activeAgent.state.errorMessage) && !summaryState.terminatedByTool) {
     summaryState.abortedByCancellation = true;
     log("run canceled; skipping summary");
     return;
   }
 
-  if (!summaryState.posted && activeAgent.state.error && feedbackAllowed) {
-    const reason = deriveErrorReason(activeAgent.state.error);
+  if (!summaryState.posted && activeAgent.state.errorMessage && feedbackAllowed) {
+    const reason = deriveErrorReason(activeAgent.state.errorMessage);
     await postFailureSummary({
       octokit,
       owner: context.owner,
@@ -533,12 +532,6 @@ function isCancellationError(error: unknown): boolean {
     ? error
     : String((error as { message?: unknown })?.message ?? error);
   return /operation was canceled|cancell?ed|abort(ed)?/i.test(message);
-}
-
-function clearAgentError(agent: AgentLike): void {
-  if (agent.state && "error" in agent.state) {
-    agent.state.error = null;
-  }
 }
 
 function normalizeAgentError(error: unknown): Error {

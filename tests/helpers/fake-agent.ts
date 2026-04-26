@@ -9,8 +9,8 @@ export function createFakeAgent(options?: {
   abortError?: string | null;
 }) {
   const subscribers: Array<(event: FakeAgentEvent) => void> = [];
-  const state = {
-    error: options?.error ?? null,
+  const state: { errorMessage: string | null; messages: any[] } = {
+    errorMessage: options?.error ?? null,
     messages: [],
   };
   return {
@@ -30,11 +30,11 @@ export function createFakeAgent(options?: {
     },
     abort() {
       if (options?.abortError === undefined) {
-        state.error = state.error ?? "aborted";
+        state.errorMessage = state.errorMessage ?? "aborted";
         return;
       }
       if (options.abortError !== null) {
-        state.error = state.error ?? options.abortError;
+        state.errorMessage = state.errorMessage ?? options.abortError;
       }
     },
   };

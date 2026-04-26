@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { getOctokit } from "@actions/github";
 import type { ChangedFile, PullRequestInfo } from "../types.js";
@@ -29,7 +29,7 @@ interface GithubToolDeps {
 }
 
 export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
-  const getPrInfo: AgentTool<typeof PrInfoSchema, PullRequestInfo> = {
+  const getPrInfo = {
     name: "get_pr_info",
     label: "Get PR info",
     description: "Get PR title, description, author, base/head branches, and SHAs.",
@@ -64,7 +64,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  const getChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
+  const getChangedFiles = {
     name: "get_changed_files",
     label: "Get changed files",
     description: "List files changed in the PR (path + status). Uses the scoped file list by default.",
@@ -97,7 +97,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  const getFullChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
+  const getFullChangedFiles = {
     name: "get_full_changed_files",
     label: "Get full changed files",
     description: "List all files changed in the PR (ignores scoped filtering).",
@@ -130,12 +130,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  const getDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
+  const getDiff = {
     name: "get_diff",
     label: "Get diff",
     description: "Get diff for a specific file in the PR (scoped by default).",
     parameters: DiffSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof DiffSchema>) => {
       if (!deps.cache.changedFiles) {
         const files = await safeCall(() =>
           deps.octokit.paginate(deps.octokit.rest.pulls.listFiles, {
@@ -166,12 +166,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  const getFullDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
+  const getFullDiff = {
     name: "get_full_diff",
     label: "Get full diff",
     description: "Get diff for a specific file using the full PR file list.",
     parameters: DiffSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof DiffSchema>) => {
       if (!deps.cache.fullChangedFiles) {
         const files = await safeCall(() =>
           deps.octokit.paginate(deps.octokit.rest.pulls.listFiles, {
@@ -202,7 +202,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  const getReviewContext: AgentTool<typeof ReviewContextSchema, ReviewContextPayload> = {
+  const getReviewContext = {
     name: "get_review_context",
     label: "Get review context",
     description: "Get prior review summaries, review threads, PR comment replies, and commits since the last review summary.",
@@ -340,7 +340,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [getPrInfo, getChangedFiles, getFullChangedFiles, getDiff, getFullDiff, getReviewContext];
+  return [getPrInfo, getChangedFiles, getFullChangedFiles, getDiff, getFullDiff, getReviewContext] as unknown as AgentTool<any>[];
 }
 
 const PrInfoSchema = Type.Object({});

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import fg from "fast-glob";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 const DEFAULT_EXCLUDES = ["**/.git/**", "**/node_modules/**", "**/dist/**", "**/coverage/**"];
@@ -26,12 +26,12 @@ function looksBinary(buffer: Buffer): boolean {
 }
 
 export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
-  const readTool: AgentTool<typeof ReadSchema, { path: string; truncated: boolean }> = {
+  const readTool = {
     name: "read",
     label: "Read file",
     description: "Read a file from the repo. Optionally specify start/end line numbers.",
     parameters: ReadSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ReadSchema>) => {
       const target = ensureInsideRoot(repoRoot, params.path);
       const raw = await fs.readFile(target);
       if (looksBinary(raw)) {
@@ -70,12 +70,12 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  const lsTool: AgentTool<typeof LsSchema, { entries: string[]; longEntries?: LsLongEntry[] }> = {
+  const lsTool = {
     name: "ls",
     label: "List directory",
     description: "List directory contents. Set long=true for ls -l style metadata in details.longEntries.",
     parameters: LsSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof LsSchema>) => {
       const target = ensureInsideRoot(repoRoot, params.path ?? ".");
       const entries = await fs.readdir(target);
       if (!params.long) {
@@ -127,12 +127,12 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  const findTool: AgentTool<typeof FindSchema, { files: string[] }> = {
+  const findTool = {
     name: "find",
     label: "Find files",
     description: "Find files by glob pattern.",
     parameters: FindSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof FindSchema>) => {
       const matches = await fg(params.pattern, {
         cwd: repoRoot,
         onlyFiles: true,
@@ -148,12 +148,12 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  const grepTool: AgentTool<typeof GrepSchema, { matches: GrepMatch[] }> = {
+  const grepTool = {
     name: "grep",
     label: "Search text",
     description: "Search files for a regex pattern.",
     parameters: GrepSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof GrepSchema>) => {
       const regex = new RegExp(params.pattern, params.flags ?? "g");
       const paths = params.paths
         ? params.paths.split(",").map((p) => p.trim()).filter(Boolean)
@@ -203,17 +203,12 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  const validateMermaidTool: AgentTool<typeof ValidateMermaidSchema, {
-    valid: boolean;
-    diagramType: string | null;
-    errors: string[];
-    warnings: string[];
-  }> = {
+  const validateMermaidTool = {
     name: "validate_mermaid",
     label: "Validate Mermaid diagram",
     description: "Validate Mermaid syntax using Mermaid's parser plus lightweight structural checks.",
     parameters: ValidateMermaidSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params: Static<typeof ValidateMermaidSchema>) => {
       const result = await validateMermaidDiagram(params.diagram);
       const summary = [
         `valid: ${result.valid}`,
@@ -228,7 +223,7 @@ export function createReadOnlyTools(repoRoot: string): AgentTool<any>[] {
     },
   };
 
-  return [readTool, grepTool, findTool, lsTool, validateMermaidTool];
+  return [readTool, grepTool, findTool, lsTool, validateMermaidTool] as unknown as AgentTool<any>[];
 }
 
 const ReadSchema = Type.Object({
