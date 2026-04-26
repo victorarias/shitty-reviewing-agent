@@ -1,5 +1,6 @@
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import { GoogleGenAI } from "@google/genai";
 
 interface WebSearchDeps {
@@ -10,12 +11,11 @@ interface WebSearchDeps {
 }
 
 export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
-  const tool = {
+  const tool = defineTool(WebSearchSchema)({
     name: "web_search",
     label: "Web search",
     description: "Search the web for up-to-date information and return sources.",
-    parameters: WebSearchSchema,
-    execute: async (_id: string, params: Static<typeof WebSearchSchema>) => {
+    execute: async (_id, params) => {
       if (!deps.enabled) {
         return {
           content: [{ type: "text", text: "Web search is only supported with Google/Gemini or Vertex AI providers." }],
@@ -87,9 +87,9 @@ export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
         details: { queries, sources: limitedSources },
       };
     },
-  };
+  });
 
-  return [tool] as unknown as AgentTool<any>[];
+  return [tool];
 }
 
 const WebSearchSchema = Type.Object({

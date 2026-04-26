@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import type { IncludeExclude } from "../types.js";
 import { assertWriteAllowed, normalizePath } from "../app/write-scope.js";
 
@@ -30,12 +31,11 @@ function assertRelativePath(target: string): void {
 }
 
 export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): AgentTool<any>[] {
-  const writeFileTool = {
+  const writeFileTool = defineTool(WriteFileSchema)({
     name: "write_file",
     label: "Write file",
     description: "Write a file to disk (overwrites).",
-    parameters: WriteFileSchema,
-    execute: async (_id: string, params: Static<typeof WriteFileSchema>) => {
+    execute: async (_id, params) => {
       const rawPath = params.path;
       assertRelativePath(rawPath);
       const targetPath = normalizePath(rawPath);
@@ -49,14 +49,13 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
         details: { path: params.path, ...summary },
       };
     },
-  };
+  });
 
-  const deleteFileTool = {
+  const deleteFileTool = defineTool(DeleteFileSchema)({
     name: "delete_file",
     label: "Delete file",
     description: "Delete a file from disk.",
-    parameters: DeleteFileSchema,
-    execute: async (_id: string, params: Static<typeof DeleteFileSchema>) => {
+    execute: async (_id, params) => {
       const rawPath = params.path;
       assertRelativePath(rawPath);
       const targetPath = normalizePath(rawPath);
@@ -69,14 +68,13 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
         details: { path: params.path, ...summary },
       };
     },
-  };
+  });
 
-  const mkdirTool = {
+  const mkdirTool = defineTool(MkdirSchema)({
     name: "mkdir",
     label: "Create directory",
     description: "Create a directory (and parents if needed).",
-    parameters: MkdirSchema,
-    execute: async (_id: string, params: Static<typeof MkdirSchema>) => {
+    execute: async (_id, params) => {
       const rawPath = params.path;
       assertRelativePath(rawPath);
       const targetPath = normalizePath(rawPath);
@@ -89,14 +87,13 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
         details: { path: params.path, ...summary },
       };
     },
-  };
+  });
 
-  const applyPatchTool = {
+  const applyPatchTool = defineTool(ApplyPatchSchema)({
     name: "apply_patch",
     label: "Apply patch",
     description: "Apply a unified diff patch.",
-    parameters: ApplyPatchSchema,
-    execute: async (_id: string, params: Static<typeof ApplyPatchSchema>) => {
+    execute: async (_id, params) => {
       await runGitApply(repoRoot, params.patch, scope);
       const summary = await getRepoSummary(repoRoot);
       return {
@@ -104,9 +101,9 @@ export function createRepoWriteTools(repoRoot: string, scope?: IncludeExclude): 
         details: { applied: true, ...summary },
       };
     },
-  };
+  });
 
-  return [writeFileTool, deleteFileTool, mkdirTool, applyPatchTool] as unknown as AgentTool<any>[];
+  return [writeFileTool, deleteFileTool, mkdirTool, applyPatchTool];
 }
 
 async function runGitApply(repoRoot: string, patch: string, scope?: IncludeExclude): Promise<void> {

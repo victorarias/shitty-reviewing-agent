@@ -81,27 +81,8 @@ export function createAgentWithCompaction(params: {
     }
   };
 
-  const tools = shouldLogToolCalls
-    ? (params.tools as any[]).map((tool) => {
-      const execute = tool.execute as (...args: any[]) => any;
-      return {
-        ...tool,
-        execute: async (...args: any[]) => {
-          const startedAt = Date.now();
-          console.log(`[tool] start ${tool.name}`);
-          try {
-            const result = await execute(...args);
-            const durationMs = Date.now() - startedAt;
-            console.log(`[tool] end ${tool.name} ${durationMs}ms`);
-            return result;
-          } catch (error) {
-            const durationMs = Date.now() - startedAt;
-            console.log(`[tool] error ${tool.name} ${durationMs}ms`);
-            throw error;
-          }
-        },
-      } as AgentTool<any>;
-    })
+  const tools: AgentTool<any>[] = shouldLogToolCalls
+    ? (params.tools as unknown as OpaqueTool[]).map((tool) => wrapToolWithLogging(tool))
     : params.tools;
 
   const transformContext = async (messages: any[]) => {
@@ -177,3 +158,31 @@ type AgentLike = {
   prompt: (input: any) => Promise<void>;
   abort: () => void;
 };
+
+interface OpaqueTool {
+  name: string;
+  label: string;
+  description: string;
+  parameters: unknown;
+  prepareArguments?: unknown;
+  executionMode?: unknown;
+  execute: (...args: unknown[]) => Promise<unknown>;
+}
+
+function wrapToolWithLogging(tool: OpaqueTool): AgentTool<any> {
+  return {
+    ...tool,
+    execute: async (...args: unknown[]) => {
+      const startedAt = Date.now();
+      console.log(`[tool] start ${tool.name}`);
+      try {
+        const result = await tool.execute(...args);
+        console.log(`[tool] end ${tool.name} ${Date.now() - startedAt}ms`);
+        return result;
+      } catch (error) {
+        console.log(`[tool] error ${tool.name} ${Date.now() - startedAt}ms`);
+        throw error;
+      }
+    },
+  } as unknown as AgentTool<any>;
+}
