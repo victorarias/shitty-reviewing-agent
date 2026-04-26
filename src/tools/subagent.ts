@@ -1,7 +1,8 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { createAgentWithCompaction, type AgentSetupOverrides } from "../agent/agent-setup.js";
 import type { ReviewConfig } from "../types.js";
+import { defineTool } from "./define-tool.js";
 
 const SubagentSchema = Type.Object({
   task: Type.String({ description: "Task to delegate to a subagent." }),
@@ -38,17 +39,16 @@ function extractAssistantText(message: any): string {
     .join("");
 }
 
-export function createSubagentTool(params: SubagentToolParams): AgentTool<typeof SubagentSchema, SubagentDetails> {
-  return {
+export function createSubagentTool(params: SubagentToolParams): AgentTool<any> {
+  return defineTool(SubagentSchema)({
     name: "subagent",
     label: "Subagent",
     description: "Spawn an in-process subagent with a fresh context to complete a task.",
-    parameters: SubagentSchema,
     execute: async (
-      _id: string,
-      toolParams: { task: string },
-      signal?: AbortSignal,
-      onUpdate?: (partial: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void
+      _id,
+      toolParams,
+      signal,
+      onUpdate,
     ) => {
 
       const contextState = {
@@ -142,5 +142,5 @@ export function createSubagentTool(params: SubagentToolParams): AgentTool<typeof
         details: { output, toolCalls, aborted: false },
       };
     },
-  };
+  });
 }

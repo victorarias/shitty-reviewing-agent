@@ -1,5 +1,6 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,12 +15,11 @@ export function createGitHistoryTools(
 ): AgentTool<any>[] {
   const allowWrite = options.allowWrite ?? false;
   const writeScope = options.writeScope;
-  const gitLogTool: AgentTool<typeof GitLogSchema, { commits: GitCommit[] }> = {
+  const gitLogTool = defineTool(GitLogSchema)({
     name: "git_log",
     label: "Git log",
     description: "List commits within a time window.",
-    parameters: GitLogSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params) => {
       const since = `${params.sinceHours} hours ago`;
       const args = ["log", `--since=${since}`, "--date=iso", "--pretty=format:%H\t%an\t%ad\t%s"];
       if (params.paths && params.paths.length > 0) {
@@ -39,14 +39,13 @@ export function createGitHistoryTools(
         details: { commits },
       };
     },
-  };
+  });
 
-  const gitDiffRangeTool: AgentTool<typeof GitDiffRangeSchema, { diff: string }> = {
+  const gitDiffRangeTool = defineTool(GitDiffRangeSchema)({
     name: "git_diff_range",
     label: "Git diff range",
     description: "Get diff between two refs.",
-    parameters: GitDiffRangeSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params) => {
       const args = ["diff", `${params.from}..${params.to}`];
       if (params.paths && params.paths.length > 0) {
         args.push("--", ...params.paths);
@@ -57,14 +56,13 @@ export function createGitHistoryTools(
         details: { diff },
       };
     },
-  };
+  });
 
-  const gitTool: AgentTool<typeof GitCommandSchema, { stdout: string; args: string[] }> = {
+  const gitTool = defineTool(GitCommandSchema)({
     name: "git",
     label: "Git",
     description: "Run git subcommands. Args must start with the subcommand.",
-    parameters: GitCommandSchema,
-    execute: async (_id, params) => {
+    execute: async (_id: string, params) => {
       validateGitArgs(params.args, allowWrite, repoRoot, writeScope);
       const args = ["--no-pager", ...params.args];
       const stdout = await runGit(repoRoot, args);
@@ -74,7 +72,7 @@ export function createGitHistoryTools(
         details: { stdout, args: params.args },
       };
     },
-  };
+  });
 
   return [gitLogTool, gitDiffRangeTool, gitTool];
 }

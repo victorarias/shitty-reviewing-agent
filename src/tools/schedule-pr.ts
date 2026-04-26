@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import type { getOctokit } from "@actions/github";
 import { minimatch } from "minimatch";
 import type { IncludeExclude, ScheduleConfig } from "../types.js";
@@ -33,11 +34,10 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
     branch: buildScheduleBranchName(deps.jobId, deps.commandIds),
   };
 
-  const pushTool: AgentTool<typeof PushPrSchema, { branch: string }> = {
+  const pushTool = defineTool(PushPrSchema)({
     name: "push_pr",
     label: "Push PR",
     description: "Push the committed branch and open or update a pull request.",
-    parameters: PushPrSchema,
     execute: async (_id, params) => {
       const branch = resolveBranch(params.branch, state.branch);
       await assertCleanWorkingTree(deps.repoRoot);
@@ -116,7 +116,7 @@ export function createSchedulePrTools(deps: SchedulePrDeps): AgentTool<any>[] {
         details: { branch },
       };
     },
-  };
+  });
 
   return [pushTool];
 }

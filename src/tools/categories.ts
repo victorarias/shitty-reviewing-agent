@@ -40,10 +40,10 @@ export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {
 export function filterToolsByAllowlist(tools: AgentTool<any>[], allowlist?: ToolCategory[]): AgentTool<any>[] {
   if (!allowlist || allowlist.length === 0) return tools;
   const allowed = new Set(allowlist);
-  return tools.filter((tool) => {
-    if (tool.name === "terminate") return true;
-    const category = TOOL_CATEGORY_BY_NAME[tool.name];
-    if (!category) return false;
-    return allowed.has(category);
-  });
+  const isAllowed = (name: string): boolean => {
+    if (name === "terminate") return true;
+    const category = TOOL_CATEGORY_BY_NAME[name];
+    return category !== undefined && allowed.has(category);
+  };
+  return (tools as ReadonlyArray<{ name: string }>).filter((tool) => isAllowed(tool.name)) as AgentTool<any>[];
 }

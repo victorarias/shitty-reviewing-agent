@@ -1,5 +1,6 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import type { getOctokit } from "@actions/github";
 import type { ChangedFile, PullRequestInfo } from "../types.js";
 import { fetchReviewThreadsGraphQL } from "../github-api.js";
@@ -29,11 +30,10 @@ interface GithubToolDeps {
 }
 
 export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
-  const getPrInfo: AgentTool<typeof PrInfoSchema, PullRequestInfo> = {
+  const getPrInfo = defineTool(PrInfoSchema)({
     name: "get_pr_info",
     label: "Get PR info",
     description: "Get PR title, description, author, base/head branches, and SHAs.",
-    parameters: PrInfoSchema,
     execute: async () => {
       if (!deps.cache.prInfo) {
         const response = await safeCall(() =>
@@ -62,13 +62,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: deps.cache.prInfo,
       };
     },
-  };
+  });
 
-  const getChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
+  const getChangedFiles = defineTool(ChangedFilesSchema)({
     name: "get_changed_files",
     label: "Get changed files",
     description: "List files changed in the PR (path + status). Uses the scoped file list by default.",
-    parameters: ChangedFilesSchema,
     execute: async () => {
       if (!deps.cache.changedFiles) {
         const files = await safeCall(() =>
@@ -95,13 +94,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: { files: deps.cache.changedFiles },
       };
     },
-  };
+  });
 
-  const getFullChangedFiles: AgentTool<typeof ChangedFilesSchema, { files: ChangedFile[] }> = {
+  const getFullChangedFiles = defineTool(ChangedFilesSchema)({
     name: "get_full_changed_files",
     label: "Get full changed files",
     description: "List all files changed in the PR (ignores scoped filtering).",
-    parameters: ChangedFilesSchema,
     execute: async () => {
       if (!deps.cache.fullChangedFiles) {
         const files = await safeCall(() =>
@@ -128,13 +126,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: { files: deps.cache.fullChangedFiles },
       };
     },
-  };
+  });
 
-  const getDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
+  const getDiff = defineTool(DiffSchema)({
     name: "get_diff",
     label: "Get diff",
     description: "Get diff for a specific file in the PR (scoped by default).",
-    parameters: DiffSchema,
     execute: async (_id, params) => {
       if (!deps.cache.changedFiles) {
         const files = await safeCall(() =>
@@ -164,13 +161,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: { path: params.path, patch },
       };
     },
-  };
+  });
 
-  const getFullDiff: AgentTool<typeof DiffSchema, { path: string; patch?: string }> = {
+  const getFullDiff = defineTool(DiffSchema)({
     name: "get_full_diff",
     label: "Get full diff",
     description: "Get diff for a specific file using the full PR file list.",
-    parameters: DiffSchema,
     execute: async (_id, params) => {
       if (!deps.cache.fullChangedFiles) {
         const files = await safeCall(() =>
@@ -200,13 +196,12 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: { path: params.path, patch },
       };
     },
-  };
+  });
 
-  const getReviewContext: AgentTool<typeof ReviewContextSchema, ReviewContextPayload> = {
+  const getReviewContext = defineTool(ReviewContextSchema)({
     name: "get_review_context",
     label: "Get review context",
     description: "Get prior review summaries, review threads, PR comment replies, and commits since the last review summary.",
-    parameters: ReviewContextSchema,
     execute: async () => {
       if (!deps.cache.reviewContext) {
         const [comments] = await Promise.all([
@@ -338,7 +333,7 @@ export function createGithubTools(deps: GithubToolDeps): AgentTool<any>[] {
         details: deps.cache.reviewContext,
       };
     },
-  };
+  });
 
   return [getPrInfo, getChangedFiles, getFullChangedFiles, getDiff, getFullDiff, getReviewContext];
 }

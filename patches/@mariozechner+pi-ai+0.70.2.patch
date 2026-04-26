@@ -1,22 +1,23 @@
 diff --git a/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js b/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
 --- a/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/env-api-keys.js
-@@ -56,8 +56,8 @@
-     // Vertex AI supports either an explicit API key or Application Default Credentials
-     // Auth is configured via `gcloud auth application-default login`
-     if (provider === "google-vertex") {
--        if (process.env.GOOGLE_CLOUD_API_KEY) {
--            return process.env.GOOGLE_CLOUD_API_KEY;
-+        if (process.env.GOOGLE_CLOUD_API_KEY || process.env.VERTEX_AI_API_KEY) {
-+            return process.env.GOOGLE_CLOUD_API_KEY || process.env.VERTEX_AI_API_KEY;
-         }
-         const hasCredentials = hasVertexAdcCredentials();
-         const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+@@ -52,6 +52,11 @@
+     if (provider === "anthropic") {
+         return ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
+     }
++    // Vertex AI accepts an explicit API key from either GOOGLE_CLOUD_API_KEY
++    // (the upstream default) or VERTEX_AI_API_KEY (legacy/secondary alias).
++    if (provider === "google-vertex") {
++        return ["GOOGLE_CLOUD_API_KEY", "VERTEX_AI_API_KEY"];
++    }
+     const envMap = {
+         openai: "OPENAI_API_KEY",
+         "azure-openai-responses": "AZURE_OPENAI_API_KEY",
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
-@@ -278,7 +278,7 @@
-     });
+@@ -299,7 +299,7 @@
+     }
  }
  function resolveApiKey(options) {
 -    const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_API_KEY?.trim();

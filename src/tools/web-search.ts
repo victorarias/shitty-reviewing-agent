@@ -1,5 +1,6 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { defineTool } from "./define-tool.js";
 import { GoogleGenAI } from "@google/genai";
 
 interface WebSearchDeps {
@@ -10,11 +11,10 @@ interface WebSearchDeps {
 }
 
 export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
-  const tool: AgentTool<typeof WebSearchSchema, { queries: string[]; sources: SearchSource[] }> = {
+  const tool = defineTool(WebSearchSchema)({
     name: "web_search",
     label: "Web search",
     description: "Search the web for up-to-date information and return sources.",
-    parameters: WebSearchSchema,
     execute: async (_id, params) => {
       if (!deps.enabled) {
         return {
@@ -87,7 +87,7 @@ export function createWebSearchTool(deps: WebSearchDeps): AgentTool<any>[] {
         details: { queries, sources: limitedSources },
       };
     },
-  };
+  });
 
   return [tool];
 }
