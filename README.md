@@ -30,7 +30,7 @@ jobs:
 
 ## Inputs
 
-- `provider` (required unless set in `.reviewerc`): LLM provider supported by `@mariozechner/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
+- `provider` (required unless set in `.reviewerc`): LLM provider supported by `@earendil-works/pi-ai` (e.g., google, anthropic, openai, openrouter). Aliases: `gemini` → `google`, `vertex`/`vertex-ai` → `google-vertex`.
 - `api-key` (required unless using Vertex AI): API key for the provider. For Vertex AI, api-key is optional (ADC or key). When using ADC, set `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) and `GOOGLE_CLOUD_LOCATION`. For the Gemini API provider (`google`), use `GEMINI_API_KEY` locally/CI.
 - `model` (required unless set in `.reviewerc`): Model name
 - `compaction-model` (optional): Model used for context compaction summaries. Defaults to `gemini-3-flash-preview` when provider is `google`, otherwise uses `model`.
@@ -103,7 +103,7 @@ Behavior when enabled:
 
 ### Add reviewer-latest to CI
 
-If you want CI to run the reviewer with this repository's patched dependencies (for example patched `@mariozechner/pi-ai`) on internal PRs, add a non-blocking job like this:
+If you want CI to run the reviewer with this repository's patched dependencies (for example patched `@earendil-works/pi-ai`) on internal PRs, add a non-blocking job like this:
 
 ```yaml
 reviewer-latest:
@@ -132,7 +132,7 @@ reviewer-latest:
       run: bun install --frozen-lockfile
     - name: Verify pi-ai patch is active
       if: ${{ env.VERTEX_AI_API_KEY != '' }}
-      run: grep -n "VERTEX_AI_API_KEY" node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+      run: grep -n "VERTEX_AI_API_KEY" node_modules/@earendil-works/pi-ai/dist/env-api-keys.js
     - name: Run reviewer from source (patched dependencies)
       if: ${{ env.VERTEX_AI_API_KEY != '' }}
       env:

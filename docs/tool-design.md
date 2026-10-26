@@ -8,7 +8,7 @@ Every tool in pi-agent-core has these components:
 
 ```typescript
 import { Type, Static } from "@sinclair/typebox";
-import { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 
 const myTool: AgentTool<typeof MyParams> = {
   name: "my_tool",           // Identifier the LLM uses

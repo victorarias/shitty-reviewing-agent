@@ -1,5 +1,5 @@
-import { calculateCost, streamSimple, getModel } from "@mariozechner/pi-ai";
-import type { Usage } from "@mariozechner/pi-ai";
+import { calculateCost, streamSimple, getModel } from "@earendil-works/pi-ai/compat";
+import type { Usage } from "@earendil-works/pi-ai/compat";
 import { buildSystemPrompt, buildUserPrompt } from "../prompts/review.js";
 import { createGithubTools, createReadOnlyTools, createReviewTools, createSubagentTool, createWebSearchTool, RateLimitError } from "../tools/index.js";
 import { filterToolsByAllowlist } from "../tools/categories.js";

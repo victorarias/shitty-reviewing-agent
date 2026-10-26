@@ -1,7 +1,7 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { streamSimple } from "@mariozechner/pi-ai";
-import type { Usage } from "@mariozechner/pi-ai";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { Usage } from "@earendil-works/pi-ai/compat";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ChangedFile, PullRequestInfo, ReviewConfig } from "../types.js";
 import type { ThinkingLevel } from "./model.js";
 

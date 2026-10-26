@@ -1,6 +1,6 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel, streamSimple } from "@mariozechner/pi-ai";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ReviewConfig } from "../types.js";
 import {
   buildContextSummaryMessage,

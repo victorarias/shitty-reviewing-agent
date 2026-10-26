@@ -84,7 +84,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Verify pi-ai patch is active
         if: ${{ env.VERTEX_AI_API_KEY != '' }}
-        run: grep -n "VERTEX_AI_API_KEY" node_modules/@mariozechner/pi-ai/dist/providers/google-vertex.js
+        run: grep -n "VERTEX_AI_API_KEY" node_modules/@earendil-works/pi-ai/dist/env-api-keys.js
       - name: Run reviewer from source (patched dependencies)
         if: ${{ env.VERTEX_AI_API_KEY != '' }}
         env:

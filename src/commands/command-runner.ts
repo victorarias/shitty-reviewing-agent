@@ -1,5 +1,5 @@
-import { calculateCost } from "@mariozechner/pi-ai";
-import type { Usage } from "@mariozechner/pi-ai";
+import { calculateCost } from "@earendil-works/pi-ai/compat";
+import type { Usage } from "@earendil-works/pi-ai/compat";
 import { minimatch } from "minimatch";
 import type {
   ChangedFile,

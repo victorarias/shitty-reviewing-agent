@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { Type } from "typebox";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { defineTool } from "./define-tool.js";
 import type { IncludeExclude } from "../types.js";
 import { assertWriteAllowed, normalizePath } from "../app/write-scope.js";

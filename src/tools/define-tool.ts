@@ -3,7 +3,7 @@ import type {
   AgentTool,
   AgentToolResult,
   AgentToolUpdateCallback,
-} from "@mariozechner/pi-agent-core";
+} from "@earendil-works/pi-agent-core";
 
 /**
  * Build an AgentTool with precise `Static<typeof Schema>` typing on the `params`

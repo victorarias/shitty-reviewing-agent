@@ -1,5 +1,5 @@
-import { streamSimple } from "@mariozechner/pi-ai";
-import type { getModel } from "@mariozechner/pi-ai";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { getModel } from "@earendil-works/pi-ai/compat";
 
 export function estimateTokens(messages: any[]): number {
   let chars = 0;

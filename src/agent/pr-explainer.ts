@@ -1,8 +1,8 @@
 import type { getOctokit } from "@actions/github";
-import { Agent } from "@mariozechner/pi-agent-core";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { streamSimple } from "@mariozechner/pi-ai";
-import type { Usage } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { Usage } from "@earendil-works/pi-ai/compat";
 import { isGeneratedPath } from "./file-filters.js";
 import { validateMermaidDiagram } from "../tools/fs.js";
 import type { ChangedFile, ExistingComment, PullRequestInfo, ReviewConfig } from "../types.js";

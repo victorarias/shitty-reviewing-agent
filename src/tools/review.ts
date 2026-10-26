@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { defineTool } from "./define-tool.js";
 import type { getOctokit } from "@actions/github";
 import { RateLimitError } from "./github.js";

@@ -122,8 +122,8 @@ You MUST call post_summary. Do not continue after calling it.
 ### Basic Agent Setup
 
 ```typescript
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel, streamSimple } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
 
 const agent = new Agent({
   initialState: {
