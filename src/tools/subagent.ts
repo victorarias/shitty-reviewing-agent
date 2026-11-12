@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createAgentWithCompaction, type AgentSetupOverrides } from "../agent/agent-setup.js";
 import type { ReviewConfig } from "../types.js";
 import { defineTool } from "./define-tool.js";

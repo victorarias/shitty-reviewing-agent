@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Type } from "typebox";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { defineTool } from "./define-tool.js";
 import type { getOctokit } from "@actions/github";
 import { minimatch } from "minimatch";

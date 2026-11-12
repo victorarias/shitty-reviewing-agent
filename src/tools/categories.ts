@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolCategory } from "../types.js";
 
 export const TOOL_CATEGORY_BY_NAME: Record<string, ToolCategory> = {

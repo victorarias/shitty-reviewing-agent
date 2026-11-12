@@ -1,0 +1,15 @@
+diff --git a/node_modules/@earendil-works/pi-ai/dist/env-api-keys.js b/node_modules/@earendil-works/pi-ai/dist/env-api-keys.js
+--- a/node_modules/@earendil-works/pi-ai/dist/env-api-keys.js
++++ b/node_modules/@earendil-works/pi-ai/dist/env-api-keys.js
+@@ -74,6 +74,11 @@
+     if (provider === "anthropic") {
+         return [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV];
+     }
++    // Vertex AI accepts an explicit API key from either GOOGLE_CLOUD_API_KEY
++    // (the upstream default) or VERTEX_AI_API_KEY (legacy/secondary alias).
++    if (provider === "google-vertex") {
++        return ["GOOGLE_CLOUD_API_KEY", "VERTEX_AI_API_KEY"];
++    }
+     const envMap = {
+         "ant-ling": "ANT_LING_API_KEY",
+         "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",

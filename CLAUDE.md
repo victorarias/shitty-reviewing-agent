@@ -48,8 +48,8 @@ src/
 **Flow:** `index.ts` → fetch PR data + resolve auth → `agent.ts` → build prompts → agent loop with tools → post summary
 
 **Key dependencies:**
-- `@mariozechner/pi-agent-core` - Agent framework and filesystem tools
-- `@mariozechner/pi-ai` - Unified LLM interface (OpenRouter, Gemini, Anthropic, OpenAI, Vertex)
+- `@earendil-works/pi-agent-core` - Agent framework and filesystem tools
+- `@earendil-works/pi-ai` - Unified LLM interface (OpenRouter, Gemini, Anthropic, OpenAI, Vertex)
 - `@actions/github` - GitHub API via Octokit
 
 ## Key Concepts

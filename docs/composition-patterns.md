@@ -7,8 +7,8 @@ This guide covers patterns for combining tools, managing agent execution, and ha
 The `Agent` class accepts several configuration options that control composition:
 
 ```typescript
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel, streamSimple } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
 
 const agent = new Agent({
   // Initial state

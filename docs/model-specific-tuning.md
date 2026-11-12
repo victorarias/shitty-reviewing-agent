@@ -7,7 +7,7 @@ Different LLM providers and models have different characteristics. This guide co
 pi-ai provides a unified interface across 20+ providers:
 
 ```typescript
-import { getModel, getProviders, getModels, streamSimple } from "@mariozechner/pi-ai";
+import { getModel, getProviders, getModels, streamSimple } from "@earendil-works/pi-ai/compat";
 
 // Get available providers
 const providers = getProviders();
