@@ -10,6 +10,6 @@ diff --git a/node_modules/@earendil-works/pi-ai/dist/env-api-keys.js b/node_modu
 +    if (provider === "google-vertex") {
 +        return ["GOOGLE_CLOUD_API_KEY", "VERTEX_AI_API_KEY"];
 +    }
+     // Qwen Token Plan: the per-plan variable first, then the region variable both plans used to share.
      const envMap = {
          "ant-ling": "ANT_LING_API_KEY",
-         "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
